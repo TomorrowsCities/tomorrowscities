@@ -1,0 +1,24 @@
+[build-system]
+requires = ["hatchling","fiona","geopandas","pandas","uuid","numpy"]
+build-backend = "hatchling.build"
+
+[project]
+name = "tomorrowcities"
+version = "0.0.2"
+authors = [
+  { name="Huseyin Kaya", email="hkayabilisim@gmail.com" },
+  { name="Prashant Rawal", email="prashantrawal@nset.org.np" },
+  { name="Erdem Ozer", email="ozerer@gmail.com" },
+]
+description = "Tomorrow Cities' Python Library"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/TomorrowsCities"
+"Bug Tracker" = "https://github.com/TomorrowsCities"
