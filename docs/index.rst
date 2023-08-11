@@ -3,13 +3,15 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-Welcome to TomorrowCities Python Package!
-=========================================
+TomorrowCities Python Package
+=============================
 
 .. toctree::
    :maxdepth: 2
-   :caption: Contents:
+   :caption: First Steps:
 
+   install
+   quickstart
 
 
 Indices and tables

@@ -20,5 +20,5 @@ classifiers = [
 ]
 
 [project.urls]
-"Homepage" = "https://github.com/TomorrowsCities"
-"Bug Tracker" = "https://github.com/TomorrowsCities"
+"Homepage" = "https://github.com/TomorrowsCities/tomorrowcities"
+"Bug Tracker" = "https://github.com/TomorrowsCities/tomorrowcities"
