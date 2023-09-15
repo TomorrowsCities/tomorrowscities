@@ -1,7 +1,0 @@
-matplotlib
-uuid
-fiona
-pandas
-geopandas
-numpy
-openpyxl
