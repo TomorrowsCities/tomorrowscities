@@ -11,8 +11,128 @@ import geopandas
 import numpy as np
 from scipy.stats import norm
 from scipy.interpolate import interp1d
+import networkx as nx 
 
-def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_flood, hazard_type):
+def compute_power_infra(nodes,edges,intensity,fragility):
+    print('Computing power infrastructure')
+    print(nodes.head())
+    print(edges.head())
+    print(fragility.head())
+    print(intensity.head())
+
+    eq_vuln = fragility.rename(columns={"med_Slight": "med_ds1", 
+                        "med_Moderate": "med_ds2",
+                        "med_Extensive": "med_ds3",
+                        "med_Complete": "med_ds4",
+                        "beta_Slight": "beta_ds1",
+                        "beta_Moderate": "beta_ds2",
+                        "beta_Extensive": "beta_ds3",
+                        "beta_Complete": "beta_ds4"})
+    
+    G_power = nx.Graph()
+    for _, node in nodes.iterrows():
+        G_power.add_node(node.NODE_ID, pos=(node.x_coord, node.y_coord))
+        
+    for _, edge in edges.iterrows():
+        G_power.add_edge(*(edge.FROM_NODE, edge.TO_NODE))  
+
+    nodes = geopandas.sjoin_nearest(nodes,intensity, 
+                how='left', rsuffix='intensity',distance_col='distance')
+
+    nodes = nodes.merge(eq_vuln, how='left',left_on='eq_vuln',right_on='vuln_string')
+    nulls = nodes['med_ds1'].isna()
+    nodes.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
+    nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
+    #print(nodes.columns)
+    nodes['logim'] = np.log(nodes['im']/9.81)
+    
+    for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
+        nodes[m] = np.log(nodes[m])
+
+    for i in [1,2,3,4]: 
+        nodes[f'prob_ds{i}'] = norm.cdf(nodes['logim'],nodes[f'med_ds{i}'],nodes[f'beta_ds{i}'])
+    nodes[['prob_ds0','prob_ds5']] = [1,0]
+    for i in [1,2,3,4,5]:
+        nodes[f'ds_{i}'] = np.abs(nodes[f'prob_ds{i-1}'] - nodes[f'prob_ds{i}'])
+    df_ds = nodes[['ds_1','ds_2','ds_3','ds_4','ds_5']]
+    nodes['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int')
+    
+    # Damage State Codes
+    DS_NO = 1
+    DS_SLIGHT = 2
+    DS_MODERATE = 3
+    DS_EXTENSIVE = 4
+    DS_COMPLETE = 5
+
+    # If a damage state is above this threshold (excluding), 
+    # we consider the associated node as dead.
+    threshold = DS_MODERATE 
+
+    # All Nodes
+    all_nodes = set(nodes['NODE_ID'])
+
+    # Power Plants (generators)
+    power_plants = set(nodes[nodes['pwr_plant'] == 1]['NODE_ID'])
+
+    # Server Nodes 
+    server_nodes = set(nodes[nodes['n_bldgs'] > 0]['NODE_ID'])
+
+    # Nodes directly affected by earthquake. Thresholding takes place.
+    damaged_nodes = set(nodes[nodes['eq_ds'] > threshold]['NODE_ID'])
+
+    # Damaged Server Nodes
+    damaged_server_nodes = damaged_nodes.intersection(server_nodes)
+
+    # Damaged Power Plants
+    damaged_power_plants = damaged_nodes.intersection(power_plants)
+
+    # Operational power plants
+    operating_power_plants = power_plants - damaged_nodes
+
+    # Damaged power network
+    G_power_dmg = G_power.copy()
+    G_power_dmg.remove_nodes_from(damaged_nodes)
+
+    print('Power network before earthquake ', G_power)
+    print('Power network after  earthquake ', G_power_dmg)
+
+    # Calculate all distances in the post-earthquake network 
+    shortest_distance = nx.shortest_path_length(G_power_dmg)
+
+    operating_nodes = set()
+    for source, targets in shortest_distance:
+        if source in operating_power_plants:
+            for target, hop in targets.items():
+                operating_nodes.add(target)
+
+    # Both alive (operating) and server
+    operating_server_nodes = operating_nodes.intersection(server_nodes)
+
+    # It must be a server node but not operating
+    nonoperating_server_nodes = server_nodes - operating_server_nodes
+
+    # Summary of the nodes
+    print('all nodes', all_nodes)    
+    print('server nodes', server_nodes)        
+    print('power plants', power_plants)
+    print('damaged nodes', damaged_nodes)
+    print('damaged power plants', damaged_power_plants)
+    print('damaged server nodes', damaged_server_nodes)
+    print('operating nodes', operating_nodes)
+    print('operating power plants', operating_power_plants)
+    print('operating server nodes', operating_server_nodes)
+    print('nonoperating server nodes', nonoperating_server_nodes)
+
+        
+    is_damaged_mapper     = {id:id in damaged_nodes   for id in all_nodes}
+    is_operational_mapper = {id:id in operating_nodes for id in all_nodes}
+    nodes['is_damaged'] = nodes['NODE_ID'].map(is_damaged_mapper)
+    nodes['is_operational'] = nodes['NODE_ID'].map(is_operational_mapper)
+
+    return nodes['eq_ds'], nodes['is_damaged'], nodes['is_operational']
+
+
+def compute(gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type):
 
     column_names = {'zoneID':'zoneid','bldID':'bldid','nHouse':'nhouse',
                     'specialFac':'specialfac','expStr':'expstr','repValue':'repvalue',
@@ -20,6 +140,7 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
                     'CommFacID':'commfacid','indivId':'individ','eduAttStat':'eduattstat',
                     'indivFacID':'indivfacid','VALUE':'im'}
 
+    print(hazard_type, df_hazard.head())
     gdf_buildings = gdf_buildings.rename(columns=column_names)
     df_household = df_household.rename(columns=column_names)
     df_individual = df_individual.rename(columns=column_names)
@@ -45,7 +166,8 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
     #epsg = 21037 # Arc 1960 / UTM zone 37S
 
     # Replace strange TypeX LRS with RCi
-    df_flood['expstr'] = df_flood['expstr'].str.replace('Type[0-9]+','RCi',regex=True)
+    print('deneme',df_hazard.columns)
+    df_hazard['expstr'] = df_hazard['expstr'].str.replace('Type[0-9]+','RCi',regex=True)
 
     number_of_unique_buildings = len(pd.unique(gdf_buildings['bldid']))
     print('number of unique building', number_of_unique_buildings)
@@ -58,8 +180,6 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
     gdf_buildings = gdf_buildings.to_crs(f"EPSG:{epsg}")
     gdf_intensity = gdf_intensity.to_crs(f"EPSG:{epsg}")
 
-    print(gdf_buildings.head())
-    print(gdf_intensity.head())
     #%%
     gdf_building_intensity = geopandas.sjoin_nearest(gdf_buildings,gdf_intensity, 
                 how='left', rsuffix='intensity',distance_col='distance')
@@ -83,17 +203,17 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
     gdf_building_intensity.loc[lr, 'height_level'] = 'LR'
     gdf_building_intensity.loc[mr, 'height_level'] = 'MR'
     gdf_building_intensity.loc[hr, 'height_level'] = 'HR'
-    # %%
+    # %% Earthquake uses simplified taxonomy
     gdf_building_intensity['vulnstreq'] = \
         gdf_building_intensity[['material','code_level','height_level']] \
             .agg('+'.join,axis=1)
     # %%
     if hazard_type == HAZARD_EARTHQUAKE:
-        bld_eq = gdf_building_intensity.merge(df_eq, on='vulnstreq', how='left')
+        bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
         nulls = bld_eq['muds1_g'].isna()
         bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
         bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
-        bld_eq['logim'] = np.log(bld_eq['im_x']/9.81)
+        bld_eq['logim'] = np.log(bld_eq['im']/9.81)
         for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
             bld_eq[m] = np.log(bld_eq[m])
 
@@ -112,7 +232,7 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
         ds_str = {1: 'No Damage',2:'Low',3:'Medium',4:'High',5:'Collapsed'}
 
     elif hazard_type == HAZARD_FLOOD:
-        bld_flood = gdf_building_intensity.merge(df_flood, on='expstr', how='left')
+        bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
         y = bld_flood[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
         xnew = bld_flood['im'].to_numpy()
@@ -196,11 +316,9 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
         thresholds = {f'metric{id}': 0 for id in range(8)}
 
     #%% metric 1 number of unemployed workers in each building
-    print(df_workers[df_workers['bldid'] == 28])
     df_workers_per_building = df_workers[df_workers['ds'] > thresholds['metric1']].groupby('bldid',as_index=False).agg({'individ':'count'})
     
     df_metric1 = bld_hazard.merge(df_workers_per_building,how='left',left_on='bldid',right_on = 'bldid')[['bldid','individ']]
-    print(df_metric1[df_metric1['bldid'] == 28])
     df_metric1.rename(columns={'individ':'metric1'}, inplace=True)
     df_metric1['metric1'] = df_metric1['metric1'].fillna(0).astype(int)
 
@@ -280,7 +398,5 @@ def compute_flood(gdf_buildings, df_household, df_individual,gdf_intensity, df_f
     metrics["metric6"]["value"] = int(df_metric6['metric6'].sum())
     metrics["metric7"]["value"] = int(df_metric7['metric7'].sum())
 
-    result = {"metrics": metrics}
-
-    return result, df_metrics
+    return metrics, df_metrics, bld_hazard
     
