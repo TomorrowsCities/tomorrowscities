@@ -6,3 +6,4 @@ lorem_text
 matplotlib
 psycopg2-binary 
 scipy
+pandas
