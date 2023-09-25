@@ -20,21 +20,21 @@ def compute_power_infra(nodes,edges,intensity,fragility):
     print(fragility.head())
     print(intensity.head())
 
-    eq_vuln = fragility.rename(columns={"med_Slight": "med_ds1", 
-                        "med_Moderate": "med_ds2",
-                        "med_Extensive": "med_ds3",
-                        "med_Complete": "med_ds4",
-                        "beta_Slight": "beta_ds1",
-                        "beta_Moderate": "beta_ds2",
-                        "beta_Extensive": "beta_ds3",
-                        "beta_Complete": "beta_ds4"})
+    eq_vuln = fragility.rename(columns={"med_slight": "med_ds1", 
+                        "med_moderate": "med_ds2",
+                        "med_extensive": "med_ds3",
+                        "med_complete": "med_ds4",
+                        "beta_slight": "beta_ds1",
+                        "beta_moderate": "beta_ds2",
+                        "beta_extensive": "beta_ds3",
+                        "beta_complete": "beta_ds4"})
     
     G_power = nx.Graph()
     for _, node in nodes.iterrows():
-        G_power.add_node(node.NODE_ID, pos=(node.x_coord, node.y_coord))
+        G_power.add_node(node.node_id, pos=(node.x_coord, node.y_coord))
         
     for _, edge in edges.iterrows():
-        G_power.add_edge(*(edge.FROM_NODE, edge.TO_NODE))  
+        G_power.add_edge(*(edge.from_node, edge.to_node))  
 
     nodes = geopandas.sjoin_nearest(nodes,intensity, 
                 how='left', rsuffix='intensity',distance_col='distance')
@@ -69,16 +69,16 @@ def compute_power_infra(nodes,edges,intensity,fragility):
     threshold = DS_MODERATE 
 
     # All Nodes
-    all_nodes = set(nodes['NODE_ID'])
+    all_nodes = set(nodes['node_id'])
 
     # Power Plants (generators)
-    power_plants = set(nodes[nodes['pwr_plant'] == 1]['NODE_ID'])
+    power_plants = set(nodes[nodes['pwr_plant'] == 1]['node_id'])
 
     # Server Nodes 
-    server_nodes = set(nodes[nodes['n_bldgs'] > 0]['NODE_ID'])
+    server_nodes = set(nodes[nodes['n_bldgs'] > 0]['node_id'])
 
     # Nodes directly affected by earthquake. Thresholding takes place.
-    damaged_nodes = set(nodes[nodes['eq_ds'] > threshold]['NODE_ID'])
+    damaged_nodes = set(nodes[nodes['eq_ds'] > threshold]['node_id'])
 
     # Damaged Server Nodes
     damaged_server_nodes = damaged_nodes.intersection(server_nodes)
@@ -126,8 +126,8 @@ def compute_power_infra(nodes,edges,intensity,fragility):
         
     is_damaged_mapper     = {id:id in damaged_nodes   for id in all_nodes}
     is_operational_mapper = {id:id in operating_nodes for id in all_nodes}
-    nodes['is_damaged'] = nodes['NODE_ID'].map(is_damaged_mapper)
-    nodes['is_operational'] = nodes['NODE_ID'].map(is_operational_mapper)
+    nodes['is_damaged'] = nodes['node_id'].map(is_damaged_mapper)
+    nodes['is_operational'] = nodes['node_id'].map(is_operational_mapper)
 
     return nodes['eq_ds'], nodes['is_damaged'], nodes['is_operational']
 
