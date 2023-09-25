@@ -1,8 +1,0 @@
-solara
-geopandas
-ipyleaflet
-plotly
-lorem_text
-matplotlib
-psycopg2-binary 
-scipy
