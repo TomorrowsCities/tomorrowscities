@@ -10,10 +10,10 @@ from typing import Tuple, Optional
 import ipyleaflet
 from ipyleaflet import AwesomeIcon, Marker
 import numpy as np
-import sys
+import logging, sys
+#logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
-from ..backend.engine import compute, compute_power_infra
-
+from ..backend.engine import compute, compute_power_infra, calculate_metrics
 
 layers = solara.reactive({
     'layers' : {
@@ -23,6 +23,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0},
+            'cols_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'cols': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
             'df': solara.reactive(None),
@@ -30,6 +31,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
             'cols': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
         'household': {
             'df': solara.reactive(None),
@@ -37,6 +39,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
             'cols':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
             'df': solara.reactive(None),
@@ -44,6 +47,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
             'cols': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
         'intensity': {
             'df': solara.reactive(None),
@@ -51,6 +55,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['geometry','im']),
             'cols': set(['geometry','im'])},
         'fragility': {
             'df': solara.reactive(None),
@@ -58,6 +63,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
             'cols': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
         'vulnerability': {
             'df': solara.reactive(None),
@@ -65,6 +71,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
             'cols': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
         'power nodes': {
             'df': solara.reactive(None),
@@ -72,6 +79,9 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
+            'cols_required': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
+                         'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
+                         'income', 'eq_vuln']),
             'cols': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
                          'income', 'eq_vuln'])},
@@ -81,6 +91,8 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
+                         'geometry', 'to_node', 'length']),
             'cols': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
                          'geometry', 'to_node', 'length'])},
         'power fragility': {
@@ -89,6 +101,8 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
+            'cols_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete']),
             'cols': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])}
             },
@@ -96,12 +110,16 @@ layers = solara.reactive({
     'selected_layer' : solara.reactive(None),
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
+    'policies': {
+        '1': {'id':1, 'label': 'Policy 1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
+        '2': {'id':2, 'label': 'Policy 2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
+    },
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
         "metric3": {"desc": "Number of households with no access to hospital", "value": 0, "max_value": 100},
         "metric4": {"desc": "Number of individuals with no access to hospital", "value": 0, "max_value": 100},
-        "metric5": {"desc": "Number of homeless households", "value": 0, "max_value": 100},
+        "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},}})
 
@@ -200,21 +218,35 @@ def MetricWidget(name, description, value, max_value, render_count):
             solara.FigureEcharts(option=options, attributes={ "style": "height: 100px; width: 100px" })
 
 
-def import_data(data: Optional[bytes]):
-    json_string = data.decode('utf-8')
-    json_data = json.loads(json_string)
-    if "features" in json_data.keys():
-        df = gpd.GeoDataFrame.from_features(json_data['features'])
+def import_data(fileinfo: solara.components.file_drop.FileInfo):
+    data = fileinfo['data']
+    extension = fileinfo['name'].split('.')[-1]
+    if extension == 'xlsx':
+        df = pd.read_excel(data)
     else:
-        df = pd.read_json(json_string)
+        json_string = data.decode('utf-8')
+        json_data = json.loads(json_string)
+        if "features" in json_data.keys():
+            df = gpd.GeoDataFrame.from_features(json_data['features'])
+        else:
+            df = pd.read_json(json_string)
 
     df.columns = df.columns.str.lower()
 
+    # in the first pass, look for exact column match
     name = None
     for layer_name, layer in layers.value['layers'].items():
         if layer['cols'] == set(df.columns):
             name = layer_name
             break
+    # if not, check only the required columns
+    if name is None:
+        for layer_name, layer in layers.value['layers'].items():
+            if layer['cols_required'].issubset(set(df.columns)):
+                name = layer_name
+                logging.debug('There are extra columns', set(df.columns) - layer['cols_required'])
+                break
+    
 
     # Inject columns
     if name is not None:
@@ -232,7 +264,7 @@ def FileDropZone():
     def load():
         if fileinfo is not None:
             print('processing file')
-            name, df = import_data(fileinfo['data'])
+            name, df = import_data(fileinfo)
             if name is not None and df is not None:
                 layers.value['layers'][name]['df'].set(df)
                 layers.value['selected_layer'].set(name)
@@ -278,7 +310,7 @@ def FileDropZone():
 
 @solara.component
 def LayerDisplayer():
-
+    print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['df'].value is not None}
     nonempty_layer_names = list(nonempty_layers.keys())
     selected = layers.value['selected_layer'].value
@@ -290,9 +322,13 @@ def LayerDisplayer():
     if selected is None and len(nonempty_layer_names) > 0:
         set_selected(nonempty_layer_names[0])
     if selected is not None:
-        DataframeDisplayer(nonempty_layers[selected]['df'].value, 
-                           layers.value['render_count'].value,
-                           layers.value['bounds'].value)
+        df = nonempty_layers[selected]['df'].value
+        if "geometry" in df.columns:
+            ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
+            solara.DataFrame(df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry'))
+        else:
+            solara.DataFrame(df)
+
 
 @solara.component
 def MetricPanel():
@@ -310,6 +346,8 @@ def MetricPanel():
                          filtered_metrics[name], 
                          metric['max_value'],
                          layers.value['render_count'].value)
+        with solara.Link("/docs/metrics"):
+            solara.Button(icon_name="mdi-help-circle-outline", icon=True)
   
 
 @solara.component
@@ -329,9 +367,6 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    def set_bounds(bounds):
-        layers.value['bounds'].set(bounds)
-
     base_map = ipyleaflet.basemaps["Stamen"]["Watercolor"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
@@ -350,7 +385,7 @@ def MapViewer():
     ipyleaflet.Map.element(
         zoom=zoom,
         on_zoom=set_zoom,
-        on_bounds=set_bounds,
+        on_bounds=layers.value['bounds'].set,
         center=layers.value['center'].value,
         on_center=layers.value['center'].set,
         scroll_wheel_zoom=True,
@@ -361,21 +396,11 @@ def MapViewer():
         keyboard=True if random.random() > 0.5 else False,
         layers=map_layers
         )
-    
-
-@solara.component
-def DataframeDisplayer(df, render_count, bounds):
-    df, set_df = solara.use_state_or_update(df)
-    if "geometry" in df.columns:
-        ((ymin,xmin),(ymax,xmax)) = bounds
-        solara.DataFrame(df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry'))
-    else:
-        solara.DataFrame(df)
-    
+        
 @solara.component
 def ExecutePanel():
-    infra, set_infra = solara.use_state(["power"])
-    hazard, set_hazard = solara.use_state("earthquake")
+    infra, set_infra = solara.use_state(["building"])
+    hazard, set_hazard = solara.use_state("flood")
 
 
     execute_counter, set_execute_counter = solara.use_state(0)
@@ -394,12 +419,12 @@ def ExecutePanel():
             if "power" in  infra:
                 missing += list(set(["power edges","power nodes","intensity","power fragility"]) - existing_layers)
             if "building" in infra:
-                missing += list(set(["building","household","individual","intensity","fragility"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","intensity","fragility"]) - existing_layers)
         elif hazard == "flood":
             if "power" in  infra:
                 missing += list(set(["power edges","power nodes","intensity","power vulnerability"]) - existing_layers)
             if "building" in infra:
-                missing += list(set(["building","household","individual","intensity","vulnerability"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","intensity","vulnerability"]) - existing_layers)
  
         if infra == []:
             missing += ['You should select power and/or building']
@@ -429,6 +454,7 @@ def ExecutePanel():
             return nodes
 
         def execute_building():
+            landuse = layers.value['layers']['landuse']['df'].value
             buildings = layers.value['layers']['building']['df'].value
             household = layers.value['layers']['household']['df'].value
             individual = layers.value['layers']['individual']['df'].value
@@ -436,20 +462,27 @@ def ExecutePanel():
 
             fragility = layers.value['layers']['fragility']['df'].value
             vulnerability = layers.value['layers']['vulnerability']['df'].value
-            computed_metrics, df_metrics, df_bld_hazard = compute(
+
+            policies = [p['id'] for id, p in layers.value['policies'].items() if p['applied'].value]
+
+            print('policies',policies)
+            df_bld_hazard = compute(
+                landuse,
                 buildings, 
                 household, 
                 individual,
                 intensity,
                 fragility if hazard == "earthquake" else vulnerability, 
-                hazard)
-
+                hazard,policies=policies)
+            buildings['ds'] = list(df_bld_hazard['ds'])
+            computed_metrics, df_metrics = calculate_metrics(buildings, household, individual, hazard, policies=policies)
+        
             print(computed_metrics)
             for metric in df_metrics.keys():
                 buildings[metric] = list(df_metrics[metric][metric])
                 layers.value['metrics'][metric]['value'] = computed_metrics[metric]['value']
                 layers.value['metrics'][metric]['max_value'] = computed_metrics[metric]['max_value']
-            buildings['ds'] = list(df_bld_hazard['ds'])
+            
             return buildings
 
         if execute_counter > 0 :
@@ -477,10 +510,12 @@ def ExecutePanel():
     result = solara.use_thread(execute_engine, dependencies=[execute_counter])
 
     with solara.Row(justify="center"):
-        solara.ToggleButtonsMultiple(value=infra, on_value=set_infra, values=["power","building"])
+        solara.ToggleButtonsMultiple(value=infra, on_value=set_infra, values=["building","power"])
     with solara.Row(justify="center"):
         solara.ToggleButtonsSingle(value=hazard, on_value=set_hazard, values=["earthquake","flood"])
 
+    PolicyPanel()
+    solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
                   disabled=execute_btn_disabled)
     # The statements in this block are passed several times during thread execution
@@ -499,13 +534,22 @@ def ExecutePanel():
         set_execute_btn_disabled(False)
         solara.ProgressLinear(value=False)
 
+@solara.component
+def PolicyPanel():
+    with solara.Row():
+        for policy_key, policy in layers.value['policies'].items():
+            with solara.Tooltip(tooltip=policy['description']):
+                solara.Checkbox(label=policy['label'], 
+                                value=policy['applied'])
+        with solara.Link("/docs/policies"):
+            solara.Button(icon_name="mdi-help-circle-outline", icon=True)
+
 
 @solara.component
 def WebApp():
 
     with solara.Columns([30,60]):
         with solara.Column():
-
             solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
             FileDropZone()
             ExecutePanel()
