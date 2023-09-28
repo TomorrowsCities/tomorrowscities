@@ -1,6 +1,6 @@
 ---
 author: huseyin.kaya
-title: Flood Vulnerability Analysus
+title: Flood Vulnerability Analysis
 description: Methodologies in flood damage assessment
 image: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2500&q=80
 thumbnail: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=350&q=80
@@ -16,8 +16,6 @@ The core component used in flood vulnerability analysis is to generate a mapping
 The Joint Research Centre (JRC) led by the European Commission provides technical reports and guidelines to generate damage curves [1]. It is also always possible to make minor modification for special cases such as single storey adobe buildings in Africa [2]. 
 
 We provide a user interface to visualize and generate damages curves in [3].
-
-## Flood Vulnerability Calcul
 
 ## Remarks
 * In both JRC [1] and modified version by Englhardt et.al [2],  the generated curves
