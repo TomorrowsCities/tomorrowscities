@@ -15,9 +15,12 @@ import logging, sys
 
 from ..backend.engine import compute, compute_power_infra, calculate_metrics
 
+
 layers = solara.reactive({
     'layers' : {
         'building': {
+            'render_order': 50,
+            'map_info_tooltip': 'Number of buildings',
             'df': solara.reactive(None),
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
@@ -26,6 +29,8 @@ layers = solara.reactive({
             'cols_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'cols': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
+            'render_order': 20,
+            'map_info_tooltip': 'Number of landuse zones',
             'df': solara.reactive(None),
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
@@ -34,7 +39,9 @@ layers = solara.reactive({
             'cols_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
             'cols': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
         'household': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of households',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -42,7 +49,9 @@ layers = solara.reactive({
             'cols_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
             'cols':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of individuals',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -50,7 +59,9 @@ layers = solara.reactive({
             'cols_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
             'cols': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
         'intensity': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of intensity measurements',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -58,7 +69,9 @@ layers = solara.reactive({
             'cols_required': set(['geometry','im']),
             'cols': set(['geometry','im'])},
         'fragility': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of records in fragility configuration',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -66,7 +79,9 @@ layers = solara.reactive({
             'cols_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
             'cols': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
         'vulnerability': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of records in vulnerabilty configuration',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -74,7 +89,9 @@ layers = solara.reactive({
             'cols_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
             'cols': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
         'power nodes': {
+            'render_order': 90,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of electrical power nodes',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -86,7 +103,9 @@ layers = solara.reactive({
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
                          'income', 'eq_vuln'])},
         'power edges': {
+            'render_order': 80,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of connections in power grid',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -96,7 +115,9 @@ layers = solara.reactive({
             'cols': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
                          'geometry', 'to_node', 'length'])},
         'power fragility': {
+            'render_order': 0,
             'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of records in fragility configuration for power',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
@@ -123,6 +144,8 @@ layers = solara.reactive({
         '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
     },
     'implementation_capacity_score': solara.reactive("high"),
+    'map_info_button': solara.reactive("summary"),
+    'map_info_detail': solara.reactive({}),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -137,6 +160,86 @@ def building_colors(feature):
     ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
     ds = feature['properties']['ds'] 
     return {'fillColor': 'black', 'color': 'red' if ds > 0 else 'blue' }
+
+def building_click_handler(event=None, feature=None, id=None, properties=None):
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
+    layers.value['map_info_force_render'].set(True)  
+
+def landuse_click_handler(event=None, feature=None, id=None, properties=None):
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
+    layers.value['map_info_force_render'].set(True)  
+
+def landuse_colors(feature):
+    print(feature)
+    luf_type = feature['properties']['luf']
+    if luf_type == 'RESIDENTIAL (HIGH DENSITY)':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#A0522D', # sienna
+        }    
+    elif luf_type == 'HISTORICAL PRESERVATION AREA':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#673147', # plum
+        }    
+    elif luf_type == 'RESIDENTIAL (MODERATE DENSITY)':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#cd853f', # peru
+        }   
+    elif luf_type == 'COMMERCIAL AND RESIDENTIAL':
+        luf_color = {
+        'color': 'black',
+        'fillColor': 'red',
+        }   
+    elif luf_type == 'CITY CENTER':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#E6E6FA', # lavender
+        }   
+    elif luf_type == 'INDUSTRY':
+        luf_color = {
+        'color': 'black',
+        'fillColor': 'grey',
+        }   
+    elif luf_type == 'RESIDENTIAL (LOW DENSITY)':
+        luf_color= {
+        'color': 'black',
+        'fillColor': '#D2B48C', # tan
+        }   
+    elif luf_type == 'RESIDENTIAL (GATED NEIGHBORHOOD)':
+        luf_color= {
+        'color': 'black',
+        'fillColor': 'orange',
+        }   
+    elif luf_type == 'AGRICULTURE':
+        luf_color= {
+        'color': 'black',
+        'fillColor': 'yellow',
+        }   
+    elif luf_type == 'FOREST':
+        luf_color= {
+        'color': 'black',
+        'fillColor': 'green',
+        }   
+    elif luf_type == 'VACANT ZONE':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#90EE90', # lightgreen
+        }   
+    elif luf_type == 'RECREATION AREA':
+        luf_color = {
+        'color': 'black',
+        'fillColor': '#32CD32', #lime
+        }   
+    else:
+        luf_color = {
+        'color': 'black',
+        'fillColor': random.choice(['red', 'yellow', 'green', 'orange','blue']),
+        } 
+    return luf_color
 
 def power_node_colors(feature):
     print(feature)
@@ -160,12 +263,19 @@ def create_map_layer(df, name):
     if name == "intensity":
         locs = np.array([df.geometry.y.to_list(), df.geometry.x.to_list(), df.im.to_list()]).transpose().tolist()
         map_layer = ipyleaflet.Heatmap(locations=locs, radius = 10) 
+    elif name == "landuse":
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style_callback=landuse_colors)
+        map_layer.on_click(building_click_handler)   
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
-                        style={'opacity': 1, 'fillOpacity': 0.5, 'weight': 1},
-                        hover_style={'color': 'blue', 'dashArray': '0', 'fillOpacity': 0.5},
-                        style_callback=building_colors)
-        
+            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style_callback=building_colors)
+        map_layer.on_click(landuse_click_handler)
+    
     elif name == "power nodes":
         markers = []
         for index, node in df.iterrows():
@@ -201,7 +311,7 @@ def MetricWidget(name, description, value, max_value, render_count):
                 "type": 'gauge',  
                 "min": 0,
                 "name": description,
-                "max": max_value,
+                "max": max(1,max_value), # workaround when max_value = 0
                 "startAngle": 180,
                 "endAngle": 0,
                 "progress": {"show": True, "width": 8},
@@ -334,7 +444,8 @@ def LayerDisplayer():
         df = nonempty_layers[selected]['df'].value
         if "geometry" in df.columns:
             ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-            solara.DataFrame(df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry'))
+            df_filtered = df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+            solara.DataFrame(df_filtered)
         else:
             solara.DataFrame(df)
         if selected == "building":
@@ -384,7 +495,8 @@ def MapViewer():
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 
-    for layer_name, layer in layers.value['layers'].items():
+    render_order = [l['render_order'] for _, l in layers.value['layers'].items()]
+    for _, (layer_name, layer) in sorted(zip(render_order,layers.value['layers'].items())):
         df = layer['df'].value
         if df is None:
             continue
@@ -576,16 +688,56 @@ def PolicyPanel():
 
 
 @solara.component
+def MapInfo():
+    print(f'{layers.value["bounds"].value}')
+
+    print(layers.value['map_info_button'].value)
+
+    with solara.Row(justify="center"):
+        solara.ToggleButtonsSingle(value=layers.value['map_info_button'].value, 
+                               on_value=layers.value['map_info_button'].set, 
+                               values=["summary","detail"])
+
+    if layers.value['map_info_button'].value == "summary":
+        with solara.GridFixed(columns=2,row_gap="1px"):
+            for layer_name,layer in layers.value['layers'].items():
+                with solara.Tooltip(layer['map_info_tooltip']):
+                    solara.Text(f'{layer_name}')
+                with solara.Row(justify="right"):
+                    if layer['df'].value is None:
+                        solara.Text('0')
+                    else:
+                        solara.Text(f"{len(layer['df'].value)}")
+    else:
+        with solara.GridFixed(columns=2,row_gap="1px"):
+            for key, value in layers.value['map_info_detail'].value.items():
+                if key == 'style':
+                    continue
+                solara.Text(f'{key}')
+                with solara.Row(justify="right"):
+                    strvalue = str(value)
+                    if len(strvalue) > 10:
+                        with solara.Tooltip(f'{value}'):
+                            solara.Text(f'{strvalue[:10]}...')
+                    else:
+                        solara.Text(f'{value}')
+
+
+
+
+@solara.component
 def WebApp():
 
-    with solara.Columns([30,60]):
+    with solara.Columns([30,70]):
         with solara.Column():
             solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
             FileDropZone()
             ExecutePanel()
         with solara.Column():
             LayerController()
-            MapViewer()
+            with solara.Columns([80,20]):
+                MapViewer()
+                MapInfo()
             MetricPanel()
             
     LayerDisplayer()
