@@ -15,6 +15,9 @@ category:
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## What is New?
+### New policies
+* Eight new policies are added. See their definitions [here](/docs/policies)
+* New info related to flood damage assessment is added [here](/docs/flood)
 
 ### Policy Support
 Two new policies are added to the computing engine. More info is [here](/docs/policies)
