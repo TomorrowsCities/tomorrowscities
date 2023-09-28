@@ -122,6 +122,7 @@ layers = solara.reactive({
         '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and rivers cleaning program ', 'applied': solara.reactive(False)},
         '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
     },
+    'implementation_capacity_score': solara.reactive("high"),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -487,7 +488,16 @@ def ExecutePanel():
                 fragility if hazard == "earthquake" else vulnerability, 
                 hazard,policies=policies)
             buildings['ds'] = list(df_bld_hazard['ds'])
-            computed_metrics, df_metrics = calculate_metrics(buildings, household, individual, hazard, policies=policies)
+
+            implementation_capacity_score = layers.value['implementation_capacity_score'].value
+            if implementation_capacity_score == 'medium':
+                capacity = 1.25
+            elif implementation_capacity_score == 'low':
+                capacity = 1.50
+            else:
+                capacity = 1
+            computed_metrics, df_metrics = calculate_metrics(buildings, household, 
+                                                             individual, hazard, policies=policies,capacity=capacity)
         
             print(computed_metrics)
             for metric in df_metrics.keys():
@@ -521,11 +531,19 @@ def ExecutePanel():
     # Execute the thread only when the depencency is changed
     result = solara.use_thread(execute_engine, dependencies=[execute_counter])
 
-    with solara.Row(justify="center"):
-        solara.ToggleButtonsMultiple(value=infra, on_value=set_infra, values=["building","power"])
-    with solara.Row(justify="center"):
-        solara.ToggleButtonsSingle(value=hazard, on_value=set_hazard, values=["earthquake","flood"])
-
+    with solara.GridFixed(columns=2):
+        solara.Text("Infrastructure Type")
+        with solara.Row(justify="right"):
+            solara.ToggleButtonsMultiple(value=infra, on_value=set_infra, values=["building","power"])
+        solara.Text("Hazard")
+        with solara.Row(justify="right"):
+            solara.ToggleButtonsSingle(value=hazard, on_value=set_hazard, values=["earthquake","flood"])
+        with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
+            solara.Text("Implementation Capacity Score")
+        with solara.Row(justify="right"):
+            solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
+                                values=['low','medium','high'],
+                                on_value=layers.value['implementation_capacity_score'].set)
     PolicyPanel()
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
