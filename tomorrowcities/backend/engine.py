@@ -127,6 +127,8 @@ def compute_power_infra(nodes,edges,intensity,fragility):
 
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[]):
 
+    np.random.seed(seed=0)
+
     column_names = {'zoneID':'zoneid','bldID':'bldid','nHouse':'nhouse',
                     'specialFac':'specialfac','expStr':'expstr','repValue':'repvalue',
                     'xCoord':'xcoord','yCoord':'ycoord','hhID':'hhid','nInd':'nind',
@@ -177,6 +179,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     gdf_building_intensity = gdf_building_intensity.merge(gdf_landuse[['zoneid','avgincome']],on='zoneid',how='left')
 
+    gdf_building_intensity['rnd'] = np.random.random((len(gdf_building_intensity),1))
+
     # TODO: Check if the logic makes sense
     if hazard_type == HAZARD_FLOOD:
         away_from_flood = gdf_building_intensity['distance'] > threshold_flood_distance
@@ -186,17 +190,109 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     gdf_building_intensity[['material','code_level','storeys','occupancy']] =  \
         gdf_building_intensity['expstr'].str.split('+',expand=True)
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
+
+
+    if 1 in policies:
+        # First, mid-code -> high-code
+        # then, low-code -> mid-code
+        gdf_building_intensity.loc[(gdf_building_intensity['occupancy'] == 'Res') & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+        gdf_building_intensity.loc[(gdf_building_intensity['occupancy'] == 'Res') & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            idx = gdf_building_intensity['occupancy'] == 'Res'
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+2))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 2 in policies:
+        # First, mid-code -> high-code
+        # then, low-code -> mid-code
+        gdf_building_intensity.loc[((gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')) & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+        gdf_building_intensity.loc[((gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')) & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            idx = (gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 3 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[:, 'height'] = gdf_building_intensity['height'].apply(lambda h: min(max_height, h+6))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 4 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            idx = gdf_building_intensity['specialfac'] != 0
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 5 in policies:
+        # First, mid-code -> high-code
+        # then, low-code -> mid-code
+        idx = ((gdf_building_intensity['avgincome'] == 'lowIncomeA') |\
+                (gdf_building_intensity['avgincome'] == 'lowIncomeA') &\
+                (gdf_building_intensity['specialfac'] == 0))
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 6 in policies:
+        # First, mid-code -> high-code
+        # then, low-code -> mid-code
+        idx = ((gdf_building_intensity['avgincome'] == 'lowIncomeA') |\
+                (gdf_building_intensity['avgincome'] == 'lowIncomeA') &\
+                (gdf_building_intensity['specialfac'] != 0))
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 7 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            idx = (gdf_building_intensity['rnd'] < 0.70) & (gdf_building_intensity['occupancy'] == 'Res')
+            gdf_building_intensity.loc[idx,'occupancy'] = 'Agri'
+
+    if 8 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            idx = gdf_building_intensity['specialfac'] == 0
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 9 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[:, 'height'] = gdf_building_intensity['height'].apply(lambda h: min(max_height, h+1))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 10 in policies:
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            idx = gdf_building_intensity['rnd'] < 0.80
+            gdf_building_intensity.loc[idx,'occupancy'] = 'Agri'
+
     lr = (gdf_building_intensity['height'] <= 4)
     mr = (gdf_building_intensity['height'] >= 5) & (gdf_building_intensity['height'] <= 8)
     hr = (gdf_building_intensity['height'] >= 9)
     gdf_building_intensity.loc[lr, 'height_level'] = 'LR'
     gdf_building_intensity.loc[mr, 'height_level'] = 'MR'
     gdf_building_intensity.loc[hr, 'height_level'] = 'HR'
+
     # Earthquake uses simplified taxonomy
     gdf_building_intensity['vulnstreq'] = \
         gdf_building_intensity[['material','code_level','height_level']] \
             .agg('+'.join,axis=1)
-    # 
+    
+    gdf_building_intensity['expstr'] = \
+        gdf_building_intensity[['material','code_level','storeys','occupancy']] \
+            .agg('+'.join,axis=1)
+    
+     
     if hazard_type == HAZARD_EARTHQUAKE:
         bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
         nulls = bld_eq['muds1_g'].isna()
@@ -213,12 +309,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_eq[f'ds_{i}'] = np.abs(bld_eq[f'prob_ds{i-1}'] - bld_eq[f'prob_ds{i}'])
         df_ds = bld_eq[['ds_1','ds_2','ds_3','ds_4','ds_5']]
         bld_eq['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
-
-        if 1 in policies:
-            bld_eq.loc[bld_eq['occupancy'] == 'Res', 'eq_ds'] = 0
-        if 2 in policies:
-            bld_eq.loc[bld_eq['avgincome'] == 'lowIncomeA', 'eq_ds'] = 0
-            bld_eq.loc[bld_eq['avgincome'] == 'lowIncomeB', 'eq_ds'] = 0
         # Create a simplified building-hazard relation
         bld_hazard = bld_eq[['bldid','eq_ds']]
         bld_hazard = bld_hazard.rename(columns={'eq_ds':'ds'})
@@ -235,11 +325,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
         bld_flood['fl_ds'] = 0
         bld_flood.loc[bld_flood['fl_prob'] > threshold_flood,'fl_ds'] = 1
-        if 1 in policies:
-            bld_flood.loc[bld_flood['occupancy'] == 'Res', 'fl_ds'] = 0
-        if 2 in policies:
-            bld_flood.loc[bld_flood['avgincome'] == 'lowIncomeA', 'fl_ds'] = 0
-            bld_flood.loc[bld_flood['avgincome'] == 'lowIncomeB', 'fl_ds'] = 0
         # Create a simplified building-hazard relation
         bld_hazard = bld_flood[['bldid','fl_ds']]
         bld_hazard = bld_hazard.rename(columns={'fl_ds':'ds'})
