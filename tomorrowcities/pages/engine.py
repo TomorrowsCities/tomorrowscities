@@ -336,6 +336,10 @@ def LayerDisplayer():
             solara.DataFrame(df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry'))
         else:
             solara.DataFrame(df)
+        if selected == "building":
+            file_object = df.to_json()
+            with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
+                solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
 
 
 @solara.component
