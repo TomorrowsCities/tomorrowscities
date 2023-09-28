@@ -111,8 +111,16 @@ layers = solara.reactive({
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
     'policies': {
-        '1': {'id':1, 'label': 'Policy 1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
-        '2': {'id':2, 'label': 'Policy 2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
+        '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
+        '2': {'id':2, 'label': 'P2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
+        '3': {'id':3, 'label': 'P3', 'description': 'Robust investment in WASH (water, sanitation and hygiene) and flood-control infrastructure', 'applied': solara.reactive(False)},
+        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks and public spaces through conventional paving', 'applied': solara.reactive(False)},
+        '5': {'id':5, 'label': 'P5', 'description': 'Shelter Law - All low-income and informal settlements should have physical and free access to community centres and shelters', 'applied': solara.reactive(False)},
+        '6': {'id':6, 'label': 'P6', 'description': 'Funding community-based networks in low-income areas (holistic approaches)', 'applied': solara.reactive(False)},
+        '7': {'id':7, 'label': 'P7', 'description': 'Urban farming programs', 'applied': solara.reactive(False)},
+        '8': {'id':8, 'label': 'P8', 'description': 'Emergency cash transfers to vulnerable households', 'applied': solara.reactive(False)},
+        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and rivers cleaning program ', 'applied': solara.reactive(False)},
+        '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
     },
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
@@ -536,7 +544,7 @@ def ExecutePanel():
 
 @solara.component
 def PolicyPanel():
-    with solara.Row():
+    with solara.GridFixed(columns=6):
         for policy_key, policy in layers.value['policies'].items():
             with solara.Tooltip(tooltip=policy['description']):
                 solara.Checkbox(label=policy['label'], 
