@@ -334,9 +334,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     return bld_hazard
 
 
-def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[]):
+def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
-    bld_hazard = gdf_buildings[['bldid','ds','expstr']]
+    bld_hazard = gdf_buildings[['bldid','ds','expstr','nhouse','residents']]
     bld_hazard[['material','code_level','storeys','occupancy']] =  \
         bld_hazard['expstr'].str.split('+',expand=True).copy()
     #bld_hazard['occupancy'] = bld_hazard['occupancy'].astype('category')
@@ -400,8 +400,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, p
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
 
-    df_metric1 = bld_hazard.merge(df_workers_per_building,how='left',left_on='bldid',right_on = 'bldid')[['bldid','individ']]
+    df_metric1 = bld_hazard.merge(df_workers_per_building,how='left',left_on='bldid',right_on = 'bldid')[['bldid','residents','individ']]
     df_metric1.rename(columns={'individ':'metric1'}, inplace=True)
+    df_metric1['metric1'] = (df_metric1['metric1'].fillna(0) * capacity).astype(int)
+    df_metric1['metric1'] = df_metric1[['residents','metric1']].min(axis=1)
     df_metric1['metric1'] = df_metric1['metric1'].fillna(0).astype(int)
 
     # metric 2 number of students in each building with no access to schools
@@ -409,40 +411,50 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, p
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
 
-    df_metric2 = bld_hazard.merge(df_students_per_building,how='left',left_on='bldid',right_on = 'bldid')[['bldid','individ']]
+    df_metric2 = bld_hazard.merge(df_students_per_building,how='left',left_on='bldid',right_on = 'bldid')[['bldid','residents','individ']]
     df_metric2.rename(columns={'individ':'metric2'}, inplace=True)
+    df_metric2['metric2'] = (df_metric2['metric2'].fillna(0) * capacity).astype(int)
+    df_metric2['metric2'] = df_metric2[['residents','metric2']].min(axis=1)
     df_metric2['metric2'] = df_metric2['metric2'].fillna(0).astype(int)
 
     # metric 3 number of households in each building with no access to hospitals
     df_hospitals_per_household = df_hospitals[df_hospitals['ds'] > thresholds['metric3']].groupby(
         'bldid',as_index=False).agg({'hhid':'count'})
 
-    df_metric3 = bld_hazard.merge(df_hospitals_per_household,how='left',left_on='bldid',right_on='bldid')[['bldid','hhid']]
+    df_metric3 = bld_hazard.merge(df_hospitals_per_household,how='left',left_on='bldid',right_on='bldid')[['bldid','nhouse','hhid']]
     df_metric3.rename(columns={'hhid':'metric3'}, inplace=True)
+    df_metric3['metric3'] = (df_metric3['metric3'].fillna(0) * capacity).astype(int)
+    df_metric3['metric3'] = df_metric3[['nhouse','metric3']].min(axis=1)
     df_metric3['metric3'] = df_metric3['metric3'].fillna(0).astype(int)
 
     # metric 4 number of individuals in each building with no access to hospitals
     df_hospitals_per_individual = df_hospitals[df_hospitals['ds'] > thresholds['metric4']].groupby(
         'bldid',as_index=False).agg({'nind':'sum'})
 
-    df_metric4 = bld_hazard.merge(df_hospitals_per_individual,how='left',left_on='bldid',right_on='bldid')[['bldid','nind']]
+    df_metric4 = bld_hazard.merge(df_hospitals_per_individual,how='left',left_on='bldid',right_on='bldid')[['bldid','residents','nind']]
     df_metric4.rename(columns={'nind':'metric4'}, inplace=True)
+    df_metric4['metric4'] = (df_metric4['metric4'].fillna(0) * capacity).astype(int)
+    df_metric4['metric4'] = df_metric4[['residents','metric4']].min(axis=1)
     df_metric4['metric4'] = df_metric4['metric4'].fillna(0).astype(int)
 
     # metric 5 number of damaged households in each building
     df_homeless_households = df_household_bld[df_household_bld['ds'] > thresholds['metric5']].groupby(
         'bldid',as_index=False).agg({'hhid':'count'})
 
-    df_metric5 = bld_hazard.merge(df_homeless_households,how='left',left_on='bldid',right_on='bldid')[['bldid','hhid']]
+    df_metric5 = bld_hazard.merge(df_homeless_households,how='left',left_on='bldid',right_on='bldid')[['bldid','nhouse','hhid']]
     df_metric5.rename(columns={'hhid':'metric5'}, inplace=True)
+    df_metric5['metric5'] = (df_metric5['metric5'].fillna(0) * capacity).astype(int)
+    df_metric5['metric5'] = df_metric5[['nhouse','metric5']].min(axis=1)
     df_metric5['metric5'] = df_metric5['metric5'].fillna(0).astype(int)
 
     # metric 6 number of homeless individuals in each building
     df_homeless_individuals = df_household_bld[df_household_bld['ds'] > thresholds['metric6']].groupby(
         'bldid',as_index=False).agg({'nind':'sum'})
 
-    df_metric6 = bld_hazard.merge(df_homeless_individuals,how='left',left_on='bldid',right_on='bldid')[['bldid','nind']]
+    df_metric6 = bld_hazard.merge(df_homeless_individuals,how='left',left_on='bldid',right_on='bldid')[['bldid','residents','nind']]
     df_metric6.rename(columns={'nind':'metric6'}, inplace=True)
+    df_metric6['metric6'] = (df_metric6['metric6'].fillna(0) * capacity).astype(int)
+    df_metric6['metric6'] = df_metric6[['residents','metric6']].min(axis=1)
     df_metric6['metric6'] = df_metric6['metric6'].fillna(0).astype(int)
 
     # metric 7 the number of displaced individuals in each building
@@ -454,8 +466,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, p
                                             .groupby('bldid',as_index=False)\
                                             .agg({'individ':'count'})
 
-    df_metric7 = bld_hazard.merge(df_disp_per_bld,how='left',left_on='bldid',right_on='bldid')[['bldid','individ']]
+    df_metric7 = bld_hazard.merge(df_disp_per_bld,how='left',left_on='bldid',right_on='bldid')[['bldid','residents','individ']]
     df_metric7.rename(columns={'individ':'metric7'}, inplace=True)
+    df_metric7['metric7'] = (df_metric7['metric7'].fillna(0) * capacity).astype(int)
+    df_metric7['metric7'] = df_metric7[['residents','metric7']].min(axis=1)
     df_metric7['metric7'] = df_metric7['metric7'].fillna(0).astype(int)
 
 
