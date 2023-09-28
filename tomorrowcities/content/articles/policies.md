@@ -46,13 +46,13 @@ the damage curve value for special facilities by increasing the height of the st
 ### Policy 5: Shelter Law - All low-income and informal settlements should have physical and free access to community centres and shelters
 Expected outcome: Social Vulnerability reduction - reducing the effects of displacement and other issues such as food insecurity. 
 Concerns: Implementation/Enforcement – evidence that some shelters remain unfunded or little effective despite their physical existence 
-In implementation, we filter residential buildings in low income regions, and slight increase the height levels.
+In implementation, we filter residential buildings in low income regions, and slightly increase the height levels.
 
 ### Policy 6: Funding community-based networks in low-income areas (holistic approaches)
 Expected outcome: Social Vulnerability reduction - meeting diverse emergency needs
 Concerns: Implementation/Enforcement – funds could not be available as soon as hazards hit, decreasing their effectivity. Not certain how groups would allocate funding. 
 Implementation: filter non 
-In implementation, we filter commercial buildings in low income regions, and slight increase the height levels.
+In implementation, we filter commercial buildings in low income regions, and slightly increase the height levels.
 
 ### Policy 7: Urban farming programs 
 Expected outcome: Exposure Reduction - reserve of % of land to urban farming (by residents) in hazard-prone areas. Social Vulnerability reduction due to improved food security. 
