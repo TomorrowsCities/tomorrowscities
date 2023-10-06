@@ -18,7 +18,8 @@ dependencies = [
     "scipy", 
     "pandas",
     "networkx",
-    "openpyxl"
+    "openpyxl",
+    "rasterio"
 ]
 
 [tool.hatch.version]
