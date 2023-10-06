@@ -5,7 +5,7 @@ import dataclasses
 
 from ..data import articles
 
-route_order = ["/", "docs","engine","settings","account"]
+route_order = ["/", "docs","engine","utilities","settings","account"]
 
 def check_auth(route, children):
     # This can be replaced by a custom function that checks if the user is
@@ -13,7 +13,7 @@ def check_auth(route, children):
 
     # routes that are public or only for admin
     # the rest only requires login
-    public_paths = ["/","docs","engine","account"]
+    public_paths = ["/","docs","engine","utilities","account"]
     admin_paths = ["settings"]
 
 
