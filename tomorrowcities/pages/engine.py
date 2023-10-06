@@ -10,6 +10,9 @@ from typing import Tuple, Optional
 import ipyleaflet
 from ipyleaflet import AwesomeIcon, Marker
 import numpy as np
+import rasterio 
+from rasterio.warp import calculate_default_transform, reproject, Resampling
+import io
 import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
@@ -96,9 +99,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
-            'cols_required': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
-                         'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
-                         'income', 'eq_vuln']),
+            'cols_required': set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln']),
             'cols': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
                          'income', 'eq_vuln'])},
@@ -110,8 +111,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
-                         'geometry', 'to_node', 'length']),
+            'cols_required': set(['geometry','from_node','to_node', 'edge_id']),
             'cols': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
                          'geometry', 'to_node', 'length'])},
         'power fragility': {
@@ -261,7 +261,9 @@ def create_map_layer(df, name):
         return existing_map_layer
     
     if name == "intensity":
-        locs = np.array([df.geometry.y.to_list(), df.geometry.x.to_list(), df.im.to_list()]).transpose().tolist()
+        # Take the largest 500_000 values to display
+        df_limited = df.sort_values(by='im',ascending=False).head(500_000)
+        locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited.im.to_list()]).transpose().tolist()
         map_layer = ipyleaflet.Heatmap(locations=locs, radius = 10) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
@@ -282,7 +284,7 @@ def create_map_layer(df, name):
             x = node.geometry.x
             y = node.geometry.y
             marker_color = 'blue' if node['is_operational'] else 'red'
-            icon_name = 'fa-industry' if node['pwr_plant'] else 'bolt'
+            icon_name = 'fa-industry' if node['pwr_plant'] == 1 else 'bolt'
             icon_color = 'black'
             marker = Marker(icon=AwesomeIcon(
                         name=icon_name,
@@ -301,6 +303,52 @@ def create_map_layer(df, name):
     layers.value['layers'][name]['map_layer'].set(map_layer)
     layers.value['layers'][name]['force_render'].set(False)
     return map_layer
+
+def fast_transform_xy(T,x,y):
+    TI = rasterio.transform.IDENTITY.translation(0.5, 0.5)
+    TI_mat = np.array([[TI[0],TI[1],TI[2]],[TI[3],TI[4],TI[5]]])
+    T_mat = np.array([[T[0],T[1],T[2]],[T[3],T[4],T[5]]])
+    n = len(x)
+    first_input = np.ones((3,n))
+    first_input[0,:] = x
+    first_input[1,:] = y
+    first_pass = np.dot(TI_mat, first_input)
+    second_inp = np.concatenate([first_pass[[1]],first_pass[[0]],first_input[[2]]])    
+    second_pass = np.dot(T_mat, second_inp)
+    return second_pass[0], second_pass[1]
+
+def read_tiff(file_bytes):
+    byte_io = io.BytesIO(file_bytes)
+    with rasterio.open(byte_io) as src:
+        ims = src.read()
+    
+    current_crs = src.crs
+    target_crs = 'EPSG:4326'
+    transform, width, height = calculate_default_transform(current_crs, target_crs, src.width, src.height, *src.bounds)
+    ims_transformed = np.zeros((height, width))
+
+    print('start reproject ..........')
+    reproject(
+        source=ims[0],
+        destination=ims_transformed,
+        src_transform=src.transform,
+        src_crs=current_crs,
+        dst_transform=transform,
+        dst_crs=target_crs,
+        resampling=Resampling.nearest)
+
+
+    lon_pos, lat_pos = np.meshgrid(range(width),range(height))
+    print('start transform ..........')
+    #lon, lat = rasterio.transform.xy(transform,lat_pos.flatten(),lon_pos.flatten())
+    lon, lat = fast_transform_xy(transform,lat_pos.flatten(),lon_pos.flatten())
+    print('start dataframe ..........')
+    gdf = gpd.GeoDataFrame(ims_transformed.flatten(), 
+            geometry = gpd.points_from_xy(lon, lat, crs="EPSG:4326"))
+    gdf = gdf.rename(columns={0:'im'})
+    # return only the non-zero intensity measures
+    return gdf[gdf['im'] > 0]
+    #return gdf.sort_values(by='im',ascending=False).head(10000)
 
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count):
@@ -342,6 +390,8 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     extension = fileinfo['name'].split('.')[-1]
     if extension == 'xlsx':
         df = pd.read_excel(data)
+    elif extension in ['tiff','tif']:
+        df = read_tiff(data) 
     else:
         json_string = data.decode('utf-8')
         json_data = json.loads(json_string)
@@ -491,7 +541,7 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["Stamen"]["Watercolor"]
+    base_map = ipyleaflet.basemaps["Esri"]["WorldImagery"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 

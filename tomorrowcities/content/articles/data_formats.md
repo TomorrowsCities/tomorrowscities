@@ -49,5 +49,8 @@ where
 * **residents (integer)** stores the number of individual live in the building.
 * **expStr (string)** 
 
+### Intensity Measures
+Whether it is flood, debris or earthquake, every hazard map should contain at least two properties: a point geometry and intensity measure denotes by 'im'. The data can be provided via GeoTIFF or GeoJSON format. TIFF files should contain CRS 
+information so that the engine could map the coordinates to a common CRS to conduct calculations.
 
 
