@@ -7,3 +7,4 @@ matplotlib
 psycopg2-binary 
 scipy
 pandas
+rasterio

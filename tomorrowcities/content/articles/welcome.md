@@ -15,6 +15,13 @@ category:
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## What is New?
+* basemap is changed to ESri.WorldImagery to see the landscapes especially rivers.
+* utilities page is added.
+* Excel to GeoJSON converted is added to utilities page.
+* GeoTIFF support is added. 
+* When an intensity layer is added via GeoTIFF format, only the non-zero intensity measure are retained by the engine.
+* In map visualization of intensity layer, only the largest 500k points are displayed to render the map faster.
+* rasterio.transform.xy function is replaced with a faster local implementation.
 * Info box is added next to the map to see overall information and building/landuse details
 when clicked.
 * Implementation Capacity Score is added. If medium or low is selected, then building-level metrics is increased by 25% and 50%, respectively. If high is selected, there is no change in the metrics.
