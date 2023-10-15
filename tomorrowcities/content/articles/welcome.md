@@ -2,8 +2,8 @@
 author: huseyin.kaya
 title: Welcome!
 description: A Brief Introduction to Tomorrow's Cities Decision Support Environment (TCDSE)
-image: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2500&q=80
-thumbnail: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=350&q=80
+image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/welcome.jpg?raw=true
+thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/welcome.jpg?raw=true
 alt: "Welcome!"
 createdAt: 2023-10-10
 duration: 6 min read
@@ -11,10 +11,13 @@ category:
   - general
 ---
 
+[TOC]
+
 ## Tomorrow's Cities Decision Support Environment (TCDSE)
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## What is New?
+* **New** The engine now can parse, display vulnerability curves located on [Global Vulnerability Model Reposity](https://github.com/gem/global_vulnerability_model) maintained by [Global Earthquake Model Foundation)](https://www.globalquakemodel.org/gem). To see the new fatures, download one of the XML files in  [Global Vulnerability Model Reposity](https://github.com/gem/global_vulnerability_model) and drag and drop to [Engine](/engine). The engine will read all the vulnerability functions defined in the XML file and display them. 
 * basemap is changed to ESri.WorldImagery to see the landscapes especially rivers.
 * utilities page is added.
 * Excel to GeoJSON converted is added to utilities page.
