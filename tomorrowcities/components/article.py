@@ -7,6 +7,8 @@ from ..data import articles
 def ArticleCard(name):
     article = articles[name]
     with rv.Card(max_width="400px") as main:
+        with solara.Link(f"/docs/{name}"):
+            rv.Img(height="250", src=article.image_url)
         rv.CardTitle(children=[article.title])
         with rv.CardText():
             solara.Markdown(article.description)
