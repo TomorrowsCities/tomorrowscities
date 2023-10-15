@@ -1,15 +1,17 @@
 ---
 author: huseyin.kaya
 title: Metrics
-description: A brief introduction to metrics
-image: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2500&q=80
-thumbnail: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=350&q=80
+description: A brief introduction to impact metrics and implementation strategies
+image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/metrics.jpg?raw=true
+thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/metrics.jpg?raw=true
 alt: "Metrics"
 createdAt: 2023-10-10
 duration: 6 min read
 category:
   - general
 ---
+
+[TOC]
 
 ## Metrics
 There are seven fundamental impact metrics displayed in the web application. For each them there is an associcated threhold but for the sake of simplicity, it is not explicitly stated.

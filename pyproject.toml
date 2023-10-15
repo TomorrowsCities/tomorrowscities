@@ -19,7 +19,9 @@ dependencies = [
     "pandas",
     "networkx",
     "openpyxl",
-    "rasterio"
+    "rasterio",
+    "xml"
+
 ]
 
 [tool.hatch.version]
