@@ -14,6 +14,7 @@ class Article:
     markdown: str
     title: str
     description: str
+    image_url: str
 
 
 articles: Dict[str, Article] = {}
@@ -26,5 +27,8 @@ for file in (HERE.parent / "content/articles").glob("*.md"):
     yamltext = "\n".join(lines[frontmatter_start + 1 : frontmatter_end - 2])
     metadata = yaml.safe_load(yamltext)
     markdown = "\n".join(lines[frontmatter_end + 1 :])
-    articles[file.stem] = Article(markdown=markdown, title=metadata["title"], description=metadata["description"])
+    articles[file.stem] = Article(markdown=markdown, 
+                                  title=metadata["title"], 
+                                  description=metadata["description"],
+                                  image_url=metadata["image"])
 

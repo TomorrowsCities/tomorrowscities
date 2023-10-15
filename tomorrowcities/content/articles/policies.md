@@ -1,15 +1,17 @@
 ---
 author: huseyin.kaya
-title: Policies in a nutshell
-description: A brief introduction to policies
-image: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2500&q=80
-thumbnail: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=350&q=80
+title: Policies
+description: How to describe policies and their effect on impact metrics
+image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/policies.png?raw=true
+thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/policies.png?raw=true
 alt: "Policies"
 createdAt: 2023-10-10
 duration: 6 min read
 category:
   - general
 ---
+
+[TOC]
 
 ### Policy 1: Land and tenure security program
 When this policy applied, the code levels of the residential buildings are set to higher standards 
