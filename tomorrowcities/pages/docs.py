@@ -12,6 +12,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         with solara.Column() as main:
             solara.Title("TCDSE» Documentation")
             Overview()
+            solara.Text('Images by rawpixel.com')
         return main
     if name not in data.articles:
         return solara.Error(f"No such article: {name!r}")

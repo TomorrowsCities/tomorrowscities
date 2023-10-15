@@ -13,6 +13,7 @@ import numpy as np
 import rasterio 
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import io
+import xml
 import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
@@ -24,107 +25,118 @@ layers = solara.reactive({
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0},
-            'cols_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
-            'cols': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
+            'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
+            'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
             'render_order': 20,
             'map_info_tooltip': 'Number of landuse zones',
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
-            'cols': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
+            'attributes_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
+            'attributes': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
         'household': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of households',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
-            'cols':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
+            'attributes_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
+            'attributes':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of individuals',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
-            'cols': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
+            'attributes_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
+            'attributes': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
         'intensity': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of intensity measurements',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['geometry','im']),
-            'cols': set(['geometry','im'])},
+            'attributes_required': set(['geometry','im']),
+            'attributes': set(['geometry','im'])},
         'fragility': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of records in fragility configuration',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
-            'cols': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
+            'attributes_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
+            'attributes': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
         'vulnerability': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of records in vulnerabilty configuration',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
-            'cols': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
+            'attributes_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
+            'attributes': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
+        'gem_vulnerability': {
+            'render_order': 0,
+            'data': solara.reactive(None),
+            'map_info_tooltip': 'Number of functions in gem vulnerabilty',
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'extra_cols': {},
+            'attributes_required': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
+            'attributes': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
+        },
         'power nodes': {
             'render_order': 90,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of electrical power nodes',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
-            'cols_required': set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln']),
-            'cols': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
+            'attributes_required': set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln']),
+            'attributes': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
                          'income', 'eq_vuln'])},
         'power edges': {
             'render_order': 80,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of connections in power grid',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['geometry','from_node','to_node', 'edge_id']),
-            'cols': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
+            'attributes_required': set(['geometry','from_node','to_node', 'edge_id']),
+            'attributes': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
                          'geometry', 'to_node', 'length'])},
         'power fragility': {
             'render_order': 0,
-            'df': solara.reactive(None),
+            'data': solara.reactive(None),
             'map_info_tooltip': 'Number of records in fragility configuration for power',
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'extra_cols': {},
-            'cols_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+            'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete']),
-            'cols': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+            'attributes': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])}
             },
     'center': solara.reactive((41.01,28.98)),
@@ -350,6 +362,138 @@ def read_tiff(file_bytes):
     return gdf[gdf['im'] > 0]
     #return gdf.sort_values(by='im',ascending=False).head(10000)
 
+
+def read_gem_xml(data: [bytes]):
+    content_as_string = data.decode('utf-8')
+    content_as_string = content_as_string.replace('\n','')
+    dom = xml.dom.minidom.parseString(content_as_string)
+
+    def getText(node):
+        nodelist = node.childNodes
+        rc = []
+        for node in nodelist:
+            if node.nodeType == node.TEXT_NODE:
+                rc.append(node.data)
+        return ''.join(rc)
+
+    d = dict()
+    node = dom.getElementsByTagName('vulnerabilityModel')[0]
+    for i in range(node.attributes.length):
+        d[node.attributes.item(i).name] = node.attributes.item(i).value 
+
+    d['description'] = getText(dom.getElementsByTagName('description')[0])
+
+
+    d['vulnerabilityFunctions'] = []
+    for node in dom.getElementsByTagName('vulnerabilityFunction'):
+        v = dict()
+        for i in range(node.attributes.length):
+            v[node.attributes.item(i).name] = node.attributes.item(i).value 
+        imls = node.getElementsByTagName('imls')[0]
+        v['imt'] = imls.getAttribute('imt')
+        v['imls'] = np.fromstring(getText(imls),dtype=float, sep=' ')
+        v['meanLRs'] = np.fromstring(getText(node.getElementsByTagName('meanLRs')[0]),dtype=float, sep=' ')
+        v['covLRs'] = np.fromstring(getText(node.getElementsByTagName('covLRs')[0]),dtype=float, sep=' ')
+        d['vulnerabilityFunctions'].append(v)
+
+    return d
+
+
+@solara.component
+def VulnerabilityFunctionDisplayer(vuln_func):
+    vuln_func, _ = solara.use_state_or_update(vuln_func)
+
+    x = vuln_func['imls']
+    y = vuln_func['meanLRs']
+    s = vuln_func['covLRs']
+    xlabel = vuln_func['imt']
+   
+    options = { 
+        'title': {
+            'text': vuln_func['id'],
+            'left': 'center'},
+        'tooltip': {
+            'trigger': 'axis',
+            'axisPointer': {
+                'type': 'cross'
+            }
+        },
+        #'legend': {'data': ['Covariance','Mean']},
+        'xAxis': {
+            'axisTick': {
+                'alignWithLabel': True
+            },
+            'data': list(x),
+            'name': xlabel,
+            'nameLocation': 'middle',
+            'nameTextStyle': {'verticalAlign': 'top','padding': [10, 0, 0, 0]}
+        },
+        'yAxis': [
+            {
+                'type': 'value',
+                'name': "Covariance",
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'green'}}
+            },
+            {
+                'type': 'value',
+                'name': "Mean",
+                'position': 'right',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'blue'}}
+            },
+
+        ],
+        'series': [
+            {
+            'name': 'Mean',
+            'data': list(y),
+            'type': 'line',
+            'yAxisIndex': 1
+            },
+            {
+            'name': 'Covariance',
+            'data': list(s),
+            'type': 'line',
+            'yAxisIndex': 0
+            },
+        ],
+    }
+    solara.FigureEcharts(option=options) 
+
+@solara.component
+def VulnerabiliyDisplayer(vuln_xml: dict):
+    vuln_xml, set_vuln_xml = solara.use_state_or_update(vuln_xml)
+
+    func_labels = [f'{v["imt"]}---{v["id"]}' for v in vuln_xml['vulnerabilityFunctions']]
+    func_label, set_func_label  = solara.use_state_or_update(func_labels[0])
+
+    with solara.GridFixed(columns=2):
+        with solara.Column(gap="1px"):
+            solara.Text('Description:',style={'fontWeight': 'bold'})
+            with solara.Row(justify="left"):
+                solara.Text(f'{vuln_xml["description"]}')   
+            with solara.GridFixed(columns=2,row_gap="1px"):
+                solara.Text('Asset Category:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{vuln_xml["assetCategory"]}')
+                solara.Text('Loss Category:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{vuln_xml["lossCategory"]}')
+                solara.Text('# of vulnerability functions:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{len(vuln_xml["vulnerabilityFunctions"])}')      
+            solara.Text('Select vulnerability function:',style={'fontWeight': 'bold'})
+            solara.Select(label='',value=func_label, values=func_labels,
+                        on_value=set_func_label)
+        with solara.Column():
+            VulnerabilityFunctionDisplayer(vuln_xml['vulnerabilityFunctions'][func_labels.index(func_label)])
+
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count):
     value, set_value = solara.use_state_or_update(value)
@@ -386,42 +530,51 @@ def MetricWidget(name, description, value, max_value, render_count):
 
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
-    data = fileinfo['data']
+    data_array = fileinfo['data']
     extension = fileinfo['name'].split('.')[-1]
     if extension == 'xlsx':
-        df = pd.read_excel(data)
+        data = pd.read_excel(data_array)
     elif extension in ['tiff','tif']:
-        df = read_tiff(data) 
+        data = read_tiff(data_array)
+    elif extension.lower() in ['xml']:
+        data = read_gem_xml(data_array)
     else:
-        json_string = data.decode('utf-8')
+        json_string = data_array.decode('utf-8')
         json_data = json.loads(json_string)
         if "features" in json_data.keys():
-            df = gpd.GeoDataFrame.from_features(json_data['features'])
+            data = gpd.GeoDataFrame.from_features(json_data['features'])
         else:
-            df = pd.read_json(json_string)
+            data = pd.read_json(json_string)
 
-    df.columns = df.columns.str.lower()
+    if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+        data.columns = data.columns.str.lower()
+        attributes = set(data.columns)
+    elif isinstance(data, dict):
+        attributes = set(data.keys())
+    else:
+        return (None, None)
+
 
     # in the first pass, look for exact column match
     name = None
     for layer_name, layer in layers.value['layers'].items():
-        if layer['cols'] == set(df.columns):
+        if layer['attributes'] == attributes:
             name = layer_name
             break
     # if not, check only the required columns
     if name is None:
         for layer_name, layer in layers.value['layers'].items():
-            if layer['cols_required'].issubset(set(df.columns)):
+            if layer['attributes_required'].issubset(attributes):
                 name = layer_name
-                logging.debug('There are extra columns', set(df.columns) - layer['cols_required'])
+                logging.debug('There are extra columns', attributes - layer['attributes_required'])
                 break
     
 
     # Inject columns
-    if name is not None:
+    if name is not None and (isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame)):
         for col, val in layers.value['layers'][name]['extra_cols'].items():
-            df[col] = val
-    return (name, df)
+            data[col] = val
+    return (name, data)
 
 
 @solara.component
@@ -433,15 +586,21 @@ def FileDropZone():
     def load():
         if fileinfo is not None:
             print('processing file')
-            name, df = import_data(fileinfo)
-            if name is not None and df is not None:
-                layers.value['layers'][name]['df'].set(df)
-                layers.value['selected_layer'].set(name)
-                layers.value['layers'][name]['visible'].set(True)
-                layers.value['layers'][name]['force_render'].set(True)
-                if  "geometry" in list(df.columns):
-                    center = (df.geometry.centroid.y.mean(), df.geometry.centroid.x.mean())
-                    layers.value['center'].set(center)
+            name, data = import_data(fileinfo)
+            if name is not None and data is not None:
+                if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(True)
+                    layers.value['layers'][name]['force_render'].set(True)
+                    if  "geometry" in list(data.columns):
+                        center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                        layers.value['center'].set(center)
+                elif isinstance(data, dict):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(True)
+                    layers.value['layers'][name]['force_render'].set(True)
             else:
                 return False
         return True
@@ -480,7 +639,7 @@ def FileDropZone():
 @solara.component
 def LayerDisplayer():
     print(f'{layers.value["bounds"].value}')
-    nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['df'].value is not None}
+    nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
     nonempty_layer_names = list(nonempty_layers.keys())
     selected = layers.value['selected_layer'].value
     def set_selected(s):
@@ -491,22 +650,24 @@ def LayerDisplayer():
     if selected is None and len(nonempty_layer_names) > 0:
         set_selected(nonempty_layer_names[0])
     if selected is not None:
-        df = nonempty_layers[selected]['df'].value
-        if "geometry" in df.columns:
-            ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-            df_filtered = df.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
-            solara.DataFrame(df_filtered)
-        else:
-            solara.DataFrame(df)
-        if selected == "building":
-            file_object = df.to_json()
-            with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
-                solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-
+        data = nonempty_layers[selected]['data'].value
+        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+            if "geometry" in data.columns:
+                ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
+                df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                solara.DataFrame(df_filtered)
+            else:
+                solara.DataFrame(data)
+            if selected == "building":
+                file_object = data.to_json()
+                with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
+                    solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+        if selected == 'gem_vulnerability':
+            VulnerabiliyDisplayer(data)
 
 @solara.component
 def MetricPanel():
-    building = layers.value['layers']['building']['df'].value
+    building = layers.value['layers']['building']['data'].value
     filtered_metrics = {name: 0 for name in layers.value['metrics'].keys()}
     if building is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
@@ -547,14 +708,13 @@ def MapViewer():
 
     render_order = [l['render_order'] for _, l in layers.value['layers'].items()]
     for _, (layer_name, layer) in sorted(zip(render_order,layers.value['layers'].items())):
-        df = layer['df'].value
-        if df is None:
-            continue
-        # we have something to display on map
-        if  "geometry" in list(df.columns) and layer['visible'].value:
-            map_layer = create_map_layer(df, layer_name)
-            if map_layer is not None:
-                map_layers.append(map_layer)
+        df = layer['data'].value
+        if isinstance(df, gpd.GeoDataFrame):
+            # we have something to display on map
+            if  "geometry" in list(df.columns) and layer['visible'].value:
+                map_layer = create_map_layer(df, layer_name)
+                if map_layer is not None:
+                    map_layers.append(map_layer)
 
      
     ipyleaflet.Map.element(
@@ -587,7 +747,7 @@ def ExecutePanel():
         execute_error.set("")
 
     def is_ready_to_run(infra, hazard):
-        existing_layers = set([name for name, l in layers.value['layers'].items() if l['df'].value is not None])
+        existing_layers = set([name for name, l in layers.value['layers'].items() if l['data'].value is not None])
         missing = []
 
         if hazard == "earthquake":
@@ -611,10 +771,10 @@ def ExecutePanel():
 
 
         def execute_infra():
-            nodes = layers.value['layers']['power nodes']['df'].value
-            edges = layers.value['layers']['power edges']['df'].value
-            intensity = layers.value['layers']['intensity']['df'].value
-            power_fragility = layers.value['layers']['power fragility']['df'].value
+            nodes = layers.value['layers']['power nodes']['data'].value
+            edges = layers.value['layers']['power edges']['data'].value
+            intensity = layers.value['layers']['intensity']['data'].value
+            power_fragility = layers.value['layers']['power fragility']['data'].value
 
 
             eq_ds, is_damaged, is_operational = compute_power_infra(nodes, 
@@ -629,14 +789,14 @@ def ExecutePanel():
             return nodes
 
         def execute_building():
-            landuse = layers.value['layers']['landuse']['df'].value
-            buildings = layers.value['layers']['building']['df'].value
-            household = layers.value['layers']['household']['df'].value
-            individual = layers.value['layers']['individual']['df'].value
-            intensity = layers.value['layers']['intensity']['df'].value
+            landuse = layers.value['layers']['landuse']['data'].value
+            buildings = layers.value['layers']['building']['data'].value
+            household = layers.value['layers']['household']['data'].value
+            individual = layers.value['layers']['individual']['data'].value
+            intensity = layers.value['layers']['intensity']['data'].value
 
-            fragility = layers.value['layers']['fragility']['df'].value
-            vulnerability = layers.value['layers']['vulnerability']['df'].value
+            fragility = layers.value['layers']['fragility']['data'].value
+            vulnerability = layers.value['layers']['vulnerability']['data'].value
 
             policies = [p['id'] for id, p in layers.value['policies'].items() if p['applied'].value]
 
@@ -676,10 +836,10 @@ def ExecutePanel():
             
             if 'power' in infra:
                 nodes = execute_infra()
-                layers.value['layers']['power nodes']['df'].set(nodes)
+                layers.value['layers']['power nodes']['data'].set(nodes)
             if 'building' in infra:
                 buildings = execute_building()
-                layers.value['layers']['building']['df'].set(buildings)
+                layers.value['layers']['building']['data'].set(buildings)
 
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
@@ -751,13 +911,17 @@ def MapInfo():
     if layers.value['map_info_button'].value == "summary":
         with solara.GridFixed(columns=2,row_gap="1px"):
             for layer_name,layer in layers.value['layers'].items():
+                data = layer['data'].value
                 with solara.Tooltip(layer['map_info_tooltip']):
                     solara.Text(f'{layer_name}')
                 with solara.Row(justify="right"):
-                    if layer['df'].value is None:
+                    if data is None:
                         solara.Text('0')
                     else:
-                        solara.Text(f"{len(layer['df'].value)}")
+                        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+                            solara.Text(f"{len(data)}")
+                        elif isinstance(data, dict) and layer_name == 'gem_vulnerability':
+                            solara.Text(f"{len(data['vulnerabilityFunctions'])}")
     else:
         with solara.GridFixed(columns=2,row_gap="1px"):
             for key, value in layers.value['map_info_detail'].value.items():
