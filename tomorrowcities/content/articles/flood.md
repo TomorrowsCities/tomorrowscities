@@ -1,15 +1,17 @@
 ---
 author: huseyin.kaya
-title: Flood Vulnerability Analysis
-description: Methodologies in flood damage assessment
-image: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=2500&q=80
-thumbnail: https://images.unsplash.com/photo-1429041966141-44d228a42775?ixid=MXwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHw%3D&ixlib=rb-1.2.1&auto=format&fit=crop&w=350&q=80
+title: Flood
+description: How to define flood vulnerabiities and conduct damage assessment 
+image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/flood.png?raw=true
+thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/flood.png?raw=true
 alt: "Flood vulnerability analysis"
 createdAt: 2023-10-10
 duration: 6 min read
 category:
   - general
 ---
+
+[TOC]
 
 The core component used in flood vulnerability analysis is to generate a mapping between water levels and relative damage on the structure. The shape of the curve depends on the typology of the structure, material type, height, code levels and many other features.
 
