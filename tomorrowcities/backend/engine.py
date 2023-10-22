@@ -276,6 +276,55 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             idx = gdf_building_intensity['rnd'] < 0.80
             gdf_building_intensity.loc[idx,'occupancy'] = 'Agri'
 
+    for pid in [11, 12, 19]:
+        if pid in policies:
+            gdf_building_intensity['temp_rand'] = np.random.random((len(gdf_building_intensity),1))
+            idx = gdf_building_intensity['temp_rand'] < 0.50
+            gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+            gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+            if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+                max_height = gdf_building_intensity['height'].max()
+                gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
+                gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s') 
+
+    for pid in [14, 15, 20]:
+        if pid in policies:
+            gdf_building_intensity['temp_rand'] = np.random.random((len(gdf_building_intensity),1))
+            idx = gdf_building_intensity['temp_rand'] < 0.10
+            gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+            gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+            if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+                max_height = gdf_building_intensity['height'].max()
+                gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
+                gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s') 
+
+    if 16 in policies:
+        idx = gdf_building_intensity['specialfac'] != 0
+        gdf_building_intensity.loc[idx, 'code_level'] == 'HC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+6))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 17 in policies:
+        idx = (gdf_building_intensity['occupancy'] == 'Edu') | (gdf_building_intensity['occupancy'] == 'Hea') 
+        gdf_building_intensity.loc[idx, 'code_level'] == 'HC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+6))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
+    if 18 in policies:
+        idx = ((gdf_building_intensity['avgincome'] == 'lowIncomeA') |\
+                (gdf_building_intensity['avgincome'] == 'lowIncomeA') &\
+                (gdf_building_intensity['rnd'] < 0.50))
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
+        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
+        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
+            max_height = gdf_building_intensity['height'].max()
+            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
+            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
+
     lr = (gdf_building_intensity['height'] <= 4)
     mr = (gdf_building_intensity['height'] >= 5) & (gdf_building_intensity['height'] <= 8)
     hr = (gdf_building_intensity['height'] >= 9)
@@ -394,6 +443,11 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, p
         # For flood, there are only two states: 0 or 1.
         # So threshold is set to 0.
         thresholds = {f'metric{id}': DS_NO for id in range(8)}
+
+
+    if 12 in policies:
+        for m in [2,3,4,5,7]:
+            thresholds[f'metric{m}'] += 1
 
     # metric 1 number of unemployed workers in each building
     df_workers_per_building = df_workers[df_workers['ds'] > thresholds['metric1']][['individ','hhid','ds']].merge(

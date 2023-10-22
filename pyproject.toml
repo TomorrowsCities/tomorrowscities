@@ -20,8 +20,8 @@ dependencies = [
     "networkx",
     "openpyxl",
     "rasterio",
-    "xml"
-
+    "xml",
+    "boto3",
 ]
 
 [tool.hatch.version]

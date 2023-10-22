@@ -1,4 +1,4 @@
-solara
+solara=1.22.0
 geopandas
 ipyleaflet
 plotly
@@ -9,3 +9,4 @@ scipy
 pandas
 rasterio
 xml
+boto3
