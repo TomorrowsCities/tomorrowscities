@@ -1,0 +1,6 @@
+header {
+    background-image: url('/static/public/tomorrows-cities-logo-header.svg'); /* Replace 'your-image.jpg' with the path to your image file */
+    background-position: left center; /* Center the background image */
+    background-repeat: no-repeat; /* Prevent image from repeating */
+    height: 200px; /* Set a specific height for the header */
+}
