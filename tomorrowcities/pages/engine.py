@@ -16,11 +16,17 @@ import io
 import xml
 import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
-
+import pickle
+import datetime
+from . import storage, storage_control, storage_disconnect
 from ..backend.engine import compute, compute_power_infra, calculate_metrics
 
 
+
 layers = solara.reactive({
+    'infra': solara.reactive(["building"]),
+    'hazard': solara.reactive("flood"),
+    'datetime_analysis': datetime.datetime.utcnow(),
     'layers' : {
         'building': {
             'render_order': 50,
@@ -143,6 +149,7 @@ layers = solara.reactive({
     'selected_layer' : solara.reactive(None),
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
+    'selected_policies': solara.reactive([]),
     'policies': {
         '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
         '2': {'id':2, 'label': 'P2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
@@ -154,6 +161,16 @@ layers = solara.reactive({
         '8': {'id':8, 'label': 'P8', 'description': 'Emergency cash transfers to vulnerable households', 'applied': solara.reactive(False)},
         '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and rivers cleaning program ', 'applied': solara.reactive(False)},
         '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
+        '11': {'id':11, 'label': 'I1', 'description': 'DRR-oriented zoning and urban transformation', 'applied': solara.reactive(False)},
+        '12': {'id':12, 'label': 'I2', 'description': 'Increased monitoring and supervision on new constructions in terms of disaster-resilience', 'applied': solara.reactive(False)},
+        '13': {'id':13, 'label': 'I3', 'description': 'Taking social equality into consideration in the making of urbanisation and DRR policies', 'applied': solara.reactive(False)},
+        '14': {'id':14, 'label': 'I4', 'description': 'Establishing financial supports to incentivise the public, which can be referred to as "policy financing"', 'applied': solara.reactive(False)},
+        '15': {'id':15, 'label': 'I5', 'description': 'Awareness raising on disasters and disaster risk reduction', 'applied': solara.reactive(False)},
+        '16': {'id':16, 'label': 'I6', 'description': 'Strengthening of Büyükçekmece bridge against earthquake and tsunami risks', 'applied': solara.reactive(False)},
+        '17': {'id':17, 'label': 'I7', 'description': 'Strengthening of public buildings (especially schools) against earthquake', 'applied': solara.reactive(False)},
+        '18': {'id':18, 'label': 'I8', 'description': 'Increased financial assistance for people whose apartments are under urban transformation', 'applied': solara.reactive(False)},
+        '19': {'id':19, 'label': 'I9', 'description': 'Increased monitoring and supervision of building stock', 'applied': solara.reactive(False)},
+        '20': {'id':20, 'label': 'I10', 'description': 'Improvement of infrastructure', 'applied': solara.reactive(False)},
     },
     'implementation_capacity_score': solara.reactive("high"),
     'map_info_button': solara.reactive("summary"),
@@ -166,6 +183,80 @@ layers = solara.reactive({
         "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},}})
+
+
+def assign_nested_value(dictionary, keys, value):
+    for key in keys[:-1]:
+        dictionary = dictionary.setdefault(key, {})
+    dictionary[keys[-1]] = value
+
+def get_nested_value(dictionary, keys):
+    for key in keys[:-1]:
+        dictionary = dictionary[key]
+    return dictionary[keys[-1]]
+
+def clone_app_state(dictionary):
+    dict_pars = []
+    stack = [((), dictionary)]
+    while stack:
+        path, current_dict = stack.pop()
+        for key, value in current_dict.items():
+            if isinstance(value, dict):
+                stack.append((path + (key,), value))
+            else:
+                keys = list(path + (key,))
+                if isinstance(value,solara.toestand.Reactive):
+                    value = value.value
+                if keys[-1] != 'map_layer':
+                    dict_pars.append((keys, value))
+    
+    new_dict = dict()
+    for keys, value in dict_pars:
+        assign_nested_value(new_dict, keys, value)
+    return new_dict
+
+def load_from_state(source_dict):
+    stack = [((), layers.value)]
+    while stack:
+        path, current_dict = stack.pop()
+        for key, value in current_dict.items():
+            if isinstance(value, dict):
+                stack.append((path + (key,), value))
+            else:
+                keys = list(path + (key,))
+                if  keys[-1] != 'map_layer':
+                    src_value = get_nested_value(source_dict, keys)
+                    if isinstance(value,solara.toestand.Reactive):
+                        assign_nested_value(layers.value, keys, solara.reactive(src_value))
+                    else:
+                        assign_nested_value(layers.value, keys, src_value)
+         
+def create_metadata(data):
+    m = dict()
+    m['hazard'] = data['hazard']
+    m['infra'] = data['infra']
+    m['datetime_analysis'] = data['datetime_analysis']
+    m['datetime_upload'] = datetime.datetime.utcnow()
+    return m
+    
+def save_app_state():
+    data = clone_app_state(layers.value)
+    metadata = create_metadata(data)
+    print('metadata', metadata)
+    date_string = metadata['datetime_upload'].strftime('%Y%m%d%H%M%S')
+    basename = f'TCDSE_SESSION_{date_string}_PKL'
+    for ext, var in zip(['data','metadata'],[data,metadata]):
+        filename = f'{basename}.{ext}'
+        with open(filename, 'wb') as fileObj:
+            pickle.dump(var, fileObj)
+        if storage.value is not None:
+            print('uploading file', filename)
+            storage.value.upload_file(filename)
+        
+def load_app_state():
+    with open('app_state.obj', 'rb') as fileObj:
+        loaded_state = pickle.load(fileObj)
+        load_from_state(loaded_state)
 
 
 def building_colors(feature):
@@ -702,7 +793,7 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["Esri"]["WorldImagery"]
+    base_map = ipyleaflet.basemaps["Stamen"]["Watercolor"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 
@@ -733,9 +824,7 @@ def MapViewer():
         )
         
 @solara.component
-def ExecutePanel():
-    infra, set_infra = solara.use_state(["building"])
-    hazard, set_hazard = solara.use_state("flood")
+def ExecutePanel(): 
 
 
     execute_counter, set_execute_counter = solara.use_state(0)
@@ -798,7 +887,7 @@ def ExecutePanel():
             fragility = layers.value['layers']['fragility']['data'].value
             vulnerability = layers.value['layers']['vulnerability']['data'].value
 
-            policies = [p['id'] for id, p in layers.value['policies'].items() if p['applied'].value]
+            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
             print('policies',policies)
             df_bld_hazard = compute(
@@ -807,8 +896,8 @@ def ExecutePanel():
                 household, 
                 individual,
                 intensity,
-                fragility if hazard == "earthquake" else vulnerability, 
-                hazard,policies=policies)
+                fragility if layers.value['hazard'].value == "earthquake" else vulnerability, 
+                layers.value['hazard'].value,policies=policies)
             buildings['ds'] = list(df_bld_hazard['ds'])
 
             implementation_capacity_score = layers.value['implementation_capacity_score'].value
@@ -819,7 +908,7 @@ def ExecutePanel():
             else:
                 capacity = 1
             computed_metrics, df_metrics = calculate_metrics(buildings, household, 
-                                                             individual, hazard, policies=policies,capacity=capacity)
+                                                             individual, layers.value['hazard'].value, policies=policies,capacity=capacity)
         
             print(computed_metrics)
             for metric in df_metrics.keys():
@@ -830,23 +919,25 @@ def ExecutePanel():
             return buildings
 
         if execute_counter > 0 :
-            is_ready, missing = is_ready_to_run(infra, hazard)
+            is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
             if not is_ready:
                 raise Exception(f'Missing {missing}')
             
-            if 'power' in infra:
+            if 'power' in layers.value['infra'].value:
                 nodes = execute_infra()
                 layers.value['layers']['power nodes']['data'].set(nodes)
-            if 'building' in infra:
+            if 'building' in layers.value['infra'].value:
                 buildings = execute_building()
                 layers.value['layers']['building']['data'].set(buildings)
 
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
-            if 'power' in infra:
+            if 'power' in layers.value['infra'].value:
                 layers.value['layers']['power nodes']['force_render'].set(True)
-            if 'building' in infra:
+            if 'building' in layers.value['infra'].value:
                 layers.value['layers']['building']['force_render'].set(True)
+
+            layers.value['datetime_analysis'] =  datetime.datetime.utcnow()
 
             
 
@@ -856,20 +947,24 @@ def ExecutePanel():
     with solara.GridFixed(columns=2):
         solara.Text("Infrastructure Type")
         with solara.Row(justify="right"):
-            solara.ToggleButtonsMultiple(value=infra, on_value=set_infra, values=["building","power"])
+            solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power"])
         solara.Text("Hazard")
         with solara.Row(justify="right"):
-            solara.ToggleButtonsSingle(value=hazard, on_value=set_hazard, values=["earthquake","flood"])
+            solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=["earthquake","flood"])
         with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
             solara.Text("Implementation Capacity Score")
         with solara.Row(justify="right"):
             solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
                                 values=['low','medium','high'],
                                 on_value=layers.value['implementation_capacity_score'].set)
-    PolicyPanel()
+    
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
-                  disabled=execute_btn_disabled)
+                disabled=execute_btn_disabled)
+    PolicyPanel()
+
+    if storage.value is not None:
+        solara.Button("Save Session",on_click=save_app_state)
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
         execute_error.set(execute_error.value + str(result.error))
@@ -886,15 +981,14 @@ def ExecutePanel():
         set_execute_btn_disabled(False)
         solara.ProgressLinear(value=False)
 
+
 @solara.component
 def PolicyPanel():
-    with solara.GridFixed(columns=6):
-        for policy_key, policy in layers.value['policies'].items():
-            with solara.Tooltip(tooltip=policy['description']):
-                solara.Checkbox(label=policy['label'], 
-                                value=policy['applied'])
-        with solara.Link("/docs/policies"):
-            solara.Button(icon_name="mdi-help-circle-outline", icon=True)
+    all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
+    with solara.Row():
+        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False)
+
+
 
 
 @solara.component
