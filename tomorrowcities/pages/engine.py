@@ -18,7 +18,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
-from . import storage, storage_control, storage_disconnect
+from .settings import storage
 from ..backend.engine import compute, compute_power_infra, calculate_metrics
 
 
@@ -793,7 +793,7 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["Stamen"]["Watercolor"]
+    base_map = ipyleaflet.basemaps["Esri"]["WorldStreetMap"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 
