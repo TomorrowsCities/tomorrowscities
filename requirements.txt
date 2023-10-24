@@ -1,4 +1,4 @@
-solara=1.22.0
+solara
 geopandas
 ipyleaflet
 plotly
@@ -8,5 +8,5 @@ psycopg2-binary
 scipy
 pandas
 rasterio
-xml
 boto3
+cryptography
