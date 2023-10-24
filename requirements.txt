@@ -10,3 +10,4 @@ pandas
 rasterio
 boto3
 cryptography
+networkx
