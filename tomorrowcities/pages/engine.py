@@ -895,16 +895,15 @@ def ExecutePanel():
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
-            # to added anywhere after importing household layer
+            # Find most frequent income in a building
             freqincome = household.groupby('bldid')['income'].value_counts().reset_index(name='v')
             freqincome = freqincome.drop_duplicates('bldid')[['bldid','income']]
             freqincome.rename(columns = {'income':'freqincome'}, inplace = True) 
-            # ...
 
             # to be added to final buildings gdf
             if 'freqincome' in buildings.columns:
                 buildings.drop(columns=['freqincome'], inplace=True)
-            buildings = freqincome.merge(buildings, on='bldid')
+            buildings= buildings.merge(freqincome,on='bldid')
 
             print('policies',policies)
             df_bld_hazard = compute(
