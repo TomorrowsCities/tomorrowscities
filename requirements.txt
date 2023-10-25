@@ -11,3 +11,4 @@ rasterio
 boto3
 cryptography
 networkx
+openpyxl
