@@ -746,15 +746,15 @@ def LayerDisplayer():
             if "geometry" in data.columns:
                 ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
                 df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
-                solara.CrossFilterReport(df_filtered, classes=["py-2"])
-                solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
-                solara.CrossFilterDataFrame(df=df_filtered)
-                #solara.DataFrame(df_filtered)
+                #solara.CrossFilterReport(df_filtered, classes=["py-2"])
+                #solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
+                #solara.CrossFilterDataFrame(df=df_filtered)
+                solara.DataFrame(df_filtered)
             else:
-                solara.CrossFilterReport(data, classes=["py-2"])
-                solara.CrossFilterSelect(data, data.columns[0])
-                solara.CrossFilterDataFrame(df=data)
-                #solara.DataFrame(data)
+                #solara.CrossFilterReport(data, classes=["py-2"])
+                #solara.CrossFilterSelect(data, data.columns[0])
+                #solara.CrossFilterDataFrame(df=data)
+                solara.DataFrame(data)
             if selected == "building":
                 file_object = data.to_json()
                 with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
