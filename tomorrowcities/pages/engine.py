@@ -35,7 +35,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
-            'extra_cols': {'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0},
+            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0},
             'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
@@ -746,9 +746,15 @@ def LayerDisplayer():
             if "geometry" in data.columns:
                 ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
                 df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
-                solara.DataFrame(df_filtered)
+                solara.CrossFilterReport(df_filtered, classes=["py-2"])
+                solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
+                solara.CrossFilterDataFrame(df=df_filtered)
+                #solara.DataFrame(df_filtered)
             else:
-                solara.DataFrame(data)
+                solara.CrossFilterReport(data, classes=["py-2"])
+                solara.CrossFilterSelect(data, data.columns[0])
+                solara.CrossFilterDataFrame(df=data)
+                #solara.DataFrame(data)
             if selected == "building":
                 file_object = data.to_json()
                 with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
@@ -889,6 +895,12 @@ def ExecutePanel():
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
+            freqincome = household.groupby('bldid')['income'].value_counts().reset_index(name='v')
+            freqincome = freqincome.drop_duplicates('bldid')[['bldid','income']]
+            freqincome.rename(columns = {'income':'freqincome'}, inplace = True) 
+            buildings['freqincome'] = freqincome.merge(buildings['bldid'], on='bldid')['freqincome']
+
+
             print('policies',policies)
             df_bld_hazard = compute(
                 landuse,
@@ -961,10 +973,9 @@ def ExecutePanel():
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
-    PolicyPanel()
-
     if storage.value is not None:
         solara.Button("Save Session",on_click=save_app_state)
+    PolicyPanel()
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
         execute_error.set(execute_error.value + str(result.error))
