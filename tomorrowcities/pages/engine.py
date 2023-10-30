@@ -8,18 +8,19 @@ os.environ['USE_PYGEOS'] = '0'
 import geopandas as gpd
 from typing import Tuple, Optional
 import ipyleaflet
-from ipyleaflet import AwesomeIcon, Marker
+from ipyleaflet import AwesomeIcon, CircleMarker, Marker
 import numpy as np
 import rasterio 
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import io
+from shapely.geometry import Point, Polygon
 import xml
 import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
 from .settings import storage
-from ..backend.engine import compute, compute_power_infra, calculate_metrics
+from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
 
 
 
@@ -35,7 +36,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
-            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0},
+            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,'nearest_road_node': None},
             'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
@@ -143,7 +144,39 @@ layers = solara.reactive({
             'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete']),
             'attributes': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])}
+                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])},
+        'road nodes': {
+            'render_order': 90,
+            'data': solara.reactive(None),
+            'map_info_tooltip': '# nodes in road network',
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'extra_cols': {},
+            'attributes_required': set(['geometry', 'node_id']),
+            'attributes': set(['geometry', 'node_id'])},
+        'road edges': {
+            'render_order': 80,
+            'data': solara.reactive(None),
+            'map_info_tooltip': '# edges in road network',
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'extra_cols': {'ds': 0,'is_damaged': False},
+            'attributes_required': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length']),
+            'attributes': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])},
+        'road fragility': {
+            'render_order': 0,
+            'data': solara.reactive(None),
+            'map_info_tooltip': 'Road fragility records',
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'extra_cols': {},
+            'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'dispersion']),
+            'attributes': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'dispersion'])}
             },
     'center': solara.reactive((41.01,28.98)),
     'selected_layer' : solara.reactive(None),
@@ -183,7 +216,6 @@ layers = solara.reactive({
         "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},}})
-
 
 def assign_nested_value(dictionary, keys, value):
     for key in keys[:-1]:
@@ -267,12 +299,30 @@ def building_colors(feature):
 def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
-    layers.value['map_info_force_render'].set(True)  
+
+def road_node_click_handler(event=None, feature=None, id=None, properties=None):
+    print(properties)
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
+
+def road_edge_colors(feature):
+    is_damaged = feature['properties']['is_damaged'] 
+    if feature['properties']['bridge']:
+        color = 'black'
+    else:
+        color = 'blue'
+    return {'color': 'red' if is_damaged else color}
+
+def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
+    print(properties)
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
+    #layers.value['map_info_force_render'].set(True)  
 
 def landuse_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
-    layers.value['map_info_force_render'].set(True)  
+    #layers.value['map_info_force_render'].set(True)  
 
 def landuse_colors(feature):
     print(feature)
@@ -380,7 +430,24 @@ def create_map_layer(df, name):
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=building_colors)
         map_layer.on_click(landuse_click_handler)
-    
+    elif name == "road edges":
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+            hover_style={'color': 'orange'},
+            style_callback=road_edge_colors)
+        map_layer.on_click(road_edge_click_handler)
+    elif name == "road nodes":
+        df_squares = df.copy()
+        half_side = 0.0002
+        df_squares['geometry']  = df['geometry'].apply(lambda point: Polygon([
+                    (point.x - half_side, point.y - half_side),
+                    (point.x + half_side, point.y - half_side),
+                    (point.x + half_side, point.y + half_side),
+                    (point.x - half_side, point.y + half_side)
+                ]))
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df_squares.to_json()),
+            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 0.8, 'weight': 1},
+            hover_style={'color': 'orange', 'dashArray': '0', 'fillOpacity': 0.5})
+        map_layer.on_click(road_node_click_handler)
     elif name == "power nodes":
         markers = []
         for index, node in df.iterrows():
@@ -394,7 +461,7 @@ def create_map_layer(df, name):
                         marker_color=marker_color,
                         icon_color=icon_color,
                         spin=False
-                    ),location=(y,x),title=f'{node["node_id"]}')
+                    ),location=(y,x),title=f'{node["node_id"]}',draggable=False)
 
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers,
@@ -799,7 +866,7 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["Esri"]["WorldStreetMap"]
+    base_map = ipyleaflet.basemaps["Esri"]["WorldImagery"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 
@@ -847,17 +914,22 @@ def ExecutePanel():
 
         if hazard == "earthquake":
             if "power" in  infra:
-                missing += list(set(["power edges","power nodes","intensity","power fragility"]) - existing_layers)
+                missing += list(set(["building","household","individual","power edges","power nodes","intensity","power fragility"]) - existing_layers)
+            if "road" in  infra:
+                missing += list(set(["building","household","individual","road edges","road nodes","intensity","road fragility"]) - existing_layers)
             if "building" in infra:
                 missing += list(set(["landuse","building","household","individual","intensity","fragility"]) - existing_layers)
         elif hazard == "flood":
             if "power" in  infra:
                 missing += list(set(["power edges","power nodes","intensity","power vulnerability"]) - existing_layers)
+            if "road" in  infra:
+                missing += ['road with flood not implemented yet']
+                #missing += list(set(["road edges","road nodes","intensity","road vulnerability"]) - existing_layers)
             if "building" in infra:
                 missing += list(set(["landuse","building","household","individual","intensity","vulnerability"]) - existing_layers)
  
         if infra == []:
-            missing += ['You should select power and/or building']
+            missing += ['You should select at least one of power, road or building']
         return missing == [], missing
     
 
@@ -865,7 +937,29 @@ def ExecutePanel():
     def execute_engine():
 
 
-        def execute_infra():
+        def execute_road():
+            buildings = layers.value['layers']['building']['data'].value
+            household = layers.value['layers']['household']['data'].value
+            individual = layers.value['layers']['individual']['data'].value
+            nodes = layers.value['layers']['road nodes']['data'].value
+            edges = layers.value['layers']['road edges']['data'].value
+            intensity = layers.value['layers']['intensity']['data'].value
+            fragility = layers.value['layers']['road fragility']['data'].value
+            hazard = layers.value['hazard'].value
+
+
+            ds, is_damaged, nearest_road_node  = compute_road_infra(buildings, household, individual,
+                                    nodes, edges, intensity, fragility, hazard)
+            
+            edges['ds'] = list(ds)
+            edges['is_damaged'] = list(is_damaged)
+            buildings['nearest_road_node'] = list(nearest_road_node)
+            
+            print(buildings.head())
+
+            return edges, buildings
+
+        def execute_power():
             nodes = layers.value['layers']['power nodes']['data'].value
             edges = layers.value['layers']['power edges']['data'].value
             intensity = layers.value['layers']['intensity']['data'].value
@@ -940,8 +1034,13 @@ def ExecutePanel():
                 raise Exception(f'Missing {missing}')
             
             if 'power' in layers.value['infra'].value:
-                nodes = execute_infra()
+                nodes = execute_power()
                 layers.value['layers']['power nodes']['data'].set(nodes)
+            if 'road' in layers.value['infra'].value:
+                edges, buildings = execute_road()
+                layers.value['layers']['road edges']['data'].set(edges)
+                layers.value['layers']['building']['data'].set(buildings)
+
             if 'building' in layers.value['infra'].value:
                 buildings = execute_building()
                 layers.value['layers']['building']['data'].set(buildings)
@@ -950,6 +1049,9 @@ def ExecutePanel():
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
             if 'power' in layers.value['infra'].value:
                 layers.value['layers']['power nodes']['force_render'].set(True)
+            if 'road' in layers.value['infra'].value:
+                layers.value['layers']['road edges']['force_render'].set(True)
+                layers.value['layers']['building']['force_render'].set(True)
             if 'building' in layers.value['infra'].value:
                 layers.value['layers']['building']['force_render'].set(True)
 
@@ -963,7 +1065,7 @@ def ExecutePanel():
     with solara.GridFixed(columns=2):
         solara.Text("Infrastructure Type")
         with solara.Row(justify="right"):
-            solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power"])
+            solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
         solara.Text("Hazard")
         with solara.Row(justify="right"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=["earthquake","flood"])
