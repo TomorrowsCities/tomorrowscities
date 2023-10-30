@@ -7,6 +7,97 @@ from scipy.stats import norm
 from scipy.interpolate import interp1d
 import networkx as nx 
 
+def compute_road_infra(buildings, household, individual,
+                        nodes, edges, intensity, fragility, hazard):
+        
+    threshold_flood_distance = 10
+
+    DS_NO = 0
+    DS_SLIGHT = 1
+    DS_MODERATE = 2
+    DS_EXTENSIVE = 3
+    DS_COMPLETE = 4
+
+    # If a damage state is above this threshold (excluding), 
+    # we consider the associated node as dead.
+    threshold = DS_SLIGHT
+
+    gdf_buildings = buildings.set_crs("EPSG:4326",allow_override=True)
+    gdf_intensity = intensity.set_crs("EPSG:4326",allow_override=True)
+    gdf_nodes = nodes.set_crs("EPSG:4326",allow_override=True)
+    gdf_edges = edges.set_crs("EPSG:4326",allow_override=True)
+
+    epsg = 3857 
+    gdf_buildings = gdf_buildings.to_crs(f"EPSG:{epsg}")
+    gdf_intensity = gdf_intensity.to_crs(f"EPSG:{epsg}")
+    gdf_nodes = gdf_nodes.to_crs(f"EPSG:{epsg}")
+    gdf_edges = gdf_edges.to_crs(f"EPSG:{epsg}")
+
+
+    G = nx.Graph()
+    for _, node in gdf_nodes.iterrows():
+        G.add_node(node.node_id, pos=(node.geometry.x, node.geometry.y))
+        
+    for _, edge in gdf_edges.iterrows():
+        G.add_edge(*(edge.from_node, edge.to_node))  
+
+    fragility = fragility.rename(columns={"med_slight": "med_ds1", 
+                        "med_moderate": "med_ds2",
+                        "med_extensive": "med_ds3",
+                        "med_complete": "med_ds4"})
+
+    gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes, 
+                how='left', rsuffix='road_node',distance_col='road_node_distance')
+   
+    gdf_buildings['occupancy'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
+    gdf_buildings['storeys'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-2])
+    gdf_buildings['code_level'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
+    gdf_buildings['material'] = gdf_buildings['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
+
+    building_count_on_nodes = gdf_buildings.groupby(['node_id','occupancy']).agg({'bldid': 'count'}).reset_index().rename(columns={'bldid':'buildings'})
+
+    all_nodes = set(gdf_nodes['node_id'])
+    non_empty_nodes = set(building_count_on_nodes['node_id'])
+
+    hospital_nodes = set(building_count_on_nodes[(building_count_on_nodes['occupancy'] == 'Hea') & (building_count_on_nodes['buildings'] > 0)]['node_id'])
+    source_nodes = non_empty_nodes - hospital_nodes
+
+    if hazard in ['flood', 'debris']:
+        roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
+        for i, road in enumerate(roads_with_width):
+            within_ims = gdf_intensity.clip(road)
+            if len(within_ims) > 0:
+                max_im = within_ims['im'].max()
+            else:
+                max_im = 0
+            gdf_edges.loc[i,'im'] = max_im
+    elif hazard == 'earthquake':
+        gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity,how='left',rsuffix='intensity',distance_col='intensity_distance')
+
+    gdf_edges = gdf_edges.merge(fragility, how='left',left_on='bridge_type',right_on='vuln_string')
+
+    nulls = gdf_edges['med_ds1'].isna()
+    gdf_edges.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
+    gdf_edges.loc[nulls, ['dispersion']] = [1]
+
+    gdf_edges['log_im'] = np.log(gdf_edges['im'])
+    for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
+        gdf_edges[m] = np.log(gdf_edges[m])
+
+    for i in [1,2,3,4]: 
+        gdf_edges[f'prob_ds{i}'] = norm.cdf(gdf_edges['log_im'],gdf_edges[f'med_ds{i}'],gdf_edges['dispersion'])
+    gdf_edges[['prob_ds0','prob_ds5']] = [1,0]
+    for i in [1,2,3,4,5]:
+        gdf_edges[f'ds_{i}'] = np.abs(gdf_edges[f'prob_ds{i-1}'] - gdf_edges[f'prob_ds{i}'])
+    df_ds = gdf_edges[['ds_1','ds_2','ds_3','ds_4','ds_5']]
+    gdf_edges['ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+
+    gdf_edges['is_damaged'] = False 
+    gdf_edges.loc[gdf_edges['ds'] > threshold,'is_damaged'] = True
+
+    return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id']
+
+
 def compute_power_infra(nodes,edges,intensity,fragility):
     print('Computing power infrastructure')
     print(nodes.head())
