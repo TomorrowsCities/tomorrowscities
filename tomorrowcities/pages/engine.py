@@ -997,7 +997,7 @@ def ExecutePanel():
             # to be added to final buildings gdf
             if 'freqincome' in buildings.columns:
                 buildings.drop(columns=['freqincome'], inplace=True)
-            buildings= buildings.merge(freqincome,on='bldid')
+            buildings= buildings.merge(freqincome,on='bldid',how='left')
 
             print('policies',policies)
             df_bld_hazard = compute(
