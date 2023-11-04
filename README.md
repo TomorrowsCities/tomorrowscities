@@ -1,8 +1,8 @@
 ---
 title: App Engine
-emoji: 🏆
-colorFrom: purple
-colorTo: blue
+emoji: 🦀
+colorFrom: indigo
+colorTo: pink
 sdk: docker
 pinned: false
 ---
