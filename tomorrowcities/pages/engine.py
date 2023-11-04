@@ -866,7 +866,7 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["Esri"]["WorldImagery"]
+    base_map = ipyleaflet.basemaps["OpenStreetMap"]["Mapnik"]
     base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
     map_layers = [base_layer]
 
