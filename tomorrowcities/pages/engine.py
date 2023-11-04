@@ -994,11 +994,8 @@ def ExecutePanel():
             freqincome = freqincome.drop_duplicates('bldid')[['bldid','income']]
             freqincome.rename(columns = {'income':'freqincome'}, inplace = True) 
 
-            # to be added to final buildings gdf
-            if 'freqincome' in buildings.columns:
-                buildings.drop(columns=['freqincome'], inplace=True)
-            buildings= buildings.merge(freqincome,on='bldid',how='left')
-
+            buildings_freqincome = buildings[['bldid']].merge(freqincome,on='bldid',how='left')
+            buildings['freqincome'] = buildings_freqincome['freqincome']
             print('policies',policies)
             df_bld_hazard = compute(
                 landuse,
