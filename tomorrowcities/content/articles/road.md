@@ -78,8 +78,6 @@ The edges are the line strings connecting the nodes. Every edge has a unique id 
 |3|	3	|3385919022|	3762934349|	26.608	|True	|Steel|	LINESTRING (82.61096 27.80733, 82.61082 27.807...|
 |4|	4	|3385919022|	3762934344|	207.798	|False|	NaN	|LINESTRING (82.61096 27.80733, 82.61114 27.807...|
 
-
-
 ### Required layers
 In order to calculate the impact metrics due to damages in the structural elements of the road
 network, following layers should be provided.
@@ -94,20 +92,21 @@ network, following layers should be provided.
 * Hazard type (flood, earthquake, debris)
 
 ## Algorithm
-Road network analysis is composed of many steps some of them depend on the type of hazard. There 
+Road network analysis is composed of many steps some of them depend on the type of hazard.  
 
 * The first step is to assign every building to the nearest node of the transportation network. This is achieved by nearest neighbor calculation. At the end of this step, a new attribute named *nearest_road_node* is added to building layer. The reason of this step is to determine the source and sink nodes of the graph. A source node is where the buildings and hence individuals are accumulated.
 Whereas a sink is a node where hospitals are associated.
 
-### Flood
-
+* if the hazard is flood:
 * Buffer is added to roads so that they have a non-zero width of $2\times w$ where w is a threshold distance for flood calculations. 
 * All intensity measures falling inside the road are determined
 * The maximum of those intensity measures is taken as the ultimate intensity measure for this specific road. 
 
 ### Earthquake
 * Unlike flood, in earthquake we don't need to create a buffer around roads. Instead,
-we simply find the nearest intensity measure to the edge. 
+we simply find the nearest intensity measure to the road.
+
+After 
 
 ### Parameters
 As you may notice, there are several parameters used in the calculations. Let's summarize them here:
@@ -118,6 +117,8 @@ assumed to be immune from the hazard. It's unit is in meters and its default val
 * *threshold*: This is also buried inside the engine. If a damage state of a structure is above this threshold,
 then structure is assumed to be out of service. Its default value is 1 which represents slight damage. So
 the structures having greater than slight damages is assumed to nonfunctional. 
+* *road_water_height_threshold* If a part of a road has water level greater than this threshold, we 
+asssume the road is flooded and hence does not provide service.
 
 ## Remarks
 * In the exposure dataset, every household is associated with a unique hospital.
@@ -126,4 +127,5 @@ hospitals. In the road network analysis, the idea is similar; if the household c
 not reach its associated hospital via a path, then it is assumed to lost its 
 hospital access even though it may reach other hospitals via intact bridges. 
 * In setting intensity measure to roads, one can apply nearest neighbor calculation. If a road or a bridge is very long, then there will be many intensity measures getting close to the road. Let's say, the nearest water level intensity measure is 0.1 meter with a distance of 0.5 m) however there is 6 meter water level with a distance of 1 m on some other part of the road. In this case, 
+* Since the roads can work in opposite directions, nx.DiGraph is used to represent the topology.
 
