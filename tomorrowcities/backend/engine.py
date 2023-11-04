@@ -278,8 +278,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print('threshold_flood_distance',threshold_flood_distance)
         print('number of distant buildings', len(gdf_building_intensity.loc[away_from_flood, 'im']))
         gdf_building_intensity.loc[away_from_flood, 'im'] = 0
-    gdf_building_intensity[['material','code_level','storeys','occupancy']] =  \
-        gdf_building_intensity['expstr'].str.split('+',expand=True)
+
+    gdf_building_intensity['occupancy'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
+    gdf_building_intensity['storeys'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-2])
+    gdf_building_intensity['code_level'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
+    gdf_building_intensity['material'] = gdf_building_intensity['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
 
@@ -477,8 +480,12 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
     bld_hazard = gdf_buildings[['bldid','ds','expstr','nhouse','residents']]
-    bld_hazard[['material','code_level','storeys','occupancy']] =  \
-        bld_hazard['expstr'].str.split('+',expand=True).copy()
+
+    bld_hazard['occupancy'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
+    bld_hazard['storeys'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-2])
+    bld_hazard['code_level'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
+    bld_hazard['material'] = bld_hazard['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
+    
     #bld_hazard['occupancy'] = bld_hazard['occupancy'].astype('category')
 
     # Find the damage state of the building that the household is in
