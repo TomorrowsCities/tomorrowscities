@@ -8,8 +8,7 @@ from scipy.interpolate import interp1d
 import networkx as nx 
 
 def compute_road_infra(buildings, household, individual,
-                        nodes, edges, intensity, fragility, hazard):
-        
+                        nodes, edges, intensity, fragility, hazard, road_water_height_threshold):
     threshold_flood_distance = 10
 
     DS_NO = 0
@@ -34,33 +33,16 @@ def compute_road_infra(buildings, household, individual,
     gdf_edges = gdf_edges.to_crs(f"EPSG:{epsg}")
 
 
-    G = nx.Graph()
+    G = nx.DiGraph()
     for _, node in gdf_nodes.iterrows():
         G.add_node(node.node_id, pos=(node.geometry.x, node.geometry.y))
         
     for _, edge in gdf_edges.iterrows():
         G.add_edge(*(edge.from_node, edge.to_node))  
 
-    fragility = fragility.rename(columns={"med_slight": "med_ds1", 
-                        "med_moderate": "med_ds2",
-                        "med_extensive": "med_ds3",
-                        "med_complete": "med_ds4"})
-
+    gdf_buildings = gdf_buildings.drop(columns=['node_id'])
     gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes, 
                 how='left', rsuffix='road_node',distance_col='road_node_distance')
-   
-    gdf_buildings['occupancy'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
-    gdf_buildings['storeys'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-2])
-    gdf_buildings['code_level'] = gdf_buildings['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
-    gdf_buildings['material'] = gdf_buildings['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
-
-    building_count_on_nodes = gdf_buildings.groupby(['node_id','occupancy']).agg({'bldid': 'count'}).reset_index().rename(columns={'bldid':'buildings'})
-
-    all_nodes = set(gdf_nodes['node_id'])
-    non_empty_nodes = set(building_count_on_nodes['node_id'])
-
-    hospital_nodes = set(building_count_on_nodes[(building_count_on_nodes['occupancy'] == 'Hea') & (building_count_on_nodes['buildings'] > 0)]['node_id'])
-    source_nodes = non_empty_nodes - hospital_nodes
 
     if hazard in ['flood', 'debris']:
         roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
@@ -71,32 +53,73 @@ def compute_road_infra(buildings, household, individual,
             else:
                 max_im = 0
             gdf_edges.loc[i,'im'] = max_im
+        gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'ds'] = 1
+        gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'is_damaged'] = True
     elif hazard == 'earthquake':
-        gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity,how='left',rsuffix='intensity',distance_col='intensity_distance')
+        fragility = fragility.rename(columns={"med_slight": "med_ds1", 
+                        "med_moderate": "med_ds2",
+                        "med_extensive": "med_ds3",
+                        "med_complete": "med_ds4"})
 
-    gdf_edges = gdf_edges.merge(fragility, how='left',left_on='bridge_type',right_on='vuln_string')
+        gdf_edges_centroids = gdf_edges.copy()
+        gdf_edges_centroids['geometry'] = gdf_edges_centroids.geometry.centroid
+        gdf_edges = gpd.sjoin_nearest(gdf_edges_centroids, gdf_intensity,how='left',rsuffix='intensity',distance_col='intensity_distance')
+        
+        gdf_edges = gdf_edges.merge(fragility, how='left',left_on='bridge_type',right_on='vuln_string')
 
-    nulls = gdf_edges['med_ds1'].isna()
-    gdf_edges.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
-    gdf_edges.loc[nulls, ['dispersion']] = [1]
+        nulls = gdf_edges['med_ds1'].isna()
+        gdf_edges.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
+        gdf_edges.loc[nulls, ['dispersion']] = [1]
 
-    gdf_edges['log_im'] = np.log(gdf_edges['im'])
-    for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
-        gdf_edges[m] = np.log(gdf_edges[m])
+        gdf_edges['log_im'] = np.log(gdf_edges['im'])
+        for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
+            gdf_edges[m] = np.log(gdf_edges[m])
 
-    for i in [1,2,3,4]: 
-        gdf_edges[f'prob_ds{i}'] = norm.cdf(gdf_edges['log_im'],gdf_edges[f'med_ds{i}'],gdf_edges['dispersion'])
-    gdf_edges[['prob_ds0','prob_ds5']] = [1,0]
-    for i in [1,2,3,4,5]:
-        gdf_edges[f'ds_{i}'] = np.abs(gdf_edges[f'prob_ds{i-1}'] - gdf_edges[f'prob_ds{i}'])
-    df_ds = gdf_edges[['ds_1','ds_2','ds_3','ds_4','ds_5']]
-    gdf_edges['ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+        for i in [1,2,3,4]: 
+            gdf_edges[f'prob_ds{i}'] = norm.cdf(gdf_edges['log_im'],gdf_edges[f'med_ds{i}'],gdf_edges['dispersion'])
+        gdf_edges[['prob_ds0','prob_ds5']] = [1,0]
+        for i in [1,2,3,4,5]:
+            gdf_edges[f'ds_{i}'] = np.abs(gdf_edges[f'prob_ds{i-1}'] - gdf_edges[f'prob_ds{i}'])
+        df_ds = gdf_edges[['ds_1','ds_2','ds_3','ds_4','ds_5']]
+        gdf_edges['ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
 
-    gdf_edges['is_damaged'] = False 
-    gdf_edges.loc[gdf_edges['ds'] > threshold,'is_damaged'] = True
+        gdf_edges.loc[gdf_edges['ds'] > threshold,'is_damaged'] = True
 
-    return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id']
+    print(gdf_buildings.columns)
+    building_count_on_nodes = gdf_buildings.groupby(['node_id','occupancy']).agg({'bldid': 'count'}).reset_index().rename(columns={'bldid':'buildings'})
 
+    all_nodes = set(gdf_nodes['node_id'])
+    non_empty_nodes = set(building_count_on_nodes['node_id'])
+
+    hospital_nodes = set(building_count_on_nodes[(building_count_on_nodes['occupancy'] == 'Hea') & (building_count_on_nodes['buildings'] > 0)]['node_id'])
+    source_nodes = non_empty_nodes - hospital_nodes
+
+    # Remove damaged roads/bridges
+    G_dmg = G.copy()
+    for i, edge in gdf_edges.iterrows():
+        if edge['is_damaged']:
+            try:
+                G_dmg.remove_edge(*(edge.from_node, edge.to_node))
+            except:
+                # when remove an edge multiple times, ignore error
+                pass
+
+    print('network before ', G)
+    print('network after  ', G_dmg)
+
+    household_w_node_id = household.drop(columns=['node_id']).merge(gdf_buildings[['bldid','node_id']], on='bldid', how='left')
+    household_w_node_id['hospital_access'] = False
+
+    for hospital_node in hospital_nodes:
+        for node_with_hospital_access in nx.descendants(G_dmg,hospital_node):
+            idx = gdf_buildings['node_id'] == node_with_hospital_access
+            gdf_buildings.loc[idx, 'hospital_access'] = True
+            for hospital_bld in gdf_buildings[(gdf_buildings['node_id'] == hospital_node) & (gdf_buildings['occupancy'] == 'Hea')]['bldid']:
+                #print(f'node {node_with_hospital_access} has access to {hospital_bld} / {hospital_node}')   
+                idx = (household_w_node_id['commfacid'] == hospital_bld) & (household_w_node_id['node_id'] == node_with_hospital_access)
+                household_w_node_id.loc[idx, 'hospital_access'] = True
+
+    return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access']
 
 def compute_power_infra(nodes,edges,intensity,fragility):
     print('Computing power infrastructure')
@@ -279,10 +302,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print('number of distant buildings', len(gdf_building_intensity.loc[away_from_flood, 'im']))
         gdf_building_intensity.loc[away_from_flood, 'im'] = 0
 
-    gdf_building_intensity['occupancy'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
-    gdf_building_intensity['storeys'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-2])
-    gdf_building_intensity['code_level'] = gdf_building_intensity['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
-    gdf_building_intensity['material'] = gdf_building_intensity['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
 
@@ -479,14 +498,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
 def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
-    bld_hazard = gdf_buildings[['bldid','ds','expstr','nhouse','residents']]
-
-    bld_hazard['occupancy'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-1]).astype('category')
-    bld_hazard['storeys'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-2])
-    bld_hazard['code_level'] = bld_hazard['expstr'].apply(lambda x: x.split('+')[-3]).astype('category')
-    bld_hazard['material'] = bld_hazard['expstr'].apply(lambda x: "+".join(x.split('+')[:-3])).astype('category')
-    
-    #bld_hazard['occupancy'] = bld_hazard['occupancy'].astype('category')
+    bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys','core_level','material','nhouse','residents']]
 
     # Find the damage state of the building that the household is in
     df_household_bld = df_household.merge(bld_hazard[['bldid','ds']], on='bldid', how='left',validate='many_to_one')

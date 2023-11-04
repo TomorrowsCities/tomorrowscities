@@ -17,7 +17,22 @@ category:
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## What is New?
-* **New** Transportation network with earthquake damage assessment with application to Rapti. See [Road Networks](/docs/road).
+**v0.2**
+
+* Transportation network analysis for flood and earthquake damage assessment
+* Building and household-level loss of hospital access information
+* Enabling custom preprocessing function for every layer
+* building preprocessing added to generate material, storeys, code level and occupancy
+* Building coloring based on loss of hospital acess
+* Using centroid of bridges to calculate nearest earthquake intensity measure
+* Backend.utils package is added
+* Nearest transportation node is determined
+* Started documentation for road network analysis
+* Added dummy data to [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) for Rapti.
+
+**v0.1**
+
+* Transportation network with earthquake damage assessment with application to Rapti. See [Road Networks](/docs/road).
 * "freqincome" attribute is added to building layer.
 * Amazon S3 support to save session or policy database.
 * The engine now can parse, display vulnerability curves located on [Global Vulnerability Model Reposity](https://github.com/gem/global_vulnerability_model) maintained by [Global Earthquake Model Foundation)](https://www.globalquakemodel.org/gem). To see the new fatures, download one of the XML files in  [Global Vulnerability Model Reposity](https://github.com/gem/global_vulnerability_model) and drag and drop to [Engine](/engine). The engine will read all the vulnerability functions defined in the XML file and display them. 

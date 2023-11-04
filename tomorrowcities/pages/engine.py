@@ -21,13 +21,15 @@ import pickle
 import datetime
 from .settings import storage
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
-
+from ..backend.utils import building_preprocess, identity_preprocess
 
 
 layers = solara.reactive({
     'infra': solara.reactive(["building"]),
     'hazard': solara.reactive("flood"),
     'datetime_analysis': datetime.datetime.utcnow(),
+    'road_water_height_threshold': solara.reactive(0.3),
+    'version': 0.2,
     'layers' : {
         'building': {
             'render_order': 50,
@@ -36,7 +38,9 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
-            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,'nearest_road_node': None},
+            'pre_processing': building_preprocess,
+            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,
+                            'node_id': None,'hospital_access': False},
             'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
@@ -46,6 +50,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
             'attributes': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
@@ -56,7 +61,8 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
-            'extra_cols': {},
+            'pre_processing': identity_preprocess,
+            'extra_cols': {'node_id': None, 'hospital_access': False},
             'attributes_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
             'attributes':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
@@ -66,6 +72,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
             'attributes': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
@@ -76,6 +83,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['geometry','im']),
             'attributes': set(['geometry','im'])},
@@ -86,6 +94,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
             'attributes': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
@@ -96,6 +105,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
             'attributes': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
@@ -106,6 +116,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
             'attributes': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
@@ -117,6 +128,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
             'attributes_required': set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln']),
             'attributes': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
@@ -129,6 +141,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['geometry','from_node','to_node', 'edge_id']),
             'attributes': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
@@ -140,6 +153,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete']),
@@ -152,6 +166,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['geometry', 'node_id']),
             'attributes': set(['geometry', 'node_id'])},
@@ -162,6 +177,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0,'is_damaged': False},
             'attributes_required': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length']),
             'attributes': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])},
@@ -172,6 +188,7 @@ layers = solara.reactive({
             'map_layer': solara.reactive(None),
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'dispersion']),
@@ -293,8 +310,11 @@ def load_app_state():
 
 def building_colors(feature):
     ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
-    ds = feature['properties']['ds'] 
-    return {'fillColor': 'black', 'color': 'red' if ds > 0 else 'blue' }
+    ds = feature['properties']['ds']
+    hospital_access = feature['properties']['hospital_access']
+    occupancy = feature['properties']['occupancy']
+    normal_color = 'green' if occupancy == 'Hea' else 'blue'
+    return {'fillColor': 'black', 'color': 'red' if hospital_access == False else normal_color}
 
 def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
@@ -727,6 +747,8 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
                 logging.debug('There are extra columns', attributes - layer['attributes_required'])
                 break
     
+    # Preprocess
+    data = layer['pre_processing'](data)
 
     # Inject columns
     if name is not None and (isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame)):
@@ -923,8 +945,7 @@ def ExecutePanel():
             if "power" in  infra:
                 missing += list(set(["power edges","power nodes","intensity","power vulnerability"]) - existing_layers)
             if "road" in  infra:
-                missing += ['road with flood not implemented yet']
-                #missing += list(set(["road edges","road nodes","intensity","road vulnerability"]) - existing_layers)
+                missing += list(set(["road edges","road nodes","intensity"]) - existing_layers)
             if "building" in infra:
                 missing += list(set(["landuse","building","household","individual","intensity","vulnerability"]) - existing_layers)
  
@@ -946,16 +967,27 @@ def ExecutePanel():
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['road fragility']['data'].value
             hazard = layers.value['hazard'].value
+            road_water_height_threshold = layers.value['road_water_height_threshold'].value
 
-
-            ds, is_damaged, nearest_road_node  = compute_road_infra(buildings, household, individual,
-                                    nodes, edges, intensity, fragility, hazard)
+            edges['ds'] = 0
+            edges['is_damaged'] = False
+            buildings['node_id'] = None
+            buildings['hospital_access'] = False
+            household['node_id'] = None
+            household['hospital_access'] = False
+            ds, is_damaged, building_node_id, building_hospital_acess, household_node_id, household_hospital_access  = \
+                compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
+                fragility, hazard,road_water_height_threshold)
             
             edges['ds'] = list(ds)
             edges['is_damaged'] = list(is_damaged)
-            buildings['nearest_road_node'] = list(nearest_road_node)
-            
+            buildings['node_id'] = list(building_node_id)
+            buildings['hospital_access'] = list(building_hospital_acess)
+            household['node_id'] = list(household_node_id)   
+            household['hospital_access'] = list(household_hospital_access)
+  
             print(buildings.head())
+            print('number of damaged roads/bridges',len(edges[edges['is_damaged']]))
 
             return edges, buildings
 
@@ -1108,9 +1140,10 @@ def PolicyPanel():
 @solara.component
 def MapInfo():
     print(f'{layers.value["bounds"].value}')
-
+    version = layers.value["version"]
     print(layers.value['map_info_button'].value)
-
+    with solara.Row(justify="center"):
+        solara.Markdown(f'Engine [v{version}](https://github.com/TomorrowsCities/tomorrowcities/releases/tag/v{version})')
     with solara.Row(justify="center"):
         solara.ToggleButtonsSingle(value=layers.value['map_info_button'].value, 
                                on_value=layers.value['map_info_button'].set, 
@@ -1149,7 +1182,6 @@ def MapInfo():
 
 @solara.component
 def WebApp():
-
     with solara.Columns([30,70]):
         with solara.Column():
             solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
