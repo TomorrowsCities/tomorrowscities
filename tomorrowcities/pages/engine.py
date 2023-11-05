@@ -1182,19 +1182,19 @@ def MapInfo():
 
 @solara.component
 def WebApp():
-    with solara.Columns([30,70]):
+    with solara.Columns([86,14]):
         with solara.Column():
-            solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
-            FileDropZone()
-            ExecutePanel()
-        with solara.Column():
-            LayerController()
-            with solara.Columns([80,20]):
-                MapViewer()
-                MapInfo()
-            MetricPanel()
-            
-    LayerDisplayer()
+            with solara.Columns([30,70]):
+                with solara.Column():
+                    solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
+                    FileDropZone()
+                    ExecutePanel()
+                with solara.Column():
+                    LayerController()
+                    MapViewer()
+                    MetricPanel()
+            LayerDisplayer()
+        MapInfo()
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
