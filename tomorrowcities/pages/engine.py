@@ -29,7 +29,7 @@ layers = solara.reactive({
     'hazard': solara.reactive("flood"),
     'datetime_analysis': datetime.datetime.utcnow(),
     'road_water_height_threshold': solara.reactive(0.3),
-    'version': 0.2,
+    'version': '0.2.1',
     'layers' : {
         'building': {
             'render_order': 50,
