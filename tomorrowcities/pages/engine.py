@@ -989,7 +989,7 @@ def ExecutePanel():
             print(buildings.head())
             print('number of damaged roads/bridges',len(edges[edges['is_damaged']]))
 
-            return edges, buildings
+            return edges, buildings, household
 
         def execute_power():
             nodes = layers.value['layers']['power nodes']['data'].value
@@ -1039,6 +1039,14 @@ def ExecutePanel():
                 layers.value['hazard'].value,policies=policies)
             buildings['ds'] = list(df_bld_hazard['ds'])
 
+            return buildings
+
+        def execute_metric():
+            buildings = layers.value['layers']['building']['data'].value
+            household = layers.value['layers']['household']['data'].value
+            individual = layers.value['layers']['individual']['data'].value
+            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
+
             implementation_capacity_score = layers.value['implementation_capacity_score'].value
             if implementation_capacity_score == 'medium':
                 capacity = 1.25
@@ -1047,14 +1055,15 @@ def ExecutePanel():
             else:
                 capacity = 1
             computed_metrics, df_metrics = calculate_metrics(buildings, household, 
-                                                             individual, layers.value['hazard'].value, policies=policies,capacity=capacity)
-        
+                                                             individual, layers.value['infra'].value,
+                                                             layers.value['hazard'].value, policies=policies,capacity=capacity)
             print(computed_metrics)
             for metric in df_metrics.keys():
                 buildings[metric] = list(df_metrics[metric][metric])
                 layers.value['metrics'][metric]['value'] = computed_metrics[metric]['value']
                 layers.value['metrics'][metric]['max_value'] = computed_metrics[metric]['max_value']
             return buildings
+
 
         if execute_counter > 0 :
             is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
@@ -1065,13 +1074,16 @@ def ExecutePanel():
                 nodes = execute_power()
                 layers.value['layers']['power nodes']['data'].set(nodes)
             if 'road' in layers.value['infra'].value:
-                edges, buildings = execute_road()
+                edges, buildings, household = execute_road()
                 layers.value['layers']['road edges']['data'].set(edges)
                 layers.value['layers']['building']['data'].set(buildings)
-
+                layers.value['layers']['household']['data'].set(household)
             if 'building' in layers.value['infra'].value:
                 buildings = execute_building()
                 layers.value['layers']['building']['data'].set(buildings)
+
+            buildings = execute_metric()
+            layers.value['layers']['building']['data'].set(buildings)
 
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)

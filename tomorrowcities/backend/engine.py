@@ -496,9 +496,10 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     return bld_hazard
 
 
-def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[],capacity=1.0):
+def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
-    bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys','code_level','material','nhouse','residents']]
+    bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys',
+                                'code_level','material','nhouse','residents','hospital_access']]
 
     # Find the damage state of the building that the household is in
     df_household_bld = df_household.merge(bld_hazard[['bldid','ds']], on='bldid', how='left',validate='many_to_one')
@@ -582,7 +583,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, p
     df_metric2['metric2'] = df_metric2['metric2'].fillna(0).astype(int)
 
     # metric 3 number of households in each building with no access to hospitals
-    df_hospitals_per_household = df_hospitals[df_hospitals['ds'] > thresholds['metric3']].groupby(
+    metric3_index = df_hospitals['ds'] > thresholds['metric3']
+    if 'road' in infra:
+        metric3_index = (metric3_index) | (df_hospitals['hospital_access'] == False)
+    df_hospitals_per_household = df_hospitals[metric3_index].groupby(
         'bldid',as_index=False).agg({'hhid':'count'})
 
     df_metric3 = bld_hazard.merge(df_hospitals_per_household,how='left',left_on='bldid',right_on='bldid')[['bldid','nhouse','hhid']]
