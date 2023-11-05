@@ -20,28 +20,40 @@ earthquake and flood damage assessment on road networks.
 ## Quick Start
 For the impatient readers, here is a quick road to conduct road network analysis.
 
-* Download [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)
-* Go to https://huggingface.co/spaces/hkayabilisim/app-engine/engine
-* Go the [Engine](/engine)
-* Drag and drop the following files inside sample dataset to the engine:
-* rapti_road_edges.geojson
-* rapti_road_nodes.geojson
-* rapti_road_fragility.xlsx
-* rapti_flood_max_depth_70yr_future_212mm_05.tif
-* rapti_dummy_individual.json
-* rapti_dummy_household.json
-* rapti_dummy_buildings.geojson
-* Unselect *Building*
-* Select Road and Earthquake for infrastructure and hazard type, respectively.
-* Click Calculate to run the engine.
+* Go to engine
+* Download [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) to your local environment and unzip the archive file.
+* Drag/drop following files in the sample dataset to the drop zone of the engine.
+   rapti_dummy_buildings.geojson
+   rapti_dummy_earthquake_fragility.xlsx
+   rapti_dummy_household.json
+   rapti_dummy_individual.json
+   rapti_dummy_landuse.geojson
+   rapti_flood_max_depth_20yr_future_173mm_05.tif
+   rapti_road_edges.geojson
+   rapti_road_fragility.xlsx
+   rapti_road_nodes.geojson
+* Select **building** from the infrastructure, **earthquake** from hazard and click **calculate**
+* Observe the metrics populating. Please note that metric3 (number of households with no access to hospitals) is zero because the only hospital in the exposure is not affected.
+* Now also select **road** from the infrastructure and click **calculate**
+* Observe that the metric3 will be non-zero because there will be many buildings which lost access to the hospital due to the damaged bridges in the transportation network.
+
+<video width="853" controls>
+  <source src="https://github.com/TomorrowsCities/tomorrowcities/assets/2515171/ec2dc36d-fe76-42fb-b9be-47a1690374de" type="video/mp4">
+</video>
 
 When completed successfully:
 
 * The damage state of the bridges will be shown in the *ds* attribute of the *road edges* layer.
 * In the same layer, you will see the boolean *is_damaged* attribute.
 * The roads in the *road edge* layer will also be colored red if *is_damaged* attribute is true.
-* Every building will have a new attribute called *nearest_road_node* which determines the nearest junction point
+* Every building will have a new attribute called *node_id* which determines the nearest junction point
 of the transportation network. When you click the buildings, this information will be shown in details view.
+* In **building** and **household** layers, a new attribute (**hospital_acccess**) will be shown to indicate 
+the accessibility of hospital. For a household, it implies the accessibility of associated hospital whereas, 
+for a building it means that the building can access to at least one *hospital node* which is simple a node in the 
+transportation network for which a hospital is assigned to. 
+* The third metric, which is the number of households with no access to hospitals, will be non-zero when **road**
+infrastructure is selected for analysis.
 
 ## Data
 From a computational point of perspective, a road transportation network is a bi-directional graph
@@ -104,9 +116,8 @@ Whereas a sink is a node where hospitals are associated.
 
 ### Earthquake
 * Unlike flood, in earthquake we don't need to create a buffer around roads. Instead,
-we simply find the nearest intensity measure to the road.
+we simply find centroid of the bridge and find closest intensity measure to the centroid.
 
-After 
 
 ### Parameters
 As you may notice, there are several parameters used in the calculations. Let's summarize them here:

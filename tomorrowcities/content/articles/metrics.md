@@ -14,12 +14,12 @@ category:
 [TOC]
 
 ## Metrics
-There are seven fundamental impact metrics displayed in the web application. For each them there is an associcated threhold but for the sake of simplicity, it is not explicitly stated.
+There are seven fundamental impact metrics displayed in the web application. 
+Their calculations heavily depend on the damage state of buildings and/or other
+infrastructural elements such as electrical power generators, roads or bridges. 
 
 ### Metric 1: Number of workers unemployed
-It denotes the number of invidivuals who last their jobs either due to a severe damage at the workplace 
-or lost access to a functional workplace. When the metrics is displayed on a building-level, it is the sum of
-such individuals living in that building.
+It denotes the number of invidivuals who lost their jobs either due to a damage at the workplace or lost access to a workplace. When the metrics is displayed on a building-level, it is the total number of such individuals living in that building.
 
 ### Metric 2: Number of children with no access to education
 Similar to the first metrics but individual here refers to a child who is associated with a school.
@@ -27,8 +27,11 @@ The metric becomes active if the school is damaged or not accessible.
 
 ### Metric 3: Number of households with no access to hospital
 The number of households who lost its access to its associated hospital.
-Either hospital is damaged or the path between the household and the hospital
-is broken.
+Access is lost when any of the following conditions hold:
+
+* the damage state of the associated hospital is beyond a threshold
+* the associated hospital is inaccessible via transportation network
+* the associated hospital has no electricity
 
 ### Metric 4: Number of individuals with no access to hospital
 It is derived from metric 3 by counting the individuals in the corresponding households.

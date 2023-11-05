@@ -17,6 +17,16 @@ category:
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## What is New?
+
+**v0.2.1**
+
+* [27dd195](https://github.com/TomorrowsCities/tomorrowcities/commit/27dd195a240cbb97a97d124fc9b132ee2ea1f5e9) Integrated road network analysis into metric3
+* [de6fbca](https://github.com/TomorrowsCities/tomorrowcities/commit/de6fbca8d8b03d350096190ae35646f47a9a0414) Changed engine layout to be more compact 
+* [bc436b6](https://github.com/TomorrowsCities/tomorrowcities/commit/bc436b62c35f66b7432e40ca5e6c47364690c8f3) Bugfix a layout problem in engine page 
+* [0b1cd96](https://github.com/TomorrowsCities/tomorrowcities/commit/0b1cd96149e129de30e5524f8956db1569202450) Bugfix in metric calculation: a typo in code_level 
+* Extended documentation in welcome, data, metrics, and road pages.
+* Added [a demonstration video](https://github.com/TomorrowsCities/tomorrowcities/assets/2515171/ec2dc36d-fe76-42fb-b9be-47a1690374de) to GitHub discussion page[discussion](https://github.com/TomorrowsCities/tomorrowcities/discussions/6).
+
 **v0.2**
 
 * Transportation network analysis for flood and earthquake damage assessment
@@ -47,62 +57,6 @@ TCDSE is a web application designed to conduct computational tasks to generate i
 when clicked.
 * Implementation Capacity Score is added. If medium or low is selected, then building-level metrics is increased by 25% and 50%, respectively. If high is selected, there is no change in the metrics.
 
-### New policies
-* Eight new policies are added. See their definitions [here](/docs/policies)
-* New info related to flood damage assessment is added [here](/docs/flood)
-
-### Policy Support
-Two new policies are added to the computing engine. More info is [here](/docs/policies)
-
-### Excel support:
-You can  upload Excel files containing your tabular data such as individual, household, fragility or vulnerability data. However, processing excel files is very slower than processing JSON files so I definitely suggest working with JSON files. You can convert your Excel files via panda framework. The platform also does not try to convert the coordinates even if there is any in the Excel file because there is no way to know which columns represent the coordinates or coordinate reference systems without metadata. So Excel spreadsheets should be used to provide non-geo related tabular data.  So please use them only for data not containing any geo-specific information. 
-
-### Dar Es Salaam Study
-[Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) now contains some visioning scenario for Dar Es Salaam case.
-
-## Features
-General capabilities/features of the web application can be summarized as follows:
-
-
-*Hazard Scenarios*
-
-* Earthquake
-* Flood
-* Debris
-
-*Exposure Scenarios*
-
-* Buildings
-* Power networks
-* Transportation
-* Water networks
-
-*Impact Metrics*
-
-* Building and infrastructure-level damage states
-* Household and individual-level derived metrics
-
-*Visualization*
-
-* GIS Maps
-* Hazard and Exposure data displayers
-* Reactive metric widgets
-* Damage state classifications
-
-*Data structure*
-
-* GeoJSON format for geospatial data
-* Vanilla JSON for non-geospatioal tabular data
-
-*Software*
-
-* Pure-Python development for both backend and frontend
-* Reactive user interface via Solara
-* geospatial database via postgis
-* Leaflet backend for maps
-* Easy deployment to cloud
-
-
 ## Quickstart
 * Download [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) to your local environment and unzip the archieve file.
 * Go to [engine](/engine)
@@ -122,3 +76,53 @@ In case the file names in the video are not clearly seen, they are:
 * nairobi_earthquake_intensity.geojson
 
 The used files above satisfy minimum requirements to run Earthquake analysis on buildings. 
+
+## Features
+General capabilities/features of the web application can be summarized as follows:
+
+*Hazard Scenarios*
+
+* Earthquake
+* Flood
+
+*Exposure Scenarios*
+
+* Buildings
+* Power networks
+* Transportation
+
+*Impact Metrics*
+
+* Building and infrastructure-level damage states
+* Household and individual-level derived metrics
+
+*Policies*
+
+* 20 [policies](/docs/policies) related to damage mitigation
+
+*[Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)*
+
+* Dar Es Salaam
+* Rapti
+* Nairobi
+
+*Visualization*
+
+* GIS Maps
+* Hazard and Exposure data displayers
+* Reactive metric widgets
+* Damage state classifications
+
+*Data structure*
+
+* GeoJSON format for geospatial data
+* Vanilla JSON and Excel for non-geospatioal tabular data
+* XML support for [Global Vulnerability Model](https://github.com/gem/global_vulnerability_model) 
+
+*Software*
+
+* Pure-Python development for both backend and frontend
+* Reactive user interface via Solara
+* geospatial database via postgis
+* Leaflet backend for maps
+* Easy deployment to cloud

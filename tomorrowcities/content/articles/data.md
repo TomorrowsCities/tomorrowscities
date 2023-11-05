@@ -51,18 +51,33 @@ The layers supported by tomorrowcities are listed below.  In this section, we wi
 ### Buildings
 Buildings are the core component of visioning scenarios. The features of the building with some example data are shown below:
 
-|zoneID| bldID | nHouse | residents | specialFac | expStr          | fptarea | geometry     | 
+|zoneid| bldid | nhouse | residents | specialfac | expstr          | fptarea | geometry     | 
 |------|-------|--------|-----------|------------|-----------------|---------|--------------|
 |4     | 17    | 41     | 178       | 0          |RCi+HC+18s+ResCom| 111     | MultiPolygon |
 
 
 where
 
-* **zoneID (integer)** refers to the unique identitifer of the zone that building is located in. The features of the corresponding zone is described in a dedicated zone table.
-* **bldID (integer)** is a unique building identifier.
-* **nHouse (integer)** is the number of household in that building.
+* **zoneid (integer)** refers to the unique identitifer of the zone that building is located in. The features of the corresponding zone is described in a dedicated zone table.
+* **bldid (integer)** is a unique building identifier.
+* **nhouse (integer)** is the number of household in that building.
 * **residents (integer)** stores the number of individual live in the building.
-* **expStr (string)** 
+* **expstr (string)** 
+
+### Households
+Households are defined in a tabular format whose attributes are shown below:
+
+|bldid|hhid|income|nind|commfacid|
+|-----|----|------|----|---------|
+|17   |12  |lowIncomeA|3|3643|
+
+where
+
+* **bldid (integer)** is the building identifier where the household is located in 
+* **hhid (integer)** is the unique identifier for the household
+* **income (string)** is the income level of the household
+* **nind (integer)** is the number of individuals living in the household
+* **commfacid (integer)** is the building identifier of the community facility. In Tomorrow's Cities, it is used to define the hospital associated with the household. 
 
 ### Intensity Measures
 Whether it is flood, debris or earthquake, every hazard map should contain at least two properties: a point geometry and intensity measure denotes by 'im'. The data can be provided via GeoTIFF or GeoJSON format. TIFF files should contain CRS 
