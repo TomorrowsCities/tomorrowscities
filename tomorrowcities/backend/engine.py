@@ -498,7 +498,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
 def calculate_metrics(gdf_buildings, df_household, df_individual, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
-    bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys','core_level','material','nhouse','residents']]
+    bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys','code_level','material','nhouse','residents']]
 
     # Find the damage state of the building that the household is in
     df_household_bld = df_household.merge(bld_hazard[['bldid','ds']], on='bldid', how='left',validate='many_to_one')
