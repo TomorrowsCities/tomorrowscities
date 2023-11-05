@@ -838,12 +838,12 @@ def LayerDisplayer():
                 #solara.CrossFilterReport(df_filtered, classes=["py-2"])
                 #solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
                 #solara.CrossFilterDataFrame(df=df_filtered)
-                solara.DataFrame(df_filtered)
+                solara.DataFrame(df_filtered, items_per_page=5)
             else:
                 #solara.CrossFilterReport(data, classes=["py-2"])
                 #solara.CrossFilterSelect(data, data.columns[0])
                 #solara.CrossFilterDataFrame(df=data)
-                solara.DataFrame(data)
+                solara.DataFrame(data, items_per_page=5)
             if selected == "building":
                 file_object = data.to_json()
                 with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
@@ -1054,7 +1054,6 @@ def ExecutePanel():
                 buildings[metric] = list(df_metrics[metric][metric])
                 layers.value['metrics'][metric]['value'] = computed_metrics[metric]['value']
                 layers.value['metrics'][metric]['max_value'] = computed_metrics[metric]['max_value']
-            
             return buildings
 
         if execute_counter > 0 :
@@ -1091,16 +1090,16 @@ def ExecutePanel():
     # Execute the thread only when the depencency is changed
     result = solara.use_thread(execute_engine, dependencies=[execute_counter])
 
-    with solara.GridFixed(columns=2):
-        solara.Text("Infrastructure Type")
-        with solara.Row(justify="right"):
+    with solara.GridFixed(columns=1):
+        solara.Text("Infrastructure")
+        with solara.Row(justify="left"):
             solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
         solara.Text("Hazard")
-        with solara.Row(justify="right"):
+        with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=["earthquake","flood"])
         with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
             solara.Text("Implementation Capacity Score")
-        with solara.Row(justify="right"):
+        with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
                                 values=['low','medium','high'],
                                 on_value=layers.value['implementation_capacity_score'].set)
@@ -1182,9 +1181,9 @@ def MapInfo():
 
 @solara.component
 def WebApp():
-    with solara.Columns([86,14]):
+    with solara.Columns([88,12]):
         with solara.Column():
-            with solara.Columns([30,70]):
+            with solara.Columns([20,80]):
                 with solara.Column():
                     solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
                     FileDropZone()
@@ -1192,7 +1191,8 @@ def WebApp():
                 with solara.Column():
                     LayerController()
                     MapViewer()
-                    MetricPanel()
+                    with solara.Row(justify="center"):
+                        MetricPanel()
             LayerDisplayer()
         MapInfo()
 
