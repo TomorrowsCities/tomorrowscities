@@ -525,13 +525,13 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                         how='left', on='hhid', validate='many_to_one')
 
     # get the ds of household that individual lives in
-    df_indiv_household = df_individual[['hhid','individ']].merge(df_household_bld[['hhid','ds']])
+    df_indiv_household = df_individual[['hhid','individ']].merge(df_household_bld[['hhid','ds','hospital_access']])
 
     # Collect all damage states in a single table
     df_displaced_indiv = df_indiv_hosp.rename(columns={'ds':'ds_hospital'})\
         .merge(df_workers[['individ','ds']].rename(columns={'ds':'ds_workplace'}),on='individ', how='left')\
         .merge(df_students[['individ','ds']].rename(columns={'ds':'ds_school'}), on='individ', how='left')\
-        .merge(df_indiv_household[['individ','ds']].rename(columns={'ds':'ds_household'}), on='individ',how='left')\
+        .merge(df_indiv_household[['individ','ds','hospital_access']].rename(columns={'ds':'ds_household'}), on='individ',how='left')\
         .merge(df_household[['hhid','bldid']],on='hhid',how='left')
 
     DS_NO = 0
@@ -630,10 +630,13 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
 
     # metric 7 the number of displaced individuals in each building
     # more info: an individual is displaced if at least of the conditions below hold
-    df_disp_per_bld = df_displaced_indiv[(df_displaced_indiv['ds_household'] > thresholds['metric6']) |
-                                        (df_displaced_indiv['ds_school'] > thresholds['metric2']) |
-                                        (df_displaced_indiv['ds_workplace'] > thresholds['metric1']) |
-                                        (df_displaced_indiv['ds_hospital'] > thresholds['metric4'])]\
+    metric7_index = (df_displaced_indiv['ds_household'] > thresholds['metric6']) |\
+                    (df_displaced_indiv['ds_school'] > thresholds['metric2']) |\
+                    (df_displaced_indiv['ds_workplace'] > thresholds['metric1']) |\
+                    (df_displaced_indiv['ds_hospital'] > thresholds['metric4']) 
+    if 'road' in infra:
+        metric7_index = (metric7_index) | (df_displaced_indiv['hospital_access'] == False)
+    df_disp_per_bld = df_displaced_indiv[metric7_index]\
                                             .groupby('bldid',as_index=False)\
                                             .agg({'individ':'count'})
 
