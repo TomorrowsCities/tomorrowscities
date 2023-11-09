@@ -121,51 +121,13 @@ def compute_road_infra(buildings, household, individual,
 
     return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access']
 
-def compute_power_infra(nodes,edges,intensity,fragility):
+def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard):
     print('Computing power infrastructure')
     print(nodes.head())
     print(edges.head())
     print(fragility.head())
     print(intensity.head())
 
-    eq_vuln = fragility.rename(columns={"med_slight": "med_ds1", 
-                        "med_moderate": "med_ds2",
-                        "med_extensive": "med_ds3",
-                        "med_complete": "med_ds4",
-                        "beta_slight": "beta_ds1",
-                        "beta_moderate": "beta_ds2",
-                        "beta_extensive": "beta_ds3",
-                        "beta_complete": "beta_ds4"})
-    
-    G_power = nx.Graph()
-    for _, node in nodes.iterrows():
-        G_power.add_node(node.node_id, pos=(node.x_coord, node.y_coord))
-        
-    for _, edge in edges.iterrows():
-        G_power.add_edge(*(edge.from_node, edge.to_node))  
-
-    nodes = gpd.sjoin_nearest(nodes,intensity, 
-                how='left', rsuffix='intensity',distance_col='distance')
-
-    nodes = nodes.merge(eq_vuln, how='left',left_on='eq_vuln',right_on='vuln_string')
-    nulls = nodes['med_ds1'].isna()
-    nodes.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
-    nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
-    #print(nodes.columns)
-    nodes['logim'] = np.log(nodes['im']/9.81)
-    
-    for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
-        nodes[m] = np.log(nodes[m])
-
-    for i in [1,2,3,4]: 
-        nodes[f'prob_ds{i}'] = norm.cdf(nodes['logim'],nodes[f'med_ds{i}'],nodes[f'beta_ds{i}'])
-    nodes[['prob_ds0','prob_ds5']] = [1,0]
-    for i in [1,2,3,4,5]:
-        nodes[f'ds_{i}'] = np.abs(nodes[f'prob_ds{i-1}'] - nodes[f'prob_ds{i}'])
-    df_ds = nodes[['ds_1','ds_2','ds_3','ds_4','ds_5']]
-    nodes['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
-    
-    # Damage State Codes
     DS_NO = 0
     DS_SLIGHT = 1
     DS_MODERATE = 2
@@ -174,19 +136,68 @@ def compute_power_infra(nodes,edges,intensity,fragility):
 
     # If a damage state is above this threshold (excluding), 
     # we consider the associated node as dead.
-    threshold = DS_MODERATE 
+    threshold = DS_MODERATE
 
+    gdf_buildings = buildings.set_crs("EPSG:4326",allow_override=True)
+    gdf_intensity = intensity.set_crs("EPSG:4326",allow_override=True)
+    gdf_nodes = nodes.set_crs("EPSG:4326",allow_override=True)
+    gdf_edges = edges.set_crs("EPSG:4326",allow_override=True)
+
+    epsg = 3857 
+    gdf_buildings = gdf_buildings.to_crs(f"EPSG:{epsg}")
+    gdf_intensity = gdf_intensity.to_crs(f"EPSG:{epsg}")
+    gdf_nodes = gdf_nodes.to_crs(f"EPSG:{epsg}")
+    gdf_edges = gdf_edges.to_crs(f"EPSG:{epsg}")
+
+    G_power = nx.Graph()
+    for _, node in gdf_nodes.iterrows():
+        G_power.add_node(node.node_id, pos=(node.geometry.x, node.geometry.y))
+        
+    for _, edge in edges.iterrows():
+        G_power.add_edge(*(edge.from_node, edge.to_node))  
+    
+    # Assign nearest intensity to power nodes
+    gdf_nodes = gpd.sjoin_nearest(gdf_nodes,gdf_intensity, 
+                how='left', rsuffix='intensity',distance_col='distance')
+
+    if hazard == 'earthquake':
+        fragility = fragility.rename(columns={"med_slight": "med_ds1", 
+                    "med_moderate": "med_ds2",
+                    "med_extensive": "med_ds3",
+                    "med_complete": "med_ds4",
+                    "beta_slight": "beta_ds1",
+                    "beta_moderate": "beta_ds2",
+                    "beta_extensive": "beta_ds3",
+                    "beta_complete": "beta_ds4"})
+        gdf_nodes = gdf_nodes.merge(fragility, how='left',left_on='eq_vuln',right_on='vuln_string')
+        nulls = gdf_nodes['med_ds1'].isna()
+        gdf_nodes.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
+        gdf_nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
+        
+        gdf_nodes['logim'] = np.log(gdf_nodes['im']/9.81)
+    
+        for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
+            gdf_nodes[m] = np.log(gdf_nodes[m])
+
+        for i in [1,2,3,4]: 
+            gdf_nodes[f'prob_ds{i}'] = norm.cdf(gdf_nodes['logim'],gdf_nodes[f'med_ds{i}'],gdf_nodes[f'beta_ds{i}'])
+        gdf_nodes[['prob_ds0','prob_ds5']] = [1,0]
+        for i in [1,2,3,4,5]:
+            gdf_nodes[f'ds_{i}'] = np.abs(gdf_nodes[f'prob_ds{i-1}'] - gdf_nodes[f'prob_ds{i}'])
+        df_ds = gdf_nodes[['ds_1','ds_2','ds_3','ds_4','ds_5']]
+        gdf_nodes['ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+        
     # All Nodes
-    all_nodes = set(nodes['node_id'])
+    all_nodes = set(gdf_nodes['node_id'])
 
     # Power Plants (generators)
-    power_plants = set(nodes[nodes['pwr_plant'] == 1]['node_id'])
+    power_plants = set(gdf_nodes[gdf_nodes['pwr_plant'] == 1]['node_id'])
 
     # Server Nodes 
-    server_nodes = set(nodes[nodes['n_bldgs'] > 0]['node_id'])
+    server_nodes = set(gdf_nodes[gdf_nodes['n_bldgs'] > 0]['node_id'])
 
     # Nodes directly affected by earthquake. Thresholding takes place.
-    damaged_nodes = set(nodes[nodes['eq_ds'] > threshold]['node_id'])
+    damaged_nodes = set(gdf_nodes[gdf_nodes['ds'] > threshold]['node_id'])
 
     # Damaged Server Nodes
     damaged_server_nodes = damaged_nodes.intersection(server_nodes)
@@ -231,13 +242,29 @@ def compute_power_infra(nodes,edges,intensity,fragility):
     print('operating server nodes', operating_server_nodes)
     print('nonoperating server nodes', nonoperating_server_nodes)
 
-        
     is_damaged_mapper     = {id:id in damaged_nodes   for id in all_nodes}
     is_operational_mapper = {id:id in operating_nodes for id in all_nodes}
-    nodes['is_damaged'] = nodes['node_id'].map(is_damaged_mapper)
-    nodes['is_operational'] = nodes['node_id'].map(is_operational_mapper)
+    gdf_nodes['is_damaged'] = gdf_nodes['node_id'].map(is_damaged_mapper)
+    gdf_nodes['is_operational'] = gdf_nodes['node_id'].map(is_operational_mapper)
 
-    return nodes['eq_ds'], nodes['is_damaged'], nodes['is_operational']
+    # Find nearest server nodes
+    gdf_buildings = gdf_buildings.drop(columns=['node_id'])
+    gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes[gdf_nodes['n_bldgs'] > 0], 
+                how='left', rsuffix='power_node',distance_col='power_node_distance')
+    
+    # If nearest server is operational, then building has power, othwerwise not
+    gdf_buildings['has_power'] = gdf_buildings['node_id'].map(is_operational_mapper)
+
+    # Pass nearest server node information to household
+    household_w_node_id = household.drop(columns=['node_id']).merge(gdf_buildings[['bldid','node_id']], on='bldid', how='left')
+    household_w_node_id['has_power'] = household_w_node_id['node_id'].map(is_operational_mapper)
+
+    hospitals = household[['hhid','commfacid']].merge(gdf_buildings[['bldid','has_power']], 
+            how='left', left_on='commfacid', right_on='bldid', suffixes=['','_comm'],
+            validate='many_to_one')
+
+    return gdf_nodes['ds'], gdf_nodes['is_damaged'], gdf_nodes['is_operational'], \
+           gdf_buildings['has_power'], household_w_node_id['has_power'],hospitals['has_power'] 
 
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[]):
 
@@ -499,7 +526,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
     bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys',
-                                'code_level','material','nhouse','residents','hospital_access']]
+                                'code_level','material','nhouse','residents','hospital_access','has_power']]
 
     # Find the damage state of the building that the household is in
     df_household_bld = df_household.merge(bld_hazard[['bldid','ds']], on='bldid', how='left',validate='many_to_one')
@@ -510,7 +537,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
             validate='many_to_one')
 
     # Find the occupancy of facility that the individual is associated
-    df_individual_occupancy = df_individual.merge(bld_hazard[['bldid','occupancy','ds']], 
+    df_individual_occupancy = df_individual.merge(bld_hazard[['bldid','occupancy','ds','has_power']], 
                         how='inner',left_on='indivfacid',right_on='bldid',
                         suffixes=['_l','_r'],validate='many_to_one')
 
@@ -525,13 +552,13 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                         how='left', on='hhid', validate='many_to_one')
 
     # get the ds of household that individual lives in
-    df_indiv_household = df_individual[['hhid','individ']].merge(df_household_bld[['hhid','ds','hospital_access']])
+    df_indiv_household = df_individual[['hhid','individ']].merge(df_household_bld[['hhid','ds','hospital_access','hospital_has_power']])
 
     # Collect all damage states in a single table
     df_displaced_indiv = df_indiv_hosp.rename(columns={'ds':'ds_hospital'})\
-        .merge(df_workers[['individ','ds']].rename(columns={'ds':'ds_workplace'}),on='individ', how='left')\
-        .merge(df_students[['individ','ds']].rename(columns={'ds':'ds_school'}), on='individ', how='left')\
-        .merge(df_indiv_household[['individ','ds','hospital_access']].rename(columns={'ds':'ds_household'}), on='individ',how='left')\
+        .merge(df_workers[['individ','ds','has_power']].rename(columns={'ds':'ds_workplace','has_power':'workplace_power'}),on='individ', how='left')\
+        .merge(df_students[['individ','ds','has_power']].rename(columns={'ds':'ds_school','has_power':'school_power'}), on='individ', how='left')\
+        .merge(df_indiv_household[['individ','ds','hospital_access','hospital_has_power']].rename(columns={'ds':'ds_household'}), on='individ',how='left')\
         .merge(df_household[['hhid','bldid']],on='hhid',how='left')
 
     DS_NO = 0
@@ -561,7 +588,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
             thresholds[f'metric{m}'] += 1
 
     # metric 1 number of unemployed workers in each building
-    df_workers_per_building = df_workers[df_workers['ds'] > thresholds['metric1']][['individ','hhid','ds']].merge(
+    metric1_index = df_workers['ds'] > thresholds['metric1']
+    if 'power' in infra:
+        metric1_index = (metric1_index) | (df_workers['has_power'] == False)
+    df_workers_per_building = df_workers[metric1_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
 
@@ -572,7 +602,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     df_metric1['metric1'] = df_metric1['metric1'].fillna(0).astype(int)
 
     # metric 2 number of students in each building with no access to schools
-    df_students_per_building = df_students[df_students['ds'] > thresholds['metric2']][['individ','hhid','ds']].merge(
+    metric2_index = df_students['ds'] > thresholds['metric2']
+    if 'power' in infra:
+        metric2_index = (metric2_index) | (df_students['has_power'] == False)
+    df_students_per_building = df_students[metric2_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
 
@@ -586,6 +619,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metric3_index = df_hospitals['ds'] > thresholds['metric3']
     if 'road' in infra:
         metric3_index = (metric3_index) | (df_hospitals['hospital_access'] == False)
+    if 'power' in infra:
+        metric3_index = (metric3_index) | (df_hospitals['hospital_has_power'] == False)
     df_hospitals_per_household = df_hospitals[metric3_index].groupby(
         'bldid',as_index=False).agg({'hhid':'count'})
 
@@ -599,6 +634,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metric4_index = df_hospitals['ds'] > thresholds['metric4']
     if 'road' in infra:
         metric4_index = (metric4_index) | (df_hospitals['hospital_access'] == False)
+    if 'power' in infra:
+        metric4_index = (metric4_index) | (df_hospitals['hospital_has_power'] == False)
     df_hospitals_per_individual = df_hospitals[metric4_index].groupby(
         'bldid',as_index=False).agg({'nind':'sum'})
 
@@ -636,6 +673,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                     (df_displaced_indiv['ds_hospital'] > thresholds['metric4']) 
     if 'road' in infra:
         metric7_index = (metric7_index) | (df_displaced_indiv['hospital_access'] == False)
+    if 'power' in infra:
+        metric7_index = (metric7_index) | (df_displaced_indiv['hospital_has_power'] == False)
+        metric7_index = (metric7_index) | (df_displaced_indiv['workplace_power'] == False)
+        metric7_index = (metric7_index) | (df_displaced_indiv['school_power'] == False)
     df_disp_per_bld = df_displaced_indiv[metric7_index]\
                                             .groupby('bldid',as_index=False)\
                                             .agg({'individ':'count'})

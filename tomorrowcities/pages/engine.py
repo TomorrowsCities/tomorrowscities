@@ -29,7 +29,7 @@ layers = solara.reactive({
     'hazard': solara.reactive("flood"),
     'datetime_analysis': datetime.datetime.utcnow(),
     'road_water_height_threshold': solara.reactive(0.3),
-    'version': '0.2.1',
+    'version': '0.2.2',
     'layers' : {
         'building': {
             'render_order': 50,
@@ -40,7 +40,7 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': building_preprocess,
             'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,
-                            'node_id': None,'hospital_access': False},
+                            'node_id': None,'hospital_access': False, 'has_power': True},
             'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
@@ -62,7 +62,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
-            'extra_cols': {'node_id': None, 'hospital_access': False},
+            'extra_cols': {'node_id': None, 'hospital_access': False, 'has_power':True,'hospital_has_power':True},
             'attributes_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
             'attributes':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
@@ -312,9 +312,12 @@ def building_colors(feature):
     ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
     ds = feature['properties']['ds']
     hospital_access = feature['properties']['hospital_access']
+    has_power = feature['properties']['has_power']
+
     occupancy = feature['properties']['occupancy']
     normal_color = 'green' if occupancy == 'Hea' else 'blue'
-    return {'fillColor': 'black', 'color': 'red' if hospital_access == False else normal_color}
+    #return {'fillColor': 'black', 'color': 'red' if hospital_access == False else normal_color}
+    return {'fillColor': 'black', 'color': 'green' if has_power else 'red'}
 
 def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
@@ -992,22 +995,32 @@ def ExecutePanel():
             return edges, buildings, household
 
         def execute_power():
+            buildings = layers.value['layers']['building']['data'].value
+            household = layers.value['layers']['household']['data'].value
             nodes = layers.value['layers']['power nodes']['data'].value
             edges = layers.value['layers']['power edges']['data'].value
             intensity = layers.value['layers']['intensity']['data'].value
             power_fragility = layers.value['layers']['power fragility']['data'].value
+            hazard = layers.value['hazard'].value
 
 
-            eq_ds, is_damaged, is_operational = compute_power_infra(nodes, 
+            ds, is_damaged, is_operational, has_power, household_has_power, hospital_has_power = \
+                compute_power_infra(buildings,
+                                    household,
+                                    nodes, 
                                     edges,
                                     intensity,
-                                    power_fragility)
+                                    power_fragility,
+                                    hazard)
             
             #power_node_df =  dfs['Power Nodes'].copy()                         
-            nodes['ds'] = list(eq_ds)
+            nodes['ds'] = list(ds)
             nodes['is_damaged'] = list(is_damaged)
             nodes['is_operational'] = list(is_operational)
-            return nodes
+            buildings['has_power'] = has_power
+            household['has_power'] = household_has_power
+            household['hospital_has_power'] = hospital_has_power
+            return nodes, buildings, household
 
         def execute_building():
             landuse = layers.value['layers']['landuse']['data'].value
@@ -1071,8 +1084,10 @@ def ExecutePanel():
                 raise Exception(f'Missing {missing}')
             
             if 'power' in layers.value['infra'].value:
-                nodes = execute_power()
+                nodes, buildings, household = execute_power()
                 layers.value['layers']['power nodes']['data'].set(nodes)
+                layers.value['layers']['building']['data'].set(buildings)
+                layers.value['layers']['household']['data'].set(household)
             if 'road' in layers.value['infra'].value:
                 edges, buildings, household = execute_road()
                 layers.value['layers']['road edges']['data'].set(edges)
@@ -1089,6 +1104,7 @@ def ExecutePanel():
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
             if 'power' in layers.value['infra'].value:
                 layers.value['layers']['power nodes']['force_render'].set(True)
+                layers.value['layers']['building']['force_render'].set(True)
             if 'road' in layers.value['infra'].value:
                 layers.value['layers']['road edges']['force_render'].set(True)
                 layers.value['layers']['building']['force_render'].set(True)
