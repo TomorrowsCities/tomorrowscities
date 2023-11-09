@@ -596,7 +596,10 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     df_metric3['metric3'] = df_metric3['metric3'].fillna(0).astype(int)
 
     # metric 4 number of individuals in each building with no access to hospitals
-    df_hospitals_per_individual = df_hospitals[df_hospitals['ds'] > thresholds['metric4']].groupby(
+    metric4_index = df_hospitals['ds'] > thresholds['metric4']
+    if 'road' in infra:
+        metric4_index = (metric4_index) | (df_hospitals['hospital_access'] == False)
+    df_hospitals_per_individual = df_hospitals[metric4_index].groupby(
         'bldid',as_index=False).agg({'nind':'sum'})
 
     df_metric4 = bld_hazard.merge(df_hospitals_per_individual,how='left',left_on='bldid',right_on='bldid')[['bldid','residents','nind']]
