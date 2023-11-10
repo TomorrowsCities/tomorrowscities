@@ -119,7 +119,29 @@ def compute_road_infra(buildings, household, individual,
                 idx = (household_w_node_id['commfacid'] == hospital_bld) & (household_w_node_id['node_id'] == node_with_hospital_access)
                 household_w_node_id.loc[idx, 'hospital_access'] = True
 
-    return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access']
+    # Workplace/School (facility) connectivity analysis
+    # For each individual, find the closest road node (closest) of the
+    # household and the facility
+
+    individual_w_nodes = individual.merge(household_w_node_id[['hhid','node_id']],on='hhid',how='left')\
+                        .rename(columns={'node_id':'household_node_id'})\
+                        .merge(gdf_buildings[['bldid','node_id']],how='left',left_on='indivfacid',right_on='bldid')\
+                        .rename(columns={'node_id':'facility_node_id'})
+
+    # Calculate distances between all nodes in the damaged network
+    shortest_distance = nx.shortest_path_length(G_dmg)
+
+    # Create a dictionary to store all open connections
+    connection_dict = dict()
+    for source, targets in shortest_distance:
+        connection_dict[source] = dict()
+        for target, hop in targets.items():
+            connection_dict[source][target] = True
+
+    # Based on connectivity, fill-in facillity_access attribute in the individual layer
+    individual_w_nodes['facility_access'] = individual_w_nodes.apply(lambda x: x['facility_node_id'] in connection_dict[x['household_node_id']].keys(),axis=1)
+
+    return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access'], individual_w_nodes['facility_access']
 
 def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard):
     print('Computing power infrastructure')
@@ -591,6 +613,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metric1_index = df_workers['ds'] > thresholds['metric1']
     if 'power' in infra:
         metric1_index = (metric1_index) | (df_workers['has_power'] == False)
+    if 'road' in infra:
+        metric1_index = (metric1_index) | (df_workers['facility_access'] == False)
     df_workers_per_building = df_workers[metric1_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
@@ -605,6 +629,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metric2_index = df_students['ds'] > thresholds['metric2']
     if 'power' in infra:
         metric2_index = (metric2_index) | (df_students['has_power'] == False)
+    if 'road' in infra:
+        metric2_index = (metric2_index) | (df_students['facility_access'] == False)
     df_students_per_building = df_students[metric2_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
@@ -673,6 +699,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                     (df_displaced_indiv['ds_hospital'] > thresholds['metric4']) 
     if 'road' in infra:
         metric7_index = (metric7_index) | (df_displaced_indiv['hospital_access'] == False)
+        metric7_index = (metric7_index) | (df_displaced_indiv['facility_access'] == False)
     if 'power' in infra:
         metric7_index = (metric7_index) | (df_displaced_indiv['hospital_has_power'] == False)
         metric7_index = (metric7_index) | (df_displaced_indiv['workplace_power'] == False)

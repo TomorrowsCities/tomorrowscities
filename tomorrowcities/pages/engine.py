@@ -73,7 +73,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
-            'extra_cols': {},
+            'extra_cols': {'facility_access':True},
             'attributes_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
             'attributes': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
         'intensity': {
@@ -848,9 +848,12 @@ def LayerDisplayer():
                 #solara.CrossFilterDataFrame(df=data)
                 solara.DataFrame(data, items_per_page=5)
             if selected == "building":
-                file_object = data.to_json()
-                with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
-                    solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+                with solara.Row():
+                    file_object = data.to_json()
+                    with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
+                        solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+                    with solara.FileDownload(data.to_csv(), "building_export.csv", mime_type="text/csv"):
+                        solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
         if selected == 'gem_vulnerability':
             VulnerabiliyDisplayer(data)
 
@@ -978,7 +981,9 @@ def ExecutePanel():
             buildings['hospital_access'] = False
             household['node_id'] = None
             household['hospital_access'] = False
-            ds, is_damaged, building_node_id, building_hospital_acess, household_node_id, household_hospital_access  = \
+            individual['facility_access'] = True
+            ds, is_damaged, building_node_id, building_hospital_acess, household_node_id, \
+                    household_hospital_access, individual_facility_access  = \
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
                 fragility, hazard,road_water_height_threshold)
             
@@ -988,11 +993,12 @@ def ExecutePanel():
             buildings['hospital_access'] = list(building_hospital_acess)
             household['node_id'] = list(household_node_id)   
             household['hospital_access'] = list(household_hospital_access)
+            individual['facility_access'] = list(individual_facility_access)
   
             print(buildings.head())
             print('number of damaged roads/bridges',len(edges[edges['is_damaged']]))
 
-            return edges, buildings, household
+            return edges, buildings, household, individual
 
         def execute_power():
             buildings = layers.value['layers']['building']['data'].value
@@ -1089,10 +1095,11 @@ def ExecutePanel():
                 layers.value['layers']['building']['data'].set(buildings)
                 layers.value['layers']['household']['data'].set(household)
             if 'road' in layers.value['infra'].value:
-                edges, buildings, household = execute_road()
+                edges, buildings, household, individual = execute_road()
                 layers.value['layers']['road edges']['data'].set(edges)
                 layers.value['layers']['building']['data'].set(buildings)
                 layers.value['layers']['household']['data'].set(household)
+                layers.value['layers']['individual']['data'].set(individual)
             if 'building' in layers.value['infra'].value:
                 buildings = execute_building()
                 layers.value['layers']['building']['data'].set(buildings)

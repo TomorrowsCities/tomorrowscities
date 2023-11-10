@@ -18,7 +18,18 @@ TCDSE is a web application designed to conduct computational tasks to generate i
 
 ## What is New?
 
-**v0.2.1**
+**Changelog: v0.2.2**
+
+* Power and Road network analysis is completed.
+* Electrical power loss information is propagated to household and individual layers.
+* All seven impact metrics are updated to reflect electrical power-loss.
+* All seven impact metrics are updated to reflect damage in road network.
+* Documentation in the engine is extended.
+* New version of the engine is redeployed to [HuggingFace](https://huggingface.co/spaces/hkayabilisim/app-engine).
+* Reorganized the folders in the [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing).
+* Building layer can now be exported as CSV also.
+
+**Changelog: v0.2.1**
 
 * [27dd195](https://github.com/TomorrowsCities/tomorrowcities/commit/27dd195a240cbb97a97d124fc9b132ee2ea1f5e9) Integrated road network analysis into metric3
 * [de6fbca](https://github.com/TomorrowsCities/tomorrowcities/commit/de6fbca8d8b03d350096190ae35646f47a9a0414) Changed engine layout to be more compact 
@@ -27,7 +38,7 @@ TCDSE is a web application designed to conduct computational tasks to generate i
 * Extended documentation in welcome, data, metrics, and road pages.
 * Added [a demonstration video](https://github.com/TomorrowsCities/tomorrowcities/assets/2515171/ec2dc36d-fe76-42fb-b9be-47a1690374de) to GitHub discussion page[discussion](https://github.com/TomorrowsCities/tomorrowcities/discussions/6).
 
-**v0.2**
+**Changelog: v0.2**
 
 * Transportation network analysis for flood and earthquake damage assessment
 * Building and household-level loss of hospital access information
