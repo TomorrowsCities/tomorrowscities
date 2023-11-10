@@ -40,7 +40,7 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': building_preprocess,
             'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,
-                            'node_id': None,'hospital_access': False, 'has_power': True},
+                            'node_id': None,'hospital_access': True, 'has_power': True},
             'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
             'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
         'landuse': {
@@ -62,7 +62,7 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
-            'extra_cols': {'node_id': None, 'hospital_access': False, 'has_power':True,'hospital_has_power':True},
+            'extra_cols': {'node_id': None, 'hospital_access': True, 'has_power':True,'hospital_has_power':True},
             'attributes_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
             'attributes':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
         'individual': {
