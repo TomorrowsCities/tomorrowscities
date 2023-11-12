@@ -160,8 +160,8 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                                                             aws_secret_access_key.value, 
                                                             region_name.value,
                                                             bucket_name.value))
-    else:
-        StorageViewer()
+    #else:
+    #    StorageViewer()
 
     if err_message != '':
         solara.Error(err_message)

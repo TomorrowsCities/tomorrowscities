@@ -1,4 +1,5 @@
 import solara
+from solara.lab.components.confirmation_dialog import ConfirmationDialog
 import time
 import random
 import json
@@ -6,7 +7,8 @@ import pandas as pd
 import os
 os.environ['USE_PYGEOS'] = '0'
 import geopandas as gpd
-from typing import Tuple, Optional
+from typing import Callable, List, Optional, Union, cast, Tuple
+from pathlib import Path
 import ipyleaflet
 from ipyleaflet import AwesomeIcon, CircleMarker, Marker
 import numpy as np
@@ -22,13 +24,15 @@ import datetime
 from .settings import storage
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess
-
+from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
+from .docs import data_import_help
 
 layers = solara.reactive({
     'infra': solara.reactive(["building"]),
     'hazard': solara.reactive("flood"),
     'datetime_analysis': datetime.datetime.utcnow(),
     'road_water_height_threshold': solara.reactive(0.3),
+    'dialog_message_to_be_shown': solara.reactive(None),
     'version': '0.2.2',
     'layers' : {
         'building': {
@@ -223,6 +227,7 @@ layers = solara.reactive({
         '20': {'id':20, 'label': 'I10', 'description': 'Improvement of infrastructure', 'applied': solara.reactive(False)},
     },
     'implementation_capacity_score': solara.reactive("high"),
+    'data_import_method': solara.reactive("drag&drop"),
     'map_info_button': solara.reactive("summary"),
     'map_info_detail': solara.reactive({}),
     'metrics': {
@@ -233,6 +238,12 @@ layers = solara.reactive({
         "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},}})
+
+def show_dialog_message(topic):
+    layers.value['dialog_message_to_be_shown'].value = topic
+
+def clear_help_topic():
+    layers.value['dialog_message_to_be_shown'].value = None
 
 def assign_nested_value(dictionary, keys, value):
     for key in keys[:-1]:
@@ -1126,24 +1137,25 @@ def ExecutePanel():
     result = solara.use_thread(execute_engine, dependencies=[execute_counter])
 
     with solara.GridFixed(columns=1):
-        solara.Text("Infrastructure")
+        solara.Markdown("#### Infrastructure")
         with solara.Row(justify="left"):
             solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
-        solara.Text("Hazard")
+        solara.Markdown("#### Hazard")
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=["earthquake","flood"])
         with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
-            solara.Text("Implementation Capacity Score")
+            solara.Markdown("#### Implementation Capacity Score")
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
                                 values=['low','medium','high'],
-                                on_value=layers.value['implementation_capacity_score'].set)
+                                on_value=layers.value['implementation_capacity_score'].set,
+                                )
     
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
-    if storage.value is not None:
-        solara.Button("Save Session",on_click=save_app_state)
+    #if storage.value is not None:
+    #    solara.Button("Save Session",on_click=save_app_state)
     PolicyPanel()
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
@@ -1212,28 +1224,152 @@ def MapInfo():
                         solara.Text(f'{value}')
 
 
+@solara.component
+def ImportDataZone():
+    def s3_file_open(p):
+        print(p)
+        storage.value.s3.download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
+
+        with open(f'/tmp/aws.tmp', 'rb') as fileObj:
+            fileContent = fileObj.read()
+            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
+                                                             size=len(fileContent),
+                                                             data=fileContent)
+            set_fileinfo(file_info)
+
+    def local_file_open(p):
+        with open(p, 'rb') as fileObj:
+            fileContent = fileObj.read()
+            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
+                                                             size=len(fileContent),
+                                                             data=fileContent)
+            set_fileinfo(file_info)
+        
+
+    total_progress, set_total_progress = solara.use_state(-1)
+    fileinfo, set_fileinfo = solara.use_state(None)
+    result, set_result = solara.use_state(solara.Result(True))
+
+    def load():
+        if fileinfo is not None:
+            print('processing file')
+            name, data = import_data(fileinfo)
+            if name is not None and data is not None:
+                if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(True)
+                    layers.value['layers'][name]['force_render'].set(True)
+                    if  "geometry" in list(data.columns):
+                        center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                        layers.value['center'].set(center)
+                elif isinstance(data, dict):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(True)
+                    layers.value['layers'][name]['force_render'].set(True)
+            else:
+                return False
+        return True
+        
+    def progress(x):
+        set_total_progress(x)
+
+    def on_file_deneme(f):
+        set_fileinfo(f)
+    
+    result = solara.use_thread(load, dependencies=[fileinfo])
+
+    #with solara.Row(justify="center"):
+    #    solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
+    #                            on_value=layers.value['data_import_method'].set, 
+    #                            values=["drag&drop","s3"], 
+    #                            style={"align-items": "center"})
+    with solara.Card(title="Upload", subtitle="Drag & Drop from your local drive"):
+        solara.Markdown('''Drag & drop your local files to 
+                        the below area. Supported formats are Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
+                        For more information, please refer to [Data Formats](/docs/data).
+                        ''')
+        solara.FileDrop(on_total_progress=progress,
+                on_file=on_file_deneme, 
+                lazy=False)
+        
+    with solara.Card(title="Sample Dataset", subtitle="Use our sample data"): 
+        if storage.value is None:
+            solara.Markdown('''
+                            You can download and extract our
+                            [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)
+                            to your local drive and upload to the platform via drag & drop''')
+        else:
+            solara.Markdown('''You can choose sample data from our AWS S3 repository. 
+                            Double click to load data into the platform.
+                        ''')   
+            S3FileBrowser(storage.value.s3, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
+
+    #with solara.Card(title="Browse", subtitle="Import from your local drive"):
+    #    solara.Markdown('''Locate the input files in your drive, and double click
+    #                    the file that you want to upload.
+    #                    ''')    
+    #    solara.FileBrowser(can_select=True, on_file_open=local_file_open,
+    #        filter=lambda p: True if p.is_dir() or p.suffix in extension_list_w_dots else False)
 
 
+
+
+
+    if total_progress > -1 and total_progress < 100:
+        solara.Text(f"Uploading {total_progress}%")
+        solara.ProgressLinear(value=total_progress)
+    else:
+        if result.state == solara.ResultState.FINISHED:
+            if result.value:
+                solara.Text("Spacer", style={'visibility':'hidden'})
+            else:
+                solara.Text("Unrecognized file")
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.INITIAL:
+            solara.Text("Spacer", style={'visibility':'hidden'})
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.ERROR:
+            solara.Text(f'{result.error}')
+            solara.ProgressLinear(value=False)
+        else:
+            solara.Text("Processing")
+            solara.ProgressLinear(value=True)
+            
 @solara.component
 def WebApp():
-    with solara.Columns([88,12]):
+    with solara.Columns([20,70,10]):
         with solara.Column():
-            with solara.Columns([20,80]):
-                with solara.Column():
-                    solara.Markdown('[Download Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)')
-                    FileDropZone()
+            with solara.lab.Tabs():
+                with solara.lab.Tab("SETTINGS"):
                     ExecutePanel()
-                with solara.Column():
-                    LayerController()
-                    MapViewer()
-                    with solara.Row(justify="center"):
-                        MetricPanel()
+                with solara.lab.Tab("DATA IMPORT"):    
+                    ImportDataZone()
+
+        with solara.Column():
+            LayerController()
+            MapViewer()
+            with solara.Row(justify="center"):
+                MetricPanel()
             LayerDisplayer()
         MapInfo()
+    with ConfirmationDialog(
+        layers.value['dialog_message_to_be_shown'].value is not None,
+        on_close=clear_help_topic,
+        ok="Close",
+        title="Information Box",
+        ):
+        solara.Markdown(f'{layers.value["dialog_message_to_be_shown"].value}')
+    
+
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     css = """
+    .v-application {
+        line-height: 1;
+    }
     .v-input {
         height: 10px;
     }
@@ -1244,8 +1380,17 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         min-width: 24px;
     }
 
+    .leaflet-container {
+        z-index: 1;
+    }
+
+    .v-tabs-bar {
+        height: 36px;
+    }
     """
     solara.Style(value=css)
     solara.Title("TCDSE » Engine")
 
     WebApp()
+
+
