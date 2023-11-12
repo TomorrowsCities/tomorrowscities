@@ -18,6 +18,14 @@ TCDSE is a web application designed to conduct computational tasks to generate i
 
 ## What is New?
 
+**Changelog: v0.2.3**
+
+* AWS S3 Sample Data Input mechanism is built
+* popup functionality is implemented
+* layout is now 3-column
+* settings and data import is separated by tabs
+* z-index of map is lowered
+
 **Changelog: v0.2.2**
 
 * Power and Road network analysis is completed.

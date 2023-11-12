@@ -33,7 +33,7 @@ layers = solara.reactive({
     'datetime_analysis': datetime.datetime.utcnow(),
     'road_water_height_threshold': solara.reactive(0.3),
     'dialog_message_to_be_shown': solara.reactive(None),
-    'version': '0.2.2',
+    'version': '0.2.3',
     'layers' : {
         'building': {
             'render_order': 50,
