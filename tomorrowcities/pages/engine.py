@@ -45,8 +45,8 @@ layers = solara.reactive({
             'pre_processing': building_preprocess,
             'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,
                             'node_id': None,'hospital_access': True, 'has_power': True},
-            'attributes_required': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac']),
-            'attributes': set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])},
+            'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
+            'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
         'landuse': {
             'render_order': 20,
             'map_info_tooltip': 'Number of landuse zones',
@@ -56,8 +56,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome']),
-            'attributes': set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])},
+            'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
+            'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
         'household': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -67,8 +67,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'node_id': None, 'hospital_access': True, 'has_power':True,'hospital_has_power':True},
-            'attributes_required':set(['hhid', 'nind', 'income', 'bldid', 'commfacid']),
-            'attributes':set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])},
+            'attributes_required': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])],
+            'attributes': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])]},
         'individual': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -78,8 +78,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'facility_access':True},
-            'attributes_required': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid']),
-            'attributes': set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])},
+            'attributes_required': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])],
+            'attributes': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])]},
         'intensity': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -89,8 +89,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['geometry','im']),
-            'attributes': set(['geometry','im'])},
+            'attributes_required': [set(['geometry','im']), set(['geometry','pga'])],
+            'attributes': [set(['geometry','im']), set(['geometry','pga'])]},
         'fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -100,8 +100,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4']),
-            'attributes': set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])},
+            'attributes_required': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])],
+            'attributes': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])]},
         'vulnerability': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -111,8 +111,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6']),
-            'attributes': set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])},
+            'attributes_required': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])],
+            'attributes': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])]},
         'gem_vulnerability': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -122,8 +122,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
-            'attributes': set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions']),
+            'attributes_required': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
+            'attributes': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
         },
         'power nodes': {
             'render_order': 90,
@@ -134,10 +134,10 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
-            'attributes_required': set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln']),
-            'attributes': set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
+            'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln'])],
+            'attributes': [set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
-                         'income', 'eq_vuln'])},
+                         'income', 'eq_vuln'])]},
         'power edges': {
             'render_order': 80,
             'data': solara.reactive(None),
@@ -147,9 +147,9 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['geometry','from_node','to_node', 'edge_id']),
-            'attributes': set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
-                         'geometry', 'to_node', 'length'])},
+            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id'])],
+            'attributes': [set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
+                         'geometry', 'to_node', 'length'])]},
         'power fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -159,10 +159,10 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete']),
-            'attributes': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])},
+            'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete'])],
+            'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])]},
         'road nodes': {
             'render_order': 90,
             'data': solara.reactive(None),
@@ -172,8 +172,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['geometry', 'node_id']),
-            'attributes': set(['geometry', 'node_id'])},
+            'attributes_required': [set(['geometry', 'node_id'])],
+            'attributes': [set(['geometry', 'node_id'])]},
         'road edges': {
             'render_order': 80,
             'data': solara.reactive(None),
@@ -183,8 +183,8 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0,'is_damaged': False},
-            'attributes_required': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length']),
-            'attributes': set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])},
+            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])],
+            'attributes': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])]},
         'road fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -194,10 +194,10 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'attributes_required': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'dispersion']),
-            'attributes': set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'dispersion'])}
+            'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'dispersion'])],
+            'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
+                         'dispersion'])]}
             },
     'center': solara.reactive((41.01,28.98)),
     'selected_layer' : solara.reactive(None),
@@ -750,19 +750,22 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     # in the first pass, look for exact column match
     name = None
     for layer_name, layer in layers.value['layers'].items():
-        if layer['attributes'] == attributes:
+        if attributes in layer['attributes']:
             name = layer_name
             break
     # if not, check only the required columns
+    # select the one with maximum match
     if name is None:
+        size_of_best_match = 0
         for layer_name, layer in layers.value['layers'].items():
-            if layer['attributes_required'].issubset(attributes):
-                name = layer_name
-                logging.debug('There are extra columns', attributes - layer['attributes_required'])
-                break
-    
+            for layer_attributes in layer['attributes_required']:
+                if layer_attributes.issubset(attributes):
+                    if len(layer_attributes) > size_of_best_match:
+                        name = layer_name
+                        size_of_best_match = len(layer_attributes)
+                        logging.debug('There are extra columns', attributes - layer_attributes)
     # Preprocess
-    data = layer['pre_processing'](data)
+    data = layers.value['layers'][name]['pre_processing'](data)
 
     # Inject columns
     if name is not None and (isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame)):
