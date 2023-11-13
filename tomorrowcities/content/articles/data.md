@@ -35,6 +35,13 @@ approach is to use GeoTIFF files. GeoTIFF is useful because it is a raster file 
 context is already built-in in the format. Additionally GeoTIFF files are lot smaller than GeoJSON files.
 Please note that GeoTIFF is only advised to represent intensity measures on a mesh grid. 
 
+**Multi-band GeoTIFF**
+GeoTIFF format also supports multiple bands which becomes handy when we want to store multiple
+density maps in single TIF file. This is especially useful for using multiple spectral acceleration 
+intensity maps. In order to convey which band corresponds to which spectral acceleration period, the bands
+in the GeoTIFF are labelled such as "PGA", "SA 0.3", "SA 1", etc.
+
+
 ## Layers
 The layers supported by tomorrowcities are listed below.  In this section, we will cover all of them and provide information so that the users are able to generate data compatible to web application.
 

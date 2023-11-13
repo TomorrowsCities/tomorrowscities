@@ -449,8 +449,9 @@ def create_map_layer(df, name):
     
     if name == "intensity":
         # Take the largest 500_000 values to display
-        df_limited = df.sort_values(by='im',ascending=False).head(500_000)
-        locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited.im.to_list()]).transpose().tolist()
+        im_col = 'pga' if 'pga' in df.columns else 'im'
+        df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
+        locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
         map_layer = ipyleaflet.Heatmap(locations=locs, radius = 10) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
@@ -525,21 +526,29 @@ def read_tiff(file_bytes):
     byte_io = io.BytesIO(file_bytes)
     with rasterio.open(byte_io) as src:
         ims = src.read()
-    
+        band_names = list(src.descriptions)
+    n_bands = ims.shape[0] if len(ims.shape) == 3 else 1
+    for b,name in enumerate(src.descriptions):
+        if name is None:
+            if b == 0:
+                band_names[b] = 'im'
+            else:
+                band_names[b] = f'im{b+1}'
     current_crs = src.crs
     target_crs = 'EPSG:4326'
     transform, width, height = calculate_default_transform(current_crs, target_crs, src.width, src.height, *src.bounds)
-    ims_transformed = np.zeros((height, width))
+    ims_transformed = np.zeros((n_bands, height, width))
 
     print('start reproject ..........')
-    reproject(
-        source=ims[0],
-        destination=ims_transformed,
-        src_transform=src.transform,
-        src_crs=current_crs,
-        dst_transform=transform,
-        dst_crs=target_crs,
-        resampling=Resampling.nearest)
+    for b in range(n_bands):
+        reproject(
+            source=ims[b],
+            destination=ims_transformed[b],
+            src_transform=src.transform,
+            src_crs=current_crs,
+            dst_transform=transform,
+            dst_crs=target_crs,
+            resampling=Resampling.nearest)
 
 
     lon_pos, lat_pos = np.meshgrid(range(width),range(height))
@@ -547,11 +556,11 @@ def read_tiff(file_bytes):
     #lon, lat = rasterio.transform.xy(transform,lat_pos.flatten(),lon_pos.flatten())
     lon, lat = fast_transform_xy(transform,lat_pos.flatten(),lon_pos.flatten())
     print('start dataframe ..........')
-    gdf = gpd.GeoDataFrame(ims_transformed.flatten(), 
+    gdf = gpd.GeoDataFrame({band_names[i]:ims_transformed[i].flatten() for i in range(n_bands)},
             geometry = gpd.points_from_xy(lon, lat, crs="EPSG:4326"))
-    gdf = gdf.rename(columns={0:'im'})
+    #gdf = gdf.rename(columns={0:'im'})
     # return only the non-zero intensity measures
-    return gdf[gdf['im'] > 0]
+    return gdf[(gdf.drop(columns='geometry')>0).any(axis=1)]
     #return gdf.sort_values(by='im',ascending=False).head(10000)
 
 
