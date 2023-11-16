@@ -3,7 +3,6 @@ from typing import Optional, cast
 import pickle
 import boto3
 import os
-
 from . import user
 
 class S3Storage:
@@ -86,6 +85,7 @@ def revive_storage():
                     os.environ['bucket_name'])
     
 storage = solara.reactive(revive_storage())  
+landslide_max_trials = solara.reactive(5)
 
 def storage_control(aws_access_key_id: str, aws_secret_access_key: str, region_name: str, bucket_name: str):
     storage.value = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
@@ -165,3 +165,6 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
 
     if err_message != '':
         solara.Error(err_message)
+
+    with solara.Card(title='Landslide Parameters',subtitle='Choose the parameters for the landslide simulation'):
+        solara.SliderInt(label='Number of Monte-Carlo Trials', value=landslide_max_trials, min=1,max=100)

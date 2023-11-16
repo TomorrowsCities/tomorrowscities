@@ -66,3 +66,7 @@ An individual is assumed to be displaced when any of the following condition hol
 * the individual's workplace, school, or associated hospital is damaged
 * the individual can not reach to workplace, school, or associated hospital via transportation network
 * the individual's workplace, school, or associated hospital has no electricity
+
+## Average Impact Metrics in Monte-Carlo Simulations
+When the hazard scenario is run with different random realizations such as landslide calculations,
+then the impact metrics are calculated by taking average of all simulations. 

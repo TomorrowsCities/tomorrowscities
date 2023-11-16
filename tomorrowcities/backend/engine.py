@@ -290,7 +290,8 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
 
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[]):
 
-    np.random.seed(seed=0)
+    if hazard_type != "landslide":
+        np.random.seed(seed=0)
 
     column_names = {'zoneID':'zoneid','bldID':'bldid','nHouse':'nhouse',
                     'specialFac':'specialfac','expStr':'expstr','repValue':'repvalue',
@@ -343,6 +344,15 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     gdf_building_intensity = gdf_building_intensity.merge(gdf_landuse[['zoneid','avgincome']],on='zoneid',how='left')
 
     gdf_building_intensity['rnd'] = np.random.random((len(gdf_building_intensity),1))
+
+    if hazard_type == "landslide":
+        gdf_building_collapse_prob = gdf_building_intensity.merge(df_hazard, 
+                                        on=['expstr','susceptibility'], how='left')
+        gdf_building_collapse_prob['ds'] = DS_NO
+        collapsed_idx = (gdf_building_collapse_prob['rnd'] < gdf_building_collapse_prob['collapse_probability']) 
+        gdf_building_collapse_prob.loc[collapsed_idx, 'ds'] = DS_COLLAPSED
+        bld_hazard = gdf_building_collapse_prob[['bldid','ds']]
+        return bld_hazard
 
     # TODO: Check if the logic makes sense
     if hazard_type == HAZARD_FLOOD:
