@@ -30,11 +30,36 @@ from .docs import data_import_help
 layers = solara.reactive({
     'infra': solara.reactive(["building"]),
     'hazard': solara.reactive("flood"),
+    'hazard_list': ["earthquake","flood","landslide"],
     'datetime_analysis': datetime.datetime.utcnow(),
     'road_water_height_threshold': solara.reactive(0.3),
+    'landslide_trigger_level': solara.reactive('moderate'),
+    'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
     'version': '0.2.3',
     'layers' : {
+        'landslide fragility': {
+            'render_order': 0,
+            'map_info_tooltip': 'Number of landslide fragility records',
+            'data': solara.reactive(None),
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
+            'attributes': [set(['expstr','susceptibility','minor','moderate','severe'])]},
+        'landslide susceptibility': {
+            'render_order': 21,
+            'map_info_tooltip': 'Number of zones in the landslide susceptibility map',
+            'data': solara.reactive(None),
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'attributes_required': [set(['id','susceptibility','geometry'])],
+            'attributes': [set(['id','susceptibility','geometry'])]},
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
@@ -318,6 +343,17 @@ def load_app_state():
         loaded_state = pickle.load(fileObj)
         load_from_state(loaded_state)
 
+def generic_layer_colors(feature):
+    return None
+
+def susceptibility_colors(feature):
+    susceptibility = feature['properties']['susceptibility']
+    s_to_color = {'low': 'green', 'medium':'orange','high': 'red'}
+    return {'fillColor':  s_to_color[susceptibility], 'color':  s_to_color[susceptibility]}
+
+def generic_layer_click_handler(event=None, feature=None, id=None, properties=None):
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
 
 def building_colors(feature):
     ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
@@ -328,7 +364,7 @@ def building_colors(feature):
     occupancy = feature['properties']['occupancy']
     normal_color = 'green' if occupancy == 'Hea' else 'blue'
     #return {'fillColor': 'black', 'color': 'red' if hospital_access == False else normal_color}
-    return {'fillColor': 'black', 'color': 'green' if has_power else 'red'}
+    return {'fillColor': 'black', 'color': 'green' if ds == 0 else 'red'}
 
 def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
@@ -502,9 +538,18 @@ def create_map_layer(df, name):
         map_layer= ipyleaflet.MarkerCluster(markers=markers,
                                                    disable_clustering_at_zoom=5)
         
-        
+    elif name == 'landslide susceptibility':
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style_callback=susceptibility_colors)
+        map_layer.on_click(generic_layer_click_handler)     
     else:
-        map_layer = ipyleaflet.GeoData(geo_dataframe = df)
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style_callback=generic_layer_colors)
+        map_layer.on_click(generic_layer_click_handler)
     layers.value['layers'][name]['map_layer'].set(map_layer)
     layers.value['layers'][name]['force_render'].set(False)
     return map_layer
@@ -977,6 +1022,13 @@ def ExecutePanel():
                 missing += list(set(["road edges","road nodes","intensity"]) - existing_layers)
             if "building" in infra:
                 missing += list(set(["landuse","building","household","individual","intensity","vulnerability"]) - existing_layers)
+        elif hazard == "landslide":
+            if "power" in  infra:
+                missing += list(set(["power edges","power nodes","landslide fragility","landslide susceptibility"]) - existing_layers)
+            if "road" in  infra:
+                missing += list(set(["road edges","road nodes","landslide fragility","landslide susceptibility"]) - existing_layers)
+            if "building" in infra:
+                missing += list(set(["landuse","building","household","individual","landslide fragility","landslide susceptibility"]) - existing_layers)
  
         if infra == []:
             missing += ['You should select at least one of power, road or building']
@@ -1071,14 +1123,28 @@ def ExecutePanel():
             buildings_freqincome = buildings[['bldid']].merge(freqincome,on='bldid',how='left')
             buildings['freqincome'] = buildings_freqincome['freqincome']
             print('policies',policies)
-            df_bld_hazard = compute(
-                landuse,
-                buildings, 
-                household, 
-                individual,
-                intensity,
-                fragility if layers.value['hazard'].value == "earthquake" else vulnerability, 
-                layers.value['hazard'].value,policies=policies)
+            if layers.value['hazard'].value == 'landslide':
+                fragility = layers.value['layers']['landslide fragility']['data'].value
+                intensity = layers.value['layers']['landslide susceptibility']['data'].value
+                trigger_level= layers.value['landslide_trigger_level'].value
+                df_bld_hazard = compute(
+                    landuse,
+                    buildings,
+                    household,
+                    individual,
+                    intensity,
+                    fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'}),
+                    layers.value['hazard'].value,
+                    policies=policies)
+            else:
+                df_bld_hazard = compute(
+                    landuse,
+                    buildings,
+                    household,
+                    individual,
+                    intensity,
+                    fragility if layers.value['hazard'].value == "earthquake" else vulnerability,
+                    layers.value['hazard'].value, policies=policies)
             buildings['ds'] = list(df_bld_hazard['ds'])
 
             return buildings
@@ -1154,7 +1220,13 @@ def ExecutePanel():
             solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
         solara.Markdown("#### Hazard")
         with solara.Row(justify="left"):
-            solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=["earthquake","flood"])
+            solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
+        if layers.value['hazard'].value == 'landslide':
+            solara.Markdown("#### Landslide trigger level")
+            with solara.Row(justify="left"):
+                solara.ToggleButtonsSingle(value=layers.value['landslide_trigger_level'].value,
+                    on_value=layers.value['landslide_trigger_level'].set,
+                    values=layers.value['landslide_trigger_level_list'])
         with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
             solara.Markdown("#### Implementation Capacity Score")
         with solara.Row(justify="left"):
