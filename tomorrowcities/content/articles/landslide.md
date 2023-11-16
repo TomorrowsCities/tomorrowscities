@@ -16,6 +16,7 @@ category:
 ## Data Formats
  
 ### Susceptibility Map
+
 Since it contains geo-spatial information, the format of this file should be GeoJSON.
 
 |id|susceptibility|geometry|
@@ -42,6 +43,7 @@ Microsoft Excel or JSON format.
 |Adb+HC+1s+ResCom|	low |0.06 	|0.08 	|0.09| 
 
 ### Trigger Level
+
 Trigger level selection becomes active when the user selects "landuse" hazard type. 
 There are three pre-defined levels: minor, moderate, and severe. The fragility data 
 should contain a column for each category.
@@ -68,6 +70,3 @@ these averaged impact metrics are displayed.
 In the map, and the layer displayer, however, the damage states of the buildings and other infrastructures are displayed 
 according to the last Monte-Carlo random realization. However, the attributes metric1,...,metric7 denote the average 
 over N random trials. 
-
-
-
