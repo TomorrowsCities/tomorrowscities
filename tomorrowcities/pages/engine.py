@@ -21,7 +21,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
-from .settings import storage, landslide_max_trials
+from .settings import storage, landslide_max_trials, revive_storage
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
@@ -1440,6 +1440,8 @@ def ImportDataZone():
             
 @solara.component
 def WebApp():
+    if storage.value is None:
+        storage.value = revive_storage()
     with solara.Columns([20,70,10]):
         with solara.Column():
             with solara.lab.Tabs():
