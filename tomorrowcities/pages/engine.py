@@ -371,7 +371,7 @@ def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_button'].set("detail")  
 
 def road_node_click_handler(event=None, feature=None, id=None, properties=None):
-    print(properties)
+    #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
 
@@ -384,7 +384,7 @@ def road_edge_colors(feature):
     return {'color': 'red' if is_damaged else color}
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
-    print(properties)
+    #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
     #layers.value['map_info_force_render'].set(True)  
@@ -395,7 +395,7 @@ def landuse_click_handler(event=None, feature=None, id=None, properties=None):
     #layers.value['map_info_force_render'].set(True)  
 
 def landuse_colors(feature):
-    print(feature)
+    #print(feature)
     luf_type = feature['properties']['luf']
     if luf_type == 'RESIDENTIAL (HIGH DENSITY)':
         luf_color = {
@@ -465,7 +465,7 @@ def landuse_colors(feature):
     return luf_color
 
 def power_node_colors(feature):
-    print(feature)
+    #print(feature)
     ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
     ds = random.randint(0,5) #feature['properties']['ds'] 
     return {'color': ds_to_color[ds], 'fillColor': ds_to_color[ds]}
@@ -488,7 +488,7 @@ def create_map_layer(df, name):
         im_col = 'pga' if 'pga' in df.columns else 'im'
         df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 10) 
+        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
@@ -1070,7 +1070,7 @@ def ExecutePanel():
             household['hospital_access'] = list(household_hospital_access)
             individual['facility_access'] = list(individual_facility_access)
   
-            print(buildings.head())
+            #print(buildings.head())
             print('number of damaged roads/bridges',len(edges[edges['is_damaged']]))
 
             return edges, buildings, household, individual
@@ -1122,7 +1122,7 @@ def ExecutePanel():
 
             buildings_freqincome = buildings[['bldid']].merge(freqincome,on='bldid',how='left')
             buildings['freqincome'] = buildings_freqincome['freqincome']
-            print('policies',policies)
+            #print('policies',policies)
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
                 intensity = layers.value['layers']['landslide susceptibility']['data'].value
@@ -1328,7 +1328,7 @@ def MapInfo():
 @solara.component
 def ImportDataZone():
     def s3_file_open(p):
-        print(p)
+        #print(p)
         storage.value.s3.download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
 
         with open(f'/tmp/aws.tmp', 'rb') as fileObj:
