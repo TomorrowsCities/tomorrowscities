@@ -22,6 +22,7 @@ import logging, sys
 import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
+from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
@@ -32,7 +33,6 @@ layers = solara.reactive({
     'hazard': solara.reactive("flood"),
     'hazard_list': ["earthquake","flood","landslide"],
     'datetime_analysis': datetime.datetime.utcnow(),
-    'road_water_height_threshold': solara.reactive(0.3),
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
@@ -1048,7 +1048,6 @@ def ExecutePanel():
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['road fragility']['data'].value
             hazard = layers.value['hazard'].value
-            road_water_height_threshold = layers.value['road_water_height_threshold'].value
 
             edges['ds'] = 0
             edges['is_damaged'] = False
@@ -1060,7 +1059,7 @@ def ExecutePanel():
             ds, is_damaged, building_node_id, building_hospital_acess, household_node_id, \
                     household_hospital_access, individual_facility_access  = \
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
-                fragility, hazard,road_water_height_threshold)
+                fragility, hazard, threshold_road_water_height.value, threshold_flood_distance.value)
             
             edges['ds'] = list(ds)
             edges['is_damaged'] = list(is_damaged)
@@ -1135,7 +1134,9 @@ def ExecutePanel():
                     intensity,
                     fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'}),
                     layers.value['hazard'].value,
-                    policies=policies)
+                    policies=policies,
+                    threshold_flood = threshold_flood.value,
+                    threshold_flood_distance = threshold_flood_distance.value)
             else:
                 df_bld_hazard = compute(
                     landuse,
@@ -1144,7 +1145,9 @@ def ExecutePanel():
                     individual,
                     intensity,
                     fragility if layers.value['hazard'].value == "earthquake" else vulnerability,
-                    layers.value['hazard'].value, policies=policies)
+                    layers.value['hazard'].value, policies=policies,
+                    threshold_flood = threshold_flood.value,
+                    threshold_flood_distance = threshold_flood_distance.value)
             buildings['ds'] = list(df_bld_hazard['ds'])
 
             return buildings
@@ -1179,7 +1182,7 @@ def ExecutePanel():
                 raise Exception(f'Missing {missing}')
             max_trials = landslide_max_trials.value  if layers.value['hazard'].value == "landslide" else 1
             for trial in range(1,max_trials+1):
-                set_progress_message(f'Monte-Carlo trial {trial}/{max_trials}...')
+                set_progress_message('Running...')
                 if 'power' in layers.value['infra'].value:
                     nodes, buildings, household = execute_power()
                     layers.value['layers']['power nodes']['data'].set(nodes)

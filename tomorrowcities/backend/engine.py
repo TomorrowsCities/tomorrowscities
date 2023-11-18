@@ -8,8 +8,9 @@ from scipy.interpolate import interp1d
 import networkx as nx 
 
 def compute_road_infra(buildings, household, individual,
-                        nodes, edges, intensity, fragility, hazard, road_water_height_threshold):
-    threshold_flood_distance = 10
+                        nodes, edges, intensity, fragility, hazard, 
+                        road_water_height_threshold,
+                        threshold_flood_distance):
 
     DS_NO = 0
     DS_SLIGHT = 1
@@ -288,7 +289,8 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
     return gdf_nodes['ds'], gdf_nodes['is_damaged'], gdf_nodes['is_operational'], \
            gdf_buildings['has_power'], household_w_node_id['has_power'],hospitals['has_power'] 
 
-def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[]):
+def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[],
+            threshold_flood = 0.2, threshold_flood_distance = 10):
 
     if hazard_type != "landslide":
         np.random.seed(seed=0)
@@ -318,8 +320,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     HAZARD_FLOOD = "flood"
     HAZARD_DEBRIS = "debris"
 
-    threshold_flood = 0.2
-    threshold_flood_distance = 10
     epsg = 3857 
 
     # Replace strange TypeX LRS with RCi
