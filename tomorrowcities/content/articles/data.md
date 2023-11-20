@@ -43,7 +43,8 @@ in the GeoTIFF are labelled such as "PGA", "SA 0.3", "SA 1", etc.
 
 
 ## Layers
-The layers supported by tomorrowcities are listed below.  In this section, we will cover all of them and provide information so that the users are able to generate data compatible to web application.
+The layers supported by tomorrowcities are listed below.  In this section, we will cover all of them and provide information so that the users are able to generate data compatible to web application. Unless otherwise
+mentioned, all geo-spatial layers have WGS 84 coordinate reference system with EPSG:4326.
 
 * land use 
 * building
@@ -54,6 +55,17 @@ The layers supported by tomorrowcities are listed below.  In this section, we wi
 * vulnerability
 * power nodes
 * power edges
+
+### Landuse
+Landuse plan is presented as a GeoJSON format whose attributes are given below:
+
+
+|population|status|zone|densitycap|luf|landuse_lu|area|zoneid|floorarear|setback|avgincome|
+|----------|------|----|----------|---|----------|----|------|----------|-------|---------|
+0|None 	|Agricultural Zone 	|0.0 	|Agricultural Zone 	|Agricultural Zone 	|4099.24144134 	|4 	|0.0 	|0.0 	|None|
+0| None |Forest Zone 	|0.0 	|Forest Zone 	|Forest Zone 	|30843.9849839 	|5 	|0.0 	|0.0 	|None|
+7081 	|None 	|Residential Very Low Density 	|5.0 	|Residential-Very Low Density |	Agriculture Cum Resedential	|1416.16357154 	|226 	|0.0 	|0.0 	|lowIncome|
+
 
 ### Buildings
 Buildings are the core component of visioning scenarios. The features of the building with some example data are shown below:
@@ -85,6 +97,26 @@ where
 * **income (string)** is the income level of the household
 * **nind (integer)** is the number of individuals living in the household
 * **commfacid (integer)** is the building identifier of the community facility. In Tomorrow's Cities, it is used to define the hospital associated with the household. 
+
+### Individuals
+Individual layer is a tabular data which can be stored in Excel or JSON format.
+The attributes are:
+
+|hhid|individ|gender|age|head|eduattstat|indivfacid|
+|----|-------|------|---|----|----------|----------|
+|24448| 	1| 	2| 	8| 	1| 	3| 	-1|
+|1 	|5552 	|2 	|2 	|8 	|1 	|4 	|-1 	|
+|2 	|31586 	|3 	|2 	|9 	|1 	|5 	|-1 	|
+
+where 
+
+* **hhid** refers to household identifier where the individual lives in.
+* **individ** is the unique individual identifier
+* **gender** is a categorical variable for gender: 1: male, 2:female
+* **age** is the age category
+* **head** is a binary feature indicating that the individual is the head of the household
+* **eduattstat** is the education level
+* **indivfacid** is the facility (school or workspace) that the individual is associated with
 
 ### Intensity Measures
 Whether it is flood, debris or earthquake, every hazard map should contain at least two properties: a point geometry and intensity measure denotes by 'im'. The data can be provided via GeoTIFF or GeoJSON format. TIFF files should contain CRS 

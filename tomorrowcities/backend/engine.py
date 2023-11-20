@@ -45,17 +45,40 @@ def compute_road_infra(buildings, household, individual,
     gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes, 
                 how='left', rsuffix='road_node',distance_col='road_node_distance')
 
-    if hazard in ['flood', 'debris']:
-        roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
-        for i, road in enumerate(roads_with_width):
-            within_ims = gdf_intensity.clip(road)
-            if len(within_ims) > 0:
-                max_im = within_ims['im'].max()
-            else:
-                max_im = 0
-            gdf_edges.loc[i,'im'] = max_im
-        gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'ds'] = 1
-        gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'is_damaged'] = True
+    if hazard in ['flood', 'debris','landslide']:
+        gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity, how='left',
+                                          rsuffix='intensity',distance_col='distance')
+        # TODO: sjoin_nearest or the approach below: compare
+        #roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
+        #for i, road in enumerate(roads_with_width):
+        #    print(i)
+        #    within_ims = gdf_intensity.clip(road)
+        #    if len(within_ims) > 0:
+        #        max_im = within_ims['im'].max()
+        #    else:
+        #        max_im = 0
+        #    gdf_edges.loc[i,'im'] = max_im
+        if hazard == 'landslide':
+            print('before')
+            print(gdf_edges.loc[0])
+            gdf_edges['susceptibility'] = 'low'
+            gdf_edges.loc[gdf_edges['im'] == 2.0, 'susceptibility'] = 'medium'
+            gdf_edges.loc[gdf_edges['im'] == 3.0, 'susceptibility'] = 'high'
+
+            fragility['landslide_expstr'] = fragility['expstr'].astype(str) + "+"+ fragility["susceptibility"].astype(str) 
+            gdf_edges['landslide_expstr'] = 'roads' 
+            gdf_edges['landslide_expstr'] = gdf_edges['landslide_expstr'] + "+" + gdf_edges['susceptibility'].astype(str)
+            gdf_edges = gdf_edges.merge(fragility, on='landslide_expstr', how='left')
+            gdf_edges['ds'] = DS_NO
+            gdf_edges['rnd'] = np.random.random((len(gdf_edges),1))
+            collapsed_idx = (gdf_edges['rnd'] < gdf_edges['collapse_probability']) 
+            gdf_edges.loc[collapsed_idx, 'ds'] = DS_COMPLETE
+            gdf_edges.loc[collapsed_idx, 'is_damaged'] = True
+            print('after')
+            print(gdf_edges.loc[0])
+        else:
+            gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'ds'] = 1
+            gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'is_damaged'] = True
     elif hazard == 'earthquake':
         fragility = fragility.rename(columns={"med_slight": "med_ds1", 
                         "med_moderate": "med_ds2",
@@ -124,11 +147,18 @@ def compute_road_infra(buildings, household, individual,
     # For each individual, find the closest road node (closest) of the
     # household and the facility
 
+    print('individua')
+    print(individual)
+    print('household_w_node_id')
+    print(household_w_node_id)
+    print('gdf_buildings')
+    print(gdf_buildings)
     individual_w_nodes = individual.merge(household_w_node_id[['hhid','node_id']],on='hhid',how='left')\
                         .rename(columns={'node_id':'household_node_id'})\
                         .merge(gdf_buildings[['bldid','node_id']],how='left',left_on='indivfacid',right_on='bldid')\
                         .rename(columns={'node_id':'facility_node_id'})
-
+    print('individual_w_nodes')
+    print(individual_w_nodes)
     # Calculate distances between all nodes in the damaged network
     shortest_distance = nx.shortest_path_length(G_dmg)
 
@@ -140,11 +170,13 @@ def compute_road_infra(buildings, household, individual,
             connection_dict[source][target] = True
 
     # Based on connectivity, fill-in facillity_access attribute in the individual layer
+    print(individual_w_nodes)
     individual_w_nodes['facility_access'] = individual_w_nodes.apply(lambda x: x['facility_node_id'] in connection_dict[x['household_node_id']].keys(),axis=1)
 
     return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access'], individual_w_nodes['facility_access']
 
-def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard):
+def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard,
+                        threshold_flood, threshold_flood_distance):
     print('Computing power infrastructure')
     print(nodes.head())
     print(edges.head())
@@ -192,7 +224,8 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
                     "beta_moderate": "beta_ds2",
                     "beta_extensive": "beta_ds3",
                     "beta_complete": "beta_ds4"})
-        gdf_nodes = gdf_nodes.merge(fragility, how='left',left_on='eq_vuln',right_on='vuln_string')
+        #gdf_nodes = gdf_nodes.merge(fragility, how='left',left_on='eq_vuln',right_on='vuln_string')
+        gdf_nodes = gdf_nodes.merge(fragility, how='left',left_on='eq_frgl',right_on='vuln_string')
         nulls = gdf_nodes['med_ds1'].isna()
         gdf_nodes.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
         gdf_nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
@@ -209,6 +242,39 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
             gdf_nodes[f'ds_{i}'] = np.abs(gdf_nodes[f'prob_ds{i-1}'] - gdf_nodes[f'prob_ds{i}'])
         df_ds = gdf_nodes[['ds_1','ds_2','ds_3','ds_4','ds_5']]
         gdf_nodes['ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+    elif hazard == 'landslide':
+        print(gdf_nodes.loc[0])
+        gdf_nodes['rnd'] = np.random.random((len(gdf_nodes),1))
+        if 'ls_susceptibility' in gdf_nodes.columns:
+            gdf_nodes['susceptibility'] = gdf_nodes['ls_susceptibility']
+        else:
+            gdf_nodes['susceptibility'] = 'low'
+            gdf_nodes.loc[gdf_nodes['im'] == 2.0, 'susceptibility'] = 'medium'
+            gdf_nodes.loc[gdf_nodes['im'] == 3.0, 'susceptibility'] = 'high'
+        fragility['landslide_expstr'] = fragility['expstr'].astype(str) + "+"+ fragility["susceptibility"].astype(str) 
+        gdf_nodes['landslide_expstr'] = gdf_nodes['ls_frgl'].astype(str) + "+" \
+                                                   + gdf_nodes['susceptibility'].astype(str)
+        gdf_nodes = gdf_nodes.merge(fragility, on='landslide_expstr', how='left')
+        gdf_nodes['ds'] = DS_NO
+        collapsed_idx = (gdf_nodes['rnd'] < gdf_nodes['collapse_probability']) 
+        gdf_nodes.loc[collapsed_idx, 'ds'] = DS_COMPLETE
+        print(gdf_nodes.loc[0])
+    elif hazard == 'flood':
+        away_from_flood = gdf_nodes['distance'] > threshold_flood_distance
+        print('threshold_flood_distance',threshold_flood_distance)
+        print('number of distant buildings', len(gdf_nodes.loc[away_from_flood, 'im']))
+        gdf_nodes.loc[away_from_flood, 'im'] = 0
+
+
+        gdf_nodes = gdf_nodes.merge(fragility, left_on='fl_vuln', right_on='expstr', how='left')
+        x = np.array([0,0.5,1,1.5,2,3,4,5,6])
+        y = gdf_nodes[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
+        xnew = gdf_nodes['im'].to_numpy()
+        flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
+        # TODO: find another way for vectorized interpolate
+        gdf_nodes['fl_prob'] = np.diag(flood_mapping(xnew))
+        gdf_nodes['ds'] = 0
+        gdf_nodes.loc[gdf_nodes['fl_prob'] > threshold_flood,'ds'] = 1
         
     # All Nodes
     all_nodes = set(gdf_nodes['node_id'])
@@ -346,8 +412,28 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     gdf_building_intensity['rnd'] = np.random.random((len(gdf_building_intensity),1))
 
     if hazard_type == "landslide":
+        print('----------up side down prev', gdf_building_intensity.shape)
+        print(pd.unique(gdf_building_intensity['im']))
+        gdf_building_intensity['susceptibility'] = 'low'
+        gdf_building_intensity.loc[gdf_building_intensity['im'] == 2.0, 'susceptibility'] = 'medium'
+        gdf_building_intensity.loc[gdf_building_intensity['im'] == 3.0, 'susceptibility'] = 'high'
+        print(gdf_building_intensity.loc[0])
+        print(gdf_building_intensity.columns)
+        print(df_hazard.loc[0])
+        df_hazard['landslide_expstr'] = df_hazard['expstr'].astype(str) +"+"+ df_hazard["susceptibility"].astype(str) 
+
+        gdf_building_intensity['landslide_expstr'] = gdf_building_intensity['material'].astype(str)  + "+" \
+                                                   + gdf_building_intensity['code_level'].astype(str)  + "+" \
+                                                   + gdf_building_intensity["susceptibility"].astype(str) 
+        print('x1', gdf_building_intensity.columns)
+        print('x2', df_hazard.columns)
+
+        print(len(gdf_building_intensity))
         gdf_building_collapse_prob = gdf_building_intensity.merge(df_hazard, 
-                                        on=['expstr','susceptibility'], how='left')
+                                        on='landslide_expstr', how='left')
+        print('----------up side down ', gdf_building_collapse_prob.shape)
+        print(gdf_building_collapse_prob.loc[0])
+        print(len(gdf_building_collapse_prob))
         gdf_building_collapse_prob['ds'] = DS_NO
         collapsed_idx = (gdf_building_collapse_prob['rnd'] < gdf_building_collapse_prob['collapse_probability']) 
         gdf_building_collapse_prob.loc[collapsed_idx, 'ds'] = DS_COLLAPSED

@@ -6,9 +6,9 @@ from ..data import articles
 @solara.component
 def ArticleCard(name):
     article = articles[name]
-    with rv.Card(max_width="400px") as main:
+    with rv.Card(max_width="300px") as main:
         with solara.Link(f"/docs/{name}"):
-            rv.Img(height="250", src=article.image_url)
+            rv.Img(height="150", src=article.image_url)
         rv.CardTitle(children=[article.title])
         with rv.CardText():
             solara.Markdown(article.description)
@@ -21,7 +21,7 @@ def ArticleCard(name):
 def Overview():
     with solara.ColumnsResponsive(12) as main:
         with solara.Card():
-            with solara.ColumnsResponsive(12, small=6, large=4):
+            with solara.ColumnsResponsive(12, small=6, large=2):
                 for name in articles:
                     ArticleCard(name)
     return main

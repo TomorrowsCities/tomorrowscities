@@ -48,18 +48,7 @@ layers = solara.reactive({
             'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
-            'attributes': [set(['expstr','susceptibility','minor','moderate','severe'])]},
-        'landslide susceptibility': {
-            'render_order': 21,
-            'map_info_tooltip': 'Number of zones in the landslide susceptibility map',
-            'data': solara.reactive(None),
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'attributes_required': [set(['id','susceptibility','geometry'])],
-            'attributes': [set(['id','susceptibility','geometry'])]},
+            'attributes': [set(['expstr','susceptibility','minor','moderate','severe','description'])]},
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
@@ -159,7 +148,7 @@ layers = solara.reactive({
             'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
-            'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs', 'eq_vuln'])],
+            'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs'])],
             'attributes': [set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
                          'income', 'eq_vuln'])]},
@@ -346,11 +335,6 @@ def load_app_state():
 def generic_layer_colors(feature):
     return None
 
-def susceptibility_colors(feature):
-    susceptibility = feature['properties']['susceptibility']
-    s_to_color = {'low': 'green', 'medium':'orange','high': 'red'}
-    return {'fillColor':  s_to_color[susceptibility], 'color':  s_to_color[susceptibility]}
-
 def generic_layer_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
@@ -486,9 +470,12 @@ def create_map_layer(df, name):
     if name == "intensity":
         # Take the largest 500_000 values to display
         im_col = 'pga' if 'pga' in df.columns else 'im'
-        df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
+        df_non_zero = df[df[im_col] > 0]
+        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000))
+        df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
+        #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5) 
+        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
@@ -537,13 +524,7 @@ def create_map_layer(df, name):
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers,
                                                    disable_clustering_at_zoom=5)
-        
-    elif name == 'landslide susceptibility':
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
-            style_callback=susceptibility_colors)
-        map_layer.on_click(generic_layer_click_handler)     
+
     else:
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
@@ -1017,23 +998,35 @@ def ExecutePanel():
                 missing += list(set(["landuse","building","household","individual","intensity","fragility"]) - existing_layers)
         elif hazard == "flood":
             if "power" in  infra:
-                missing += list(set(["power edges","power nodes","intensity","power vulnerability"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","power edges","power nodes","intensity","vulnerability"]) - existing_layers)
             if "road" in  infra:
-                missing += list(set(["road edges","road nodes","intensity"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","road edges","road nodes","intensity"]) - existing_layers)
             if "building" in infra:
                 missing += list(set(["landuse","building","household","individual","intensity","vulnerability"]) - existing_layers)
         elif hazard == "landslide":
             if "power" in  infra:
-                missing += list(set(["power edges","power nodes","landslide fragility","landslide susceptibility"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","power edges","power nodes","landslide fragility"]) - existing_layers)
             if "road" in  infra:
-                missing += list(set(["road edges","road nodes","landslide fragility","landslide susceptibility"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","road edges","road nodes","landslide fragility"]) - existing_layers)
             if "building" in infra:
-                missing += list(set(["landuse","building","household","individual","landslide fragility","landslide susceptibility"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","landslide fragility"]) - existing_layers)
  
         if infra == []:
             missing += ['You should select at least one of power, road or building']
         return missing == [], missing
     
+    def pre_compute_checks():
+        hazard = layers.value['hazard'].value
+        infra = layers.value['infra'].value
+        building = layers.value['layers']['building']['data'].value
+        household = layers.value['layers']['household']['data'].value
+
+        missing_buildings = set(household['bldid']) - set(building['bldid'])
+        print('missing buildings', missing_buildings)
+        if len(missing_buildings) > 0:
+            return False, f"There are {len(missing_buildings)} household without buildings. Please add buildings for these households."
+        
+        return True, ''
 
 
     def execute_engine():
@@ -1047,6 +1040,10 @@ def ExecutePanel():
             edges = layers.value['layers']['road edges']['data'].value
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['road fragility']['data'].value
+            if layers.value['hazard'].value == 'landslide':
+                fragility = layers.value['layers']['landslide fragility']['data'].value
+                trigger_level= layers.value['landslide_trigger_level'].value
+                fragility = fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'})
             hazard = layers.value['hazard'].value
 
             edges['ds'] = 0
@@ -1080,9 +1077,16 @@ def ExecutePanel():
             nodes = layers.value['layers']['power nodes']['data'].value
             edges = layers.value['layers']['power edges']['data'].value
             intensity = layers.value['layers']['intensity']['data'].value
-            power_fragility = layers.value['layers']['power fragility']['data'].value
+            fragility = layers.value['layers']['power fragility']['data'].value
             hazard = layers.value['hazard'].value
 
+            if layers.value['hazard'].value == 'landslide':
+                fragility = layers.value['layers']['landslide fragility']['data'].value
+                trigger_level= layers.value['landslide_trigger_level'].value
+                fragility = fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'})
+
+            if layers.value['hazard'].value == 'flood':
+                fragility = layers.value['layers']['vulnerability']['data'].value
 
             ds, is_damaged, is_operational, has_power, household_has_power, hospital_has_power = \
                 compute_power_infra(buildings,
@@ -1090,8 +1094,8 @@ def ExecutePanel():
                                     nodes, 
                                     edges,
                                     intensity,
-                                    power_fragility,
-                                    hazard)
+                                    fragility,
+                                    hazard, threshold_flood.value, threshold_flood_distance.value)
             
             #power_node_df =  dfs['Power Nodes'].copy()                         
             nodes['ds'] = list(ds)
@@ -1124,7 +1128,6 @@ def ExecutePanel():
             #print('policies',policies)
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
-                intensity = layers.value['layers']['landslide susceptibility']['data'].value
                 trigger_level= layers.value['landslide_trigger_level'].value
                 df_bld_hazard = compute(
                     landuse,
@@ -1180,9 +1183,15 @@ def ExecutePanel():
             is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
             if not is_ready:
                 raise Exception(f'Missing {missing}')
+            #is_ready, message = pre_compute_checks()
+            #if not is_ready:
+            #    raise Exception(message)
             max_trials = landslide_max_trials.value  if layers.value['hazard'].value == "landslide" else 1
             for trial in range(1,max_trials+1):
-                set_progress_message('Running...')
+                if trial == 1:
+                    set_progress_message('Running...')
+                else:
+                    set_progress_message(f'Monte-Carlo trial {trial}/{max_trials}...')
                 if 'power' in layers.value['infra'].value:
                     nodes, buildings, household = execute_power()
                     layers.value['layers']['power nodes']['data'].set(nodes)
