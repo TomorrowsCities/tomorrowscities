@@ -265,6 +265,10 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
         print('number of distant buildings', len(gdf_nodes.loc[away_from_flood, 'im']))
         gdf_nodes.loc[away_from_flood, 'im'] = 0
 
+        # Override nearest intensity if water depth is already provided
+        if "fl_water_depth" in gdf_nodes.columns:
+            idx = gdf_nodes['fl_water_depth'] >= 0.0
+            gdf_nodes.loc[idx, 'im'] = gdf_nodes['fl_water_depth']
 
         gdf_nodes = gdf_nodes.merge(fragility, left_on='fl_vuln', right_on='expstr', how='left')
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
