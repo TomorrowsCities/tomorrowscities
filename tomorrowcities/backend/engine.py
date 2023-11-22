@@ -230,7 +230,13 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
         gdf_nodes.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
         gdf_nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
         
-        gdf_nodes['logim'] = np.log(gdf_nodes['im']/9.81)
+        if 'im' in gdf_nodes.columns:
+            gdf_nodes['logim'] = np.log(gdf_nodes['im']/9.81)
+        elif 'pga' in gdf_nodes.columns:
+            gdf_nodes['logim'] = np.log(gdf_nodes['pga']/9.81)
+        else:
+            print('not supposed to happen')
+
     
         for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
             gdf_nodes[m] = np.log(gdf_nodes[m])
@@ -345,6 +351,7 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
     gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes[gdf_nodes['n_bldgs'] > 0], 
                 how='left', rsuffix='power_node',distance_col='power_node_distance')
     
+    print(gdf_buildings.loc[0,:])
     # If nearest server is operational, then building has power, othwerwise not
     gdf_buildings['has_power'] = gdf_buildings['node_id'].map(is_operational_mapper)
 
@@ -450,6 +457,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print('threshold_flood_distance',threshold_flood_distance)
         print('number of distant buildings', len(gdf_building_intensity.loc[away_from_flood, 'im']))
         gdf_building_intensity.loc[away_from_flood, 'im'] = 0
+        print('maximum water depth on buildings ',gdf_building_intensity['im'].max())
 
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
@@ -610,7 +618,34 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
         bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
         bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
-        bld_eq['logim'] = np.log(bld_eq['im']/9.81)
+
+        # Intensity measure calculation 
+        sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
+        sa_cols = [x for x in bld_eq.columns  if x.startswith('sa ') or x == 'pga']
+        # Means single-channel earthquake density map
+        if len(sa_list) == 0:
+            if 'im' in bld_eq.columns:
+                bld_eq['logim'] = np.log(bld_eq['im']/9.81)
+            elif 'pga' in bld_eq.columns:
+                bld_eq['logim'] = np.log(bld_eq['pga']/9.81)
+            else:
+                raise ValueError('No intensity measure found')    
+        else:
+            # Multi-channel density map
+            for i, row in bld_eq.iterrows():
+                minp, maxp = row['minperiod'], row['maxperiod']
+                if minp > 0 and maxp > 0 and maxp > minp: 
+                    # 0.001 corresponds to pga
+                    x_interp = np.log(np.concatenate(([0.001],sa_list)))
+                    y_interp = np.log(row[sa_cols].to_numpy(dtype=np.float32))
+                    step = 0.01
+                    x_required = np.log(np.linspace(minp, maxp, int((maxp - minp) / step + 1)))
+                    sa_interp = np.exp(np.interp(x_required, x_interp, y_interp))
+                    sa_gmean = np.prod(sa_interp)**(1/len(sa_interp))
+                    bld_eq.at[i,'logim'] = np.log(sa_gmean/9.81)
+                else:
+                    bld_eq.at[i,'logim'] = np.log(row['pga']/9.81)
+
         for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
             bld_eq[m] = np.log(bld_eq[m])
 
