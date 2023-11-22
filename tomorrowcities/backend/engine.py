@@ -607,6 +607,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     if hazard_type == HAZARD_EARTHQUAKE:
         bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
         nulls = bld_eq['muds1_g'].isna()
+        print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
         bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
         bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
         bld_eq['logim'] = np.log(bld_eq['im']/9.81)
