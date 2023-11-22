@@ -896,12 +896,12 @@ def LayerDisplayer():
                 #solara.CrossFilterSelect(data, data.columns[0])
                 #solara.CrossFilterDataFrame(df=data)
                 solara.DataFrame(data, items_per_page=5)
-            if selected == "building":
+            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
                 with solara.Row():
                     file_object = data.to_json()
-                    with solara.FileDownload(file_object, "building_export.geojson", mime_type="application/geo+json"):
+                    with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), "building_export.csv", mime_type="text/csv"):
+                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
         if selected == 'gem_vulnerability':
             VulnerabiliyDisplayer(data)
