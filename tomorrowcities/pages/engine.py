@@ -36,7 +36,7 @@ layers = solara.reactive({
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
-    'version': '0.2.3',
+    'version': '0.2.4',
     'layers' : {
         'landslide fragility': {
             'render_order': 0,
@@ -57,8 +57,8 @@ layers = solara.reactive({
             'force_render': solara.reactive(False),
             'visible': solara.reactive(False),
             'pre_processing': building_preprocess,
-            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0,
-                            'node_id': None,'hospital_access': True, 'has_power': True},
+            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0, 'metric8': 0,
+                            'node_id': None,'hospital_access': True, 'has_power': True, 'casualty': 0},
             'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
             'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
         'landuse': {
@@ -251,7 +251,8 @@ layers = solara.reactive({
         "metric4": {"desc": "Number of individuals with no access to hospital", "value": 0, "max_value": 100},
         "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
-        "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},}})
+        "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},
+        "metric8": {"desc": "Number of casualties", "value": 0, "max_value":100},}})
 
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
@@ -1152,6 +1153,7 @@ def ExecutePanel():
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value)
             buildings['ds'] = list(df_bld_hazard['ds'])
+            buildings['casualty'] = list(df_bld_hazard['casualty'])
 
             return buildings
 

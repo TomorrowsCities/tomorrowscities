@@ -451,9 +451,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print(gdf_building_collapse_prob.loc[0])
         print(len(gdf_building_collapse_prob))
         gdf_building_collapse_prob['ds'] = DS_NO
+        gdf_building_collapse_prob['casualty'] = gdf_building_collapse_prob['residents']
         collapsed_idx = (gdf_building_collapse_prob['rnd'] < gdf_building_collapse_prob['collapse_probability']) 
         gdf_building_collapse_prob.loc[collapsed_idx, 'ds'] = DS_COLLAPSED
-        bld_hazard = gdf_building_collapse_prob[['bldid','ds']]
+        gdf_building_collapse_prob.loc[~collapsed_idx, 'casualty'] = 0
+        bld_hazard = gdf_building_collapse_prob[['bldid','ds','casualty']]
         return bld_hazard
 
     # TODO: Check if the logic makes sense
@@ -661,8 +663,12 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_eq[f'ds_{i}'] = np.abs(bld_eq[f'prob_ds{i-1}'] - bld_eq[f'prob_ds{i}'])
         df_ds = bld_eq[['ds_1','ds_2','ds_3','ds_4','ds_5']]
         bld_eq['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+        casualty_rates = np.array([0, 0.05, 0.28, 1.152, 74.41]) # percent
+        bld_eq['casualy'] = 0
+        bld_eq = bld_eq.assign(casualty=lambda x: casualty_rates[x['eq_ds']] * x['residents'] / 100)
+        bld_eq['casualty'] = bld_eq['casualty'].astype(int) 
         # Create a simplified building-hazard relation
-        bld_hazard = bld_eq[['bldid','eq_ds']]
+        bld_hazard = bld_eq[['bldid','eq_ds','casualty']]
         bld_hazard = bld_hazard.rename(columns={'eq_ds':'ds'})
 
         ds_str = {0: 'No Damage',1:'Low',2:'Medium',3:'High',4:'Collapsed'}
@@ -676,9 +682,22 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         # TODO: find another way for vectorized interpolate
         bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
         bld_flood['fl_ds'] = 0
-        bld_flood.loc[bld_flood['fl_prob'] > threshold_flood,'fl_ds'] = 1
+        flooded_buildings = bld_flood['fl_prob'] > threshold_flood
+        bld_flood.loc[flooded_buildings, 'fl_ds'] = 1
+
+        casualty_rates = np.array([[0,0,0,0.000976715,0.0105355,0.052184493,0.160744982,0.373769339,0.743830881]])
+        y_casualty = np.repeat(casualty_rates, len(bld_flood),axis=0)
+        casualty_mapping = interp1d(x,y_casualty,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
+        # TODO: find another way for vectorized interpolate
+        bld_flood['casualty_prob'] = np.diag(casualty_mapping(xnew))
+        bld_flood['casualty_rates'] = bld_flood['casualty_prob'] * bld_flood['residents']
+        bld_flood['casualty'] = 0
+        bld_flood.loc[flooded_buildings, 'casualty'] = bld_flood.loc[flooded_buildings, 'casualty_rates']
+        bld_flood['casualty'] = bld_flood['casualty'].astype(int)
+
+
         # Create a simplified building-hazard relation
-        bld_hazard = bld_flood[['bldid','fl_ds']]
+        bld_hazard = bld_flood[['bldid','fl_ds','casualty']]
         bld_hazard = bld_hazard.rename(columns={'fl_ds':'ds'})
 
         ds_str = {0: 'No Damage',1:'Flooded'}
@@ -689,7 +708,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, policies=[],capacity=1.0):
     # only use necessary columns
     bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys',
-                                'code_level','material','nhouse','residents','hospital_access','has_power']]
+                                'code_level','material','nhouse','residents','hospital_access','has_power','casualty']]
 
     # Find the damage state of the building that the household is in
     df_household_bld = df_household.merge(bld_hazard[['bldid','ds']], on='bldid', how='left',validate='many_to_one')
@@ -747,7 +766,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
 
 
     if 12 in policies:
-        for m in [2,3,4,5,7]:
+        for m in [2,3,4,5,7,8]:
             thresholds[f'metric{m}'] += 1
 
     # metric 1 number of unemployed workers in each building
@@ -855,7 +874,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     df_metric7['metric7'] = df_metric7[['residents','metric7']].min(axis=1)
     df_metric7['metric7'] = df_metric7['metric7'].fillna(0).astype(int)
 
-
+    df_metric8 = bld_hazard[['bldid','casualty']].copy().rename(columns={'casualty':'metric8'})
 
     df_metrics = {'metric1': df_metric1,
                 'metric2': df_metric2,
@@ -863,7 +882,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                 'metric4': df_metric4,
                 'metric5': df_metric5,
                 'metric6': df_metric6,
-                'metric7': df_metric7}
+                'metric7': df_metric7,
+                'metric8': df_metric8}
 
 
     number_of_workers = len(df_workers)
@@ -883,7 +903,8 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                 "metric4": {"desc": "Number of individuals with no access to hospital", "value": 0, "max_value": number_of_individuals},
                 "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": number_of_households},
                 "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": number_of_individuals},
-                "metric7": {"desc": "Population displacement", "value": 0, "max_value": number_of_individuals},}
+                "metric7": {"desc": "Population displacement", "value": 0, "max_value": number_of_individuals},
+                "metric8": {"desc": "Number of casualties", "value": 0, "max_value": number_of_individuals},}
     metrics["metric1"]["value"] = int(df_metric1['metric1'].sum())
     metrics["metric2"]["value"] = int(df_metric2['metric2'].sum())
     metrics["metric3"]["value"] = int(df_metric3['metric3'].sum())
@@ -891,5 +912,6 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metrics["metric5"]["value"] = int(df_metric5['metric5'].sum())
     metrics["metric6"]["value"] = int(df_metric6['metric6'].sum())
     metrics["metric7"]["value"] = int(df_metric7['metric7'].sum())
+    metrics["metric8"]["value"] = int(df_metric8['metric8'].sum())
 
     return metrics, df_metrics
