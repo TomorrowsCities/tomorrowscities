@@ -654,7 +654,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                     bld_eq.at[i,'logim'] = np.log(row['pga']/9.81)
 
         for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
-            bld_eq[m] = np.log(bld_eq[m])
+            bld_eq[m] = np.log(bld_eq[m]/9.81)
 
         for i in [1,2,3,4]: 
             bld_eq[f'prob_ds{i}'] = norm.cdf(bld_eq['logim'],bld_eq[f'muds{i}_g'],bld_eq[f'sigmads{i}'])
