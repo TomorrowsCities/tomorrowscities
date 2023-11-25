@@ -36,7 +36,7 @@ layers = solara.reactive({
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
-    'version': '0.2.4_fix1',
+    'version': '0.2.4_fix2',
     'layers' : {
         'landslide fragility': {
             'render_order': 0,
