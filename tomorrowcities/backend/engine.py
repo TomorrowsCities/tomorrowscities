@@ -48,6 +48,7 @@ def compute_road_infra(buildings, household, individual,
     if hazard in ['flood', 'debris','landslide']:
         gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity, how='left',
                                           rsuffix='intensity',distance_col='distance')
+        gdf_edges = gdf_edges.drop_duplicates(subset=['edge_id'], keep='first')
         # TODO: sjoin_nearest or the approach below: compare
         #roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
         #for i, road in enumerate(roads_with_width):
