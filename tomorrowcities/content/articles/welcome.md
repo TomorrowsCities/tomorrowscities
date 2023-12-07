@@ -11,12 +11,22 @@ category:
   - general
 ---
 
-[TOC]
-
-## Tomorrow's Cities Decision Support Environment (TCDSE)
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.2.4: Derry
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
+## Documentation
+Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/TomorrowsCities/tomorrowcities/wiki) 
+
 ## What is New?
+
+**Changelog: v0.2.4**
+
+* Landslide calculation
+* Multi-band GeoTIFF support
+* Casualty metric
+* Adjustable flood settings
+* New city added to sample dataset
+* Flood analysis for power networks
 
 **Changelog: v0.2.3**
 
@@ -103,6 +113,7 @@ General capabilities/features of the web application can be summarized as follow
 
 * Earthquake
 * Flood
+* Landslide
 
 *Exposure Scenarios*
 
@@ -114,6 +125,7 @@ General capabilities/features of the web application can be summarized as follow
 
 * Building and infrastructure-level damage states
 * Household and individual-level derived metrics
+* Casualy
 
 *Policies*
 
@@ -124,6 +136,7 @@ General capabilities/features of the web application can be summarized as follow
 * Dar Es Salaam
 * Rapti
 * Nairobi
+* Nablus
 
 *Visualization*
 
@@ -135,6 +148,7 @@ General capabilities/features of the web application can be summarized as follow
 *Data structure*
 
 * GeoJSON format for geospatial data
+* Single or Multi-Band GeoTIFF formats for density maps
 * Vanilla JSON and Excel for non-geospatioal tabular data
 * XML support for [Global Vulnerability Model](https://github.com/gem/global_vulnerability_model) 
 
@@ -142,6 +156,5 @@ General capabilities/features of the web application can be summarized as follow
 
 * Pure-Python development for both backend and frontend
 * Reactive user interface via Solara
-* geospatial database via postgis
 * Leaflet backend for maps
 * Easy deployment to cloud
