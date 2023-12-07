@@ -8,7 +8,7 @@ from . import LoginForm
 
 @solara.component
 def Page():
-    solara.Title("TCDSE » Account")
+    solara.Title(" ")
     if user.value is None:
         LoginForm()
 

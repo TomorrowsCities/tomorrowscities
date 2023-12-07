@@ -126,7 +126,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     """
     solara.Style(value=css)
     with solara.VBox() as main:
-        solara.Title("TCDSE » Welcome")
+        solara.Title(" ")
         article = articles["welcome"]
         solara.Markdown(article.markdown)
 

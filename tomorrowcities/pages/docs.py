@@ -24,7 +24,7 @@ repository in AWS.
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     if name is None:
         with solara.Column() as main:
-            solara.Title("TCDSE» Documentation")
+            solara.Title(" ")
             Overview()
             solara.Text('Images by rawpixel.com')
         return main
@@ -32,7 +32,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         return solara.Error(f"No such article: {name!r}")
     article = data.articles[name]
     with solara.ColumnsResponsive(12) as main:
-        solara.Title("TCDSE » Documentation » " + article.title)
+        solara.Title(" ")
         with solara.Link("/docs"):
             solara.Text("« Back to documentation")
         with solara.Card():

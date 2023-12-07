@@ -1506,7 +1506,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     }
     """
     solara.Style(value=css)
-    solara.Title("TCDSE » Engine")
+    solara.Title(" ")
 
     WebApp()
 
