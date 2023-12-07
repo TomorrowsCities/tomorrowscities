@@ -10,7 +10,7 @@ from cryptography.fernet import Fernet
 
 from ..data import articles
 
-route_order = ["/", "docs","engine","utilities","policies","settings","account"]
+route_order = ["/", "docs","engine","utilities","settings","account"]
 
 def check_auth(route, children):
     # This can be replaced by a custom function that checks if the user is

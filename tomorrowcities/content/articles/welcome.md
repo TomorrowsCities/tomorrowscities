@@ -11,7 +11,7 @@ category:
   - general
 ---
 
-## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.2.4: Derry
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.2: Derry
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## Documentation
