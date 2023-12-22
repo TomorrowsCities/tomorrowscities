@@ -4,3 +4,7 @@ header {
     background-repeat: no-repeat; /* Prevent image from repeating */
     height: 200px; /* Set a specific height for the header */
 }
+
+.v-application--wrap > div:nth-child(2) > div:nth-child(2){
+    display: none !important;
+}
