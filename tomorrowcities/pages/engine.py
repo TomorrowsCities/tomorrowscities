@@ -27,6 +27,8 @@ from ..backend.engine import compute, compute_power_infra, compute_road_infra, c
 from ..backend.utils import building_preprocess, identity_preprocess
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
 from .docs import data_import_help
+import ipywidgets
+import ipydatagrid
 
 layers = solara.reactive({
     'infra': solara.reactive(["building"]),
@@ -476,21 +478,21 @@ def create_map_layer(df, name):
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1) 
+        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1, name = name) 
     elif name == "landuse":
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=landuse_colors)
         map_layer.on_click(building_click_handler)   
     elif name == "building":
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=building_colors)
         map_layer.on_click(landuse_click_handler)
     elif name == "road edges":
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             hover_style={'color': 'orange'},
             style_callback=road_edge_colors)
         map_layer.on_click(road_edge_click_handler)
@@ -503,7 +505,7 @@ def create_map_layer(df, name):
                     (point.x + half_side, point.y + half_side),
                     (point.x - half_side, point.y + half_side)
                 ]))
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df_squares.to_json()),
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df_squares.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 0.8, 'weight': 1},
             hover_style={'color': 'orange', 'dashArray': '0', 'fillOpacity': 0.5})
         map_layer.on_click(road_node_click_handler)
@@ -523,7 +525,7 @@ def create_map_layer(df, name):
                     ),location=(y,x),title=f'{node["node_id"]}',draggable=False)
 
             markers.append(marker)
-        map_layer= ipyleaflet.MarkerCluster(markers=markers,
+        map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
                                                    disable_clustering_at_zoom=5)
 
     else:
@@ -577,7 +579,6 @@ def read_tiff(file_bytes):
             dst_crs=target_crs,
             resampling=Resampling.nearest)
 
-
     lon_pos, lat_pos = np.meshgrid(range(width),range(height))
     print('start transform ..........')
     #lon, lat = rasterio.transform.xy(transform,lat_pos.flatten(),lon_pos.flatten())
@@ -589,7 +590,6 @@ def read_tiff(file_bytes):
     # return only the non-zero intensity measures
     return gdf[(gdf.drop(columns='geometry')>0).any(axis=1)]
     #return gdf.sort_values(by='im',ascending=False).head(10000)
-
 
 def read_gem_xml(data: [bytes]):
     content_as_string = data.decode('utf-8')
@@ -611,7 +611,6 @@ def read_gem_xml(data: [bytes]):
 
     d['description'] = getText(dom.getElementsByTagName('description')[0])
 
-
     d['vulnerabilityFunctions'] = []
     for node in dom.getElementsByTagName('vulnerabilityFunction'):
         v = dict()
@@ -625,7 +624,6 @@ def read_gem_xml(data: [bytes]):
         d['vulnerabilityFunctions'].append(v)
 
     return d
-
 
 @solara.component
 def VulnerabilityFunctionDisplayer(vuln_func):
@@ -750,12 +748,10 @@ def MetricWidget(name, description, value, max_value, render_count):
                 "title": {"fontSize": 12},
                 "data": [{"value": value, "name": name}]}]}
     print(f'value/max_value {value}:{max_value}')
-    
 
     with solara.Tooltip(description):
         with solara.Column():
             solara.FigureEcharts(option=options, attributes={ "style": "height: 100px; width: 100px" })
-
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
@@ -782,7 +778,6 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     else:
         return (None, None)
 
-
     # in the first pass, look for exact column match
     name = None
     for layer_name, layer in layers.value['layers'].items():
@@ -808,7 +803,6 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
         for col, val in layers.value['layers'][name]['extra_cols'].items():
             data[col] = val
     return (name, data)
-
 
 @solara.component
 def FileDropZone():
@@ -886,17 +880,18 @@ def LayerDisplayer():
         data = nonempty_layers[selected]['data'].value
         if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
             if "geometry" in data.columns:
-                ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-                df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                # ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
+                # df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                df_filtered = data.drop(columns=['geometry'])
                 #solara.CrossFilterReport(df_filtered, classes=["py-2"])
                 #solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
                 #solara.CrossFilterDataFrame(df=df_filtered)
-                solara.DataFrame(df_filtered, items_per_page=5)
+                ipydatagrid.DataGrid.element(dataframe=df_filtered, layout={"height": "445px"}, auto_fit_columns=True).key(f'datagrid-{df_filtered}')
             else:
                 #solara.CrossFilterReport(data, classes=["py-2"])
                 #solara.CrossFilterSelect(data, data.columns[0])
                 #solara.CrossFilterDataFrame(df=data)
-                solara.DataFrame(data, items_per_page=5)
+                ipydatagrid.DataGrid.element(dataframe=data, layout={"height": "445px"}, auto_fit_columns=True).key(f'datagrid-{data}')
             if selected in ["building","road edges","road nodes","power nodes","power edges"] :
                 with solara.Row():
                     file_object = data.to_json()
@@ -904,6 +899,8 @@ def LayerDisplayer():
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
                     with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
+        with solara.Row(): #add empty line after attribute table
+            return                                                                
         if selected == 'gem_vulnerability':
             VulnerabiliyDisplayer(data)
 
@@ -925,7 +922,6 @@ def MetricPanel():
                          layers.value['render_count'].value)
         with solara.Link("/docs/metrics"):
             solara.Button(icon_name="mdi-help-circle-outline", icon=True)
-  
 
 @solara.component
 def LayerController():
@@ -934,7 +930,6 @@ def LayerController():
             if layer['map_layer'].value is not None:
                 solara.Checkbox(label=layer_name, 
                                 value=layer['visible'])
-
                     
 @solara.component
 def MapViewer():
@@ -944,9 +939,22 @@ def MapViewer():
     zoom, set_zoom = solara.use_state(default_zoom)
     #center, set_center = solara.use_state(default_center)
 
-    base_map = ipyleaflet.basemaps["OpenStreetMap"]["Mapnik"]
-    base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
-    map_layers = [base_layer]
+    # base_map = ipyleaflet.basemaps["OpenStreetMap"]["Mapnik"]
+    # base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
+    # map_layers = [base_layer]
+    base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
+    base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
+    base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
+    base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Stadia.StamenTerrain.build_url(),name="StamenTerrain",base = True)
+    base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True)                                                                                                                                         
+    map_layers = [base_layer5, base_layer4, base_layer3, base_layer2, base_layer1]
+    
+    layout = ipywidgets.Layout.element(width='100%', height='70vh')
+
+    tool1 = ipyleaflet.ZoomControl.element(position='topleft')
+    tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
+    tool3 = ipyleaflet.LayersControl.element(position='topright')
+    tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')                                                                                                                                              
 
     render_order = [l['render_order'] for _, l in layers.value['layers'].items()]
     for _, (layer_name, layer) in sorted(zip(render_order,layers.value['layers'].items())):
@@ -957,7 +965,6 @@ def MapViewer():
                 map_layer = create_map_layer(df, layer_name)
                 if map_layer is not None:
                     map_layers.append(map_layer)
-
      
     ipyleaflet.Map.element(
         zoom=zoom,
@@ -971,7 +978,9 @@ def MapViewer():
         touch_zoom=True,
         box_zoom=True,
         keyboard=True if random.random() > 0.5 else False,
-        layers=map_layers
+        layers=map_layers,
+        controls = [tool1, tool2, tool3, tool4],
+        layout = layout
         )
         
 @solara.component
@@ -1029,9 +1038,7 @@ def ExecutePanel():
         
         return True, ''
 
-
     def execute_engine():
-
 
         def execute_road():
             buildings = layers.value['layers']['building']['data'].value
@@ -1180,7 +1187,6 @@ def ExecutePanel():
                 layers.value['metrics'][metric]['max_value'] = computed_metrics[metric]['max_value']
             return buildings
 
-
         if execute_counter > 0 :
             is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
             if not is_ready:
@@ -1238,8 +1244,6 @@ def ExecutePanel():
 
             layers.value['datetime_analysis'] =  datetime.datetime.utcnow()
 
-            
-
     # Execute the thread only when the depencency is changed
     result = solara.use_thread(execute_engine, dependencies=[execute_counter])
 
@@ -1288,15 +1292,11 @@ def ExecutePanel():
         set_execute_btn_disabled(False)
         solara.ProgressLinear(value=False)
 
-
 @solara.component
 def PolicyPanel():
     all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
     with solara.Row():
         solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False)
-
-
-
 
 @solara.component
 def MapInfo():
@@ -1338,7 +1338,6 @@ def MapInfo():
                     else:
                         solara.Text(f'{value}')
 
-
 @solara.component
 def ImportDataZone():
     def s3_file_open(p):
@@ -1359,7 +1358,6 @@ def ImportDataZone():
                                                              size=len(fileContent),
                                                              data=fileContent)
             set_fileinfo(file_info)
-        
 
     total_progress, set_total_progress = solara.use_state(-1)
     fileinfo, set_fileinfo = solara.use_state(None)
@@ -1428,10 +1426,6 @@ def ImportDataZone():
     #    solara.FileBrowser(can_select=True, on_file_open=local_file_open,
     #        filter=lambda p: True if p.is_dir() or p.suffix in extension_list_w_dots else False)
 
-
-
-
-
     if total_progress > -1 and total_progress < 100:
         solara.Text(f"Uploading {total_progress}%")
         solara.ProgressLinear(value=total_progress)
@@ -1456,30 +1450,28 @@ def ImportDataZone():
 def WebApp():
     if storage.value is None:
         storage.value = revive_storage()
-    with solara.Columns([20,70,10]):
-        with solara.Column():
+        solara.Title("Sidebar")
+        with solara.Sidebar():
             with solara.lab.Tabs():
                 with solara.lab.Tab("SETTINGS"):
                     ExecutePanel()
                 with solara.lab.Tab("DATA IMPORT"):    
                     ImportDataZone()
+            MapInfo()
 
-        with solara.Column():
-            LayerController()
-            MapViewer()
-            with solara.Row(justify="center"):
-                MetricPanel()
-            LayerDisplayer()
-        MapInfo()
-    with ConfirmationDialog(
-        layers.value['dialog_message_to_be_shown'].value is not None,
-        on_close=clear_help_topic,
-        ok="Close",
-        title="Information Box",
-        ):
-        solara.Markdown(f'{layers.value["dialog_message_to_be_shown"].value}')
-    
+        # LayerController()
+        MapViewer()
+        with solara.Row(justify="center"):
+            MetricPanel()
+        LayerDisplayer()
 
+        with ConfirmationDialog(
+            layers.value['dialog_message_to_be_shown'].value is not None,
+            on_close=clear_help_topic,
+            ok="Close",
+            title="Information Box",
+            ):
+            solara.Markdown(f'{layers.value["dialog_message_to_be_shown"].value}')
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
@@ -1509,5 +1501,3 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     solara.Title(" ")
 
     WebApp()
-
-
