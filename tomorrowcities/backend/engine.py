@@ -7,6 +7,18 @@ from scipy.stats import norm
 from scipy.interpolate import interp1d
 import networkx as nx 
 
+import time
+import sys
+import uuid
+import os.path
+import random
+from random import sample
+from numpy.random import multinomial, randint
+from math import ceil
+import math
+from itertools import repeat, chain
+from .utils import ParameterFile
+
 def compute_road_infra(buildings, household, individual,
                         nodes, edges, intensity, fragility, hazard, 
                         road_water_height_threshold,
@@ -916,3 +928,1701 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     metrics["metric8"]["value"] = int(df_metric8['metric8'].sum())
 
     return metrics, df_metrics
+
+
+def dist2vector(d_value, d_number,d_limit,shuffle_or_not):
+    # d_value, d_number = vectors of same length (numpy array)
+    # d_limit = single integer which indicates the sum of all values
+    #           in d_number. 
+    # shuffle_or_not = 'shuffle' will return a randomly shuffled list otherwise
+    #     by default or with 'DoNotShuffle' the list will not be shuffled
+    # Output: insert_vector is a list
+    # get rid of extra dimensions if there is any
+    # x: to be repeated array
+    x = np.squeeze(d_value)
+    # how many repetations per element
+    w = np.squeeze(d_number)
+    # total number of repetetions
+    n = d_limit
+    # rounding off float repetetations
+    reps = np.round(w).astype('int32')
+    # make sure sum of reps is still n after rounding
+    reps[-1] = n - np.sum(reps[:-1])
+    # Repet x[i] reps[i] times for all i
+    y = np.repeat(x, reps)
+    if shuffle_or_not == 'shuffle':
+        random.shuffle(y)
+    return [str(element) for element in y]
+
+def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataFrame, population_calculate=False, seed=42):
+    # To re-generate a desired state comment above line and use: rng = int(seed_value_in_result)
+    tic = time.time()
+    print('1 -------', end=' ')
+    random.seed(seed)
+    np.random.seed(seed)
+    df_nc, ipdf, df1, df2, df3 = parameter_file.get_sheets()
+
+
+    # Convert both to the same target coordinate system
+    landuse_shp = land_use_file.set_crs("EPSG:4326",allow_override=True)
+    landuse_shp = landuse_shp.to_crs(f"EPSG:3857")
+
+                    
+    # Extract the nomenclature for load resisting system and land use types
+    startmarker = '\['
+    startidx = df_nc[df_nc.apply(lambda row: row.astype(str).str.contains(\
+                    startmarker,case=False).any(), axis=1)]
+        
+    endmarker = '\]'
+    endidx = df_nc[df_nc.apply(lambda row: row.astype(str).str.contains(\
+                    endmarker,case=False).any(), axis=1)]
+        
+    # Load resisting system types
+    lrs_types_temp = df_nc.loc[list(range(startidx.index[0]+1,endidx.index[0]))]
+    lrs_types = lrs_types_temp[1].to_numpy().astype(str)
+    lrsidx = {}
+    count = 0
+    for key in lrs_types:
+        lrsidx[str(key)] = count
+        count+=1
+        
+    # Landuse Types 
+    lut_types_temp = df_nc.loc[list(range(startidx.index[1]+1,endidx.index[1]))]
+    lut_types = lut_types_temp[1].astype(str)
+    lutidx = {}
+    count = 0
+    for key in lut_types:
+        lutidx[key] = count
+        count+=1    
+            
+    # Income types is hardcoded
+    avg_income_types =np.array(['lowIncomeA','lowIncomeB','midIncome','highIncome'])
+
+    #Average dwelling area (sqm) wrt income type (44 for LI, 54 for MI, 
+    #67 for HI in Tomorrovwille)
+    #Range of footprint area fpt_area (sqm) wrt. income type (32-66 for LI,
+    # 32-78 for MI and 70-132 for HI in Tomorrowville)                 
+    average_dwelling_area = np.array([ipdf.iloc[13,2],ipdf.iloc[13,3],\
+                                    ipdf.iloc[13,4],ipdf.iloc[13,5]])
+
+    fpt_area = {'lowIncomeA':np.fromstring(ipdf.iloc[14,2],dtype=float,sep=','),
+                'lowIncomeB':np.fromstring(ipdf.iloc[14,3],dtype=float,sep=','),
+                'midIncome':np.fromstring(ipdf.iloc[14,4],dtype=float,sep=','),
+                'highIncome':np.fromstring(ipdf.iloc[14,5],dtype=float,sep=',')}
+
+    # Storey definition 1- Low rise (LR) 1-4, 2- Mid rise (MR) 5-8,
+    # 3- High rise (HR) 9-19
+    storey_range = {0:np.fromstring(ipdf.iloc[17,2],dtype=int,sep=','),
+                    1:np.fromstring(ipdf.iloc[17,3],dtype=int,sep=','),
+                    2:np.fromstring(ipdf.iloc[17,4],dtype=int,sep=',')}
+
+    # Code Compliance Levels (Low, Medium, High): 1 - LC, 2 - MC, 3 - HC
+    code_level = np.array(['LC','MC','HC'])
+
+    # Nr of commercial buildings per 1000 individuals
+    numb_com = ipdf.iloc[2,1]
+    # Nr of industrial buildings per 1000 individuals
+    numb_ind = ipdf.iloc[3,1]
+
+    # Area constraints in percentage (AC) for residential and commercial zones. 
+    # Total built-up areas in these zones cannot exceed (AC*available area)
+    AC_com = ipdf.iloc[6,1] # in percent
+    AC_ind = ipdf.iloc[7,1] # in percent
+
+    # Assumption 14 and 15: Number of individuals per school and hospitals
+    nsch_pi = ipdf.iloc[9,1]
+    nhsp_pi = ipdf.iloc[10,1]
+
+    # Unit price for replacement wrt occupancy type and special facility 
+    # status of the building
+    # Occupancy type is unchangeable, only replacement value is taken from user input
+    Unit_price={'Res':ipdf.iloc[20,2],'Com':ipdf.iloc[20,3],'Ind':ipdf.iloc[20,4],
+                'ResCom':ipdf.iloc[20,5],'Edu':ipdf.iloc[20,6],'Hea':ipdf.iloc[20,7]}
+
+    #household_building_match = 'footprint' # 'footprint' or 'number_of_units'
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('2 ------',end=' ')
+    #%% Read the landuse shapefile
+
+
+
+    #Calculate area of landuse zones using polygons only if area is not already. 
+    # First, convert coordinate system to cartesian
+    if 'area' not in landuse_shp.columns:
+        landuse_shp_cartesian = landuse_shp.copy()
+        landuse_shp_cartesian = landuse_shp_cartesian.to_crs({'init': 'epsg:3857'})
+        landuse_shp_cartesian['area']=landuse_shp_cartesian['geometry'].area # m^2
+        landuse_shp_cartesian['area']=landuse_shp_cartesian['area']/10**4 # Hectares
+        landuse_shp_cartesian = landuse_shp_cartesian.drop(columns=['geometry'])
+        landuse = landuse_shp_cartesian.copy()
+    else:
+        landuse = landuse_shp.copy()
+        landuse = landuse.drop(columns=['geometry'])
+        
+    # In the landuse shape file, if avgincome = lowIncome, replace it by lowIncomeA
+    lowIncome_mask = landuse['avgincome'] == 'lowIncome'
+    landuse.loc[lowIncome_mask,'avgincome'] = 'lowIncomeA'
+
+    # Typecast the various fields in landuse shapefile
+    landuse['population'] = landuse['population'].astype(int)
+    landuse['densitycap'] = landuse['densitycap'].astype(float)
+    landuse['area'] = landuse['area'].astype(float)
+    landuse['zoneid'] = landuse['zoneid'].astype(int)
+    landuse['floorarear'] = landuse['floorarear'].astype(float)
+    landuse['setback'] = landuse['setback'].astype(float)
+
+
+
+    #%% Read the landuse table (if xlsx file instead of shapefile is available)
+    #landuse = pd.read_excel(os.path.join(ippath,ipfile_landuse),sheet_name=0)
+
+    #%% Concatenate the dataframes and process the data
+    tabledf = pd.concat([df1,df2,df3]).reset_index(drop=True)
+
+    # Define a dictionary containing data distribution tables
+    # Table names sorted according to the order in the excel input spreadsheet
+    tables_temp = {
+        't1':[],'t2':[],'t3':[],'t4':[],'t5':[],'t5a':[],'t6':[],'t9':[],
+        't12':[],'t13':[],'t7':[],'t8':[],'t11':[],'t10':[],'t14':[]   
+        }
+    startmarker = '\['
+    startidx = tabledf[tabledf.apply(lambda row: row.astype(str).str.contains(\
+                    startmarker,case=False).any(), axis=1)]
+        
+    endmarker = '\]'
+    endidx = tabledf[tabledf.apply(lambda row: row.astype(str).str.contains(\
+                    endmarker,case=False).any(), axis=1)]
+        
+    count=0
+    for key in tables_temp:
+        #print(startidx.index[count], endidx.index[count])
+        tablepart = tabledf.loc[list(range(startidx.index[count]+1,endidx.index[count]))]
+        tablepart = tablepart.drop(columns =0 )
+        tablepart = tablepart.dropna(axis=1).reset_index(drop=True).values.tolist()
+        tables_temp[key].append(tablepart)
+        count+=1
+
+    tables = tables_temp
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('3 ------',end=' ')
+    #%% Basic exception handling to check improper inputs in the spreadsheet
+    input_error_flag = False
+    input_error_flag_shp = False
+
+    if numb_com ==0:
+        print('The number of commercial buildings cannot be zero.')
+        input_error_flag = True
+    if numb_ind == 0:
+        print('The number of industrial buildings cannot be zero.')
+        input_error_flag = True
+        
+    if len(lutidx) != len(tables['t7'][0]) or len(lutidx) != len(tables['t8'][0])\
+        or len(lutidx) != len(tables['t9'][0]) or len(lutidx) != len(tables['t11'][0]):
+            print('The number of rows in Tables 7,8,9 and 11 must be equal to '\
+                'the number of land use types (LUT) in Nomenclature sheet.\n')
+            input_error_flag = True
+
+    if len(lrsidx)!=len(tables['t7'][0][0]) or len(lrsidx)!=len(tables['t8'][0][0])\
+        or len(lrsidx)!=len(tables['t11'][0][0]):
+            print('The number of columns in Tables 7,8 and 11 must be equal to '\
+                'the number of load resisting system (LRS) types in '\
+                'Nomenclature sheet. \n')
+            input_error_flag = True
+
+    # Check if avgincome values are missing for fields in the nomenclature list
+    for val in lut_types:
+        avgInc_mask = landuse['luf'] == val
+        incomeval4lut = landuse.loc[avgInc_mask,'avgincome']
+        if incomeval4lut.isnull().values.any():
+            print('avgincome field missing for ',val,'\n')
+            input_error_flag_shp = True        
+            
+    if input_error_flag:
+        print('Please correct the faulty inputs in the input spreadsheet.\n')
+        sys.exit(1)
+        
+    if input_error_flag_shp:
+        print('Please correct the faulty inputs in the input shapefile.\n')
+        sys.exit(1)
+        
+        
+    print(time.time() - tic)
+    tic = time.time()
+    print('3 ------',end=' ')
+
+    #%% Note on definition of data layers
+    # The household layer is initialized as Pandas dataframe in Step 2
+    # The individual layer is initialized as Pandas dataframe in Step 5
+    # The building layer is initialized as Pandas dataframe in Step 12
+    # landuse_res_df (residential zone landuse subdataframe) is defined in step 11
+    # landuse_ic_df (commercial/industrial) is also defined in step 11
+
+    #%% Function definition: dist2vector
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('4 ------',end=' ')
+    #%% The data generation process begins here____________________________________
+
+    #%% Step 1: Calculate maximum population (nPeople)
+    if population_calculate:
+        landuse['population'] = landuse['population'].astype(int)
+        # Subtracts existing population from projected population
+        nPeople = round(landuse['densitycap']*landuse['area']-landuse['population'])
+        nPeople[nPeople<0]=0
+    else:
+        landuse['population'] = landuse['population'].astype(int)
+        nPeople = landuse['population']
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('5 ------',end=' ')
+    #%% Step 2: Calculate the number of households (nhouse), hhid
+    # Assumption 1: Household size distribution is same for different income types
+    # Question: How to ensure that there are no NaNs while assigning zone type?
+
+    # Convert Table 1 to numpy array
+    t1_list = tables['t1'][0]
+    # No. of individuals
+    t1_l1 = np.array(t1_list[0], dtype=int) 
+    t1_l2 = np.array(t1_list[1], dtype=float) # Probabilities
+
+    # Compute the probability of X number of people living in a household 
+    household_prop = t1_l2/sum(t1_l2) 
+    # Total number of households for all zones
+    nhouse_all = round(nPeople/(sum(household_prop*t1_l1)))
+    nhouse_all = nhouse_all.astype('int32')
+    nhouse = nhouse_all[nhouse_all>0] # Exclude zones with zero households
+    nhouseidx = nhouse.index
+    #Preallocate a dataframe with nan to hold the household layer
+    household_df = pd.DataFrame(np.nan, index = range(sum(nhouse)),
+                                columns=['bldid','hhid','income','nind','commfacid',
+                                        'income_numb','zonetype','zoneid',
+                                        'approxFootprint'])
+    #Calculate a list of cumulative sum of nhouse
+    nhouse_cuml = np.cumsum(nhouse)
+
+    #  Assign household id (hhid) 
+    a = 0
+    for i in nhouseidx:
+        b =  nhouse_cuml[i]
+        household_df.loc[range(a,b),'hhid'] = range(a+1,b+1) # First hhid index =1
+        household_df.loc[range(a,b),'zoneid'] = landuse.loc[i,'zoneid']
+        household_df.loc[range(a,b),'zonetype'] = landuse.loc[i,'avgincome']
+        a = b
+
+    del a,b
+    household_df['hhid'] = household_df['hhid'].astype(int)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('6 ------',end=' ')
+    #%% Step 3: Identify the household size and assign "nInd" values to each household
+    a_g = 0
+    for i in nhouseidx:
+        b_g = nhouse_cuml[i]
+        # Find Total of every different nInd number for households
+        household_num = nhouse[i] * household_prop
+        # Round the household numbers for various numbers of individuals 
+        # without exceeding total household number
+        cumsum_household_num = np.round_(np.cumsum(household_num)).astype('int32')
+        cumsum_household_num_diff = np.diff(cumsum_household_num)
+        first_val = nhouse[i] - sum(cumsum_household_num_diff)
+        household_num_round = np.insert(cumsum_household_num_diff,0,first_val)
+        
+        #Generate a column vector     
+        d_value = t1_l1
+        d_number = cumsum_household_num
+        insert_vector = np.ones(d_number[-1])
+        a, count =0, 0
+        for value in d_value:
+            b = d_number[count]
+            #This works for numbers but not for strings
+            subvector = np.empty(household_num_round[count]) #
+            subvector.fill(value) #
+            insert_vector[a:b] = subvector #
+            a = b
+            count+=1
+        del a,b  
+        insert_vector = np.random.permutation(insert_vector)
+        
+        household_df.loc[range(a_g,b_g), 'nind'] = insert_vector 
+        a_g = b_g
+
+    del a_g, b_g, count,insert_vector,subvector
+
+    household_df['nind'] = household_df['nind'].astype(int)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('7 ------',end=' ')
+    #%% Step 4: Identify and assign income type of the households
+    # Table 2 states the % of various income groups in different income zones
+    # Convert Table 2 to numpy array
+    # for row in range((len(tables['t2'][0]))):
+    #     tables['t2'][0][row]=np.fromstring(tables['t2'][0][row],dtype=float,sep=',') 
+
+    t2 = np.array(tables['t2'][0])
+
+    count = 0
+
+    for inc in avg_income_types:
+        #Find indices corresponding to a zone type
+        itidx = household_df['zonetype'] == inc
+        if sum(itidx) ==0: #i.e. this income zone doesn't exist in the landuse data
+            count+=1 
+            continue
+            
+        income_entries = t2[count]*sum(itidx)    
+        d_limit = sum(itidx) # Size of array to match after rounding off
+        d_value = avg_income_types[income_entries!=0]
+        d_number = income_entries[income_entries!=0] #ip
+        
+        insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle') 
+        count+=1    
+        household_df.loc[itidx, 'income'] = insert_vector 
+    print(time.time() - tic)
+    tic = time.time()
+    print('8 ------',end=' ')
+    del count,insert_vector
+        
+
+    #%% Step 5: Identify and assign a unique ID for each  individual
+
+    #Asumption 2: Gender distribution is same for different income types 
+
+    #Preallocate a dataframe with nan to hold the individual layer
+    nindiv = int(sum(household_df['nind'])) # Total number of individuals
+    individual_df = pd.DataFrame(np.nan, index = range(nindiv),
+                            columns=['hhid', 'individ', 'gender', 'age','head',
+                                    'eduattstat','indivfacid_1','indivfacid_2',
+                                    'indivfacid',
+                                    'schoolenrollment','labourForce','employed'])
+    individual_df.loc[range(nindiv),'individ'] = [range(1,nindiv+1)]
+    individual_df['individ'].astype('int')
+    print(time.time() - tic)
+    tic = time.time()
+    print('9 ------',end=' ')
+    #%% Step 6: Identify and assign gender for each individual
+    # Convert the gender distribution table 3 to numpy array
+    tables['t3'][0] = np.array(tables['t3'][0][0],dtype=float) 
+    female_p = tables['t3'][0][0]
+    male_p = 1-female_p
+    gender_value = np.array([1,2], dtype=int) # 1=Female, 2=Male
+    gender_number = np.array([female_p, male_p])*nindiv
+
+    d_limit = nindiv # Size of array to match after rounding off
+    d_value = gender_value
+    d_number = gender_number 
+
+    insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle')
+    individual_df.loc[range(nindiv),'gender'] = insert_vector
+    individual_df['gender'] = individual_df['gender'].astype('int')
+
+    #%% Step 7: Identify and assign age for each individual
+    #Assumption 3: Age profile is same for different income types
+    #Convert the age profile wrt gender distribution table 4 to numpy array
+    ageprofile_value = np.array([1,2,3,4,5,6,7,8,9,10], dtype=int)
+    t4_l1_f = np.array(tables['t4'][0][0], dtype=float) #For female
+    t4_l2_m = np.array(tables['t4'][0][1], dtype=float) #For male
+    t4 = np.array([t4_l1_f, t4_l2_m])
+
+    for i in range(len(gender_value)):
+        gidx = individual_df['gender'] == gender_value[i]    
+        d_limit = sum(gidx)
+        d_value = ageprofile_value
+        d_number = t4[i]*sum(gidx)    
+        insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle')
+        individual_df.loc[gidx,'age'] = insert_vector
+
+    individual_df['age'] = individual_df['age'].astype(int) 
+    print(time.time() - tic)
+    tic = time.time()
+    print('10 ------',end=' ')
+    #%% Step 8: Identify and assign education attainment status for each individual
+
+    # Assumption 4: Education Attainment status is same for different income types 
+    # Education Attainment Status (Meta Data)
+    # 1 - Only literate
+    # 2 - Primary school
+    # 3 - Elementary sch.
+    # 4 - High school
+    # 5 - University and above
+    #Convert the educational status distribution table 5 to numpy array
+    education_value = np.array([1,2,3,4,5], dtype=int)
+    t5_l1_f = np.array(tables['t5'][0][0], dtype=float) #For female
+    t5_l2_m = np.array(tables['t5'][0][1], dtype=float) #For male
+    t5 = np.array([t5_l1_f, t5_l2_m])
+
+    for i in range(len(gender_value)):
+        gidx = individual_df['gender'] == gender_value[i]    
+        d_limit = sum(gidx)
+        d_value = education_value
+        d_number = t5[i]*sum(gidx)    
+        insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle')
+        individual_df.loc[gidx,'eduattstat'] = insert_vector
+
+    individual_df['eduattstat'] = individual_df['eduattstat'].astype(int)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('11 ------',end=' ')
+    #%% Step 9: Identify and assign the head of household to corresponding hhid
+
+    # Assumption 5: Head of household is dependent on gender
+    # Assumption 6: Only (age>20) can be head of households
+    #Convert the head of houseold distribution table 6 to numpy array
+    tables['t6'][0] = np.array(tables['t6'][0][0],dtype=float) 
+    female_hh = tables['t6'][0][0]
+    male_hh = 1-female_hh
+
+    # Calculate the number of household heads by gender
+    hh_number= np.array([female_hh, male_hh])*sum(nhouse)
+    hh_number= hh_number.astype(int)
+    hh_number[0] = sum(nhouse) - hh_number[1]
+
+    for i in range(len(gender_value)): #Assign female and male candidates
+        gaidx= (individual_df['gender'] == gender_value[i]) & \
+                (individual_df['age']>4) # '>4' denotes above age group '18-20'    
+        #Index of household head candidates in individual_df
+        hh_candidate_idx =  list(individual_df.loc[gaidx,'gender'].index)            
+        # Take a random permutation sample to obtain household head indices from 
+        # the index of possible household candidates in individual_df
+        ga_hh_idx = random.sample(hh_candidate_idx, hh_number[i])                                         
+        #print('gaidx=',sum(gaidx), 'ga_hh_idx', len(ga_hh_idx))
+        
+        individual_df.loc[ga_hh_idx,'head'] = 1
+        
+
+
+    # 1= household head, 2= household members other than the head    
+    individual_df.loc[individual_df['head'] != 1,'head'] =0
+
+    #Assign household ID (hhid) randomly
+    hhid_temp = household_df['hhid'].tolist()
+    random.shuffle(hhid_temp)
+    individual_df.loc[individual_df['head'] == 1,'hhid'] = hhid_temp
+    print(time.time() - tic)
+    tic = time.time()
+    print('12 ------',end=' ')
+    #%% Step 10: Identify and assign the household that each individual belongs to
+    # In relation with Assumption 6, no individuals under 20 years of age can live
+    # alone in an household
+    individual_df_temp = individual_df[individual_df['head']==0]
+    individual_df_temp_idx = list(individual_df_temp.index)
+    #hhidlist = household_df['hhid'].tolist()
+    for i in range(1,len(t1_l1)): #Loop through household numbers >1
+        hh_nind = t1_l1[i] # Number of individuals in households
+        # Find hhid corresponding to household numbers
+        hh_df_idx = household_df['nind']== hh_nind
+        hhidx = household_df.loc[hh_df_idx,'hhid'].tolist()
+        #Random shuffle hhidx here
+        amph = hh_nind -1 # additional member per household
+        for j in range(amph):
+            # Randomly select len(hhidx) number of indices from individual_df_temp_idx
+            idtidx = random.sample(individual_df_temp_idx, len(hhidx))
+            individual_df.loc[idtidx,'hhid'] = hhidx
+            #Remove idtidx before next iteration
+            individual_df_temp = individual_df_temp.drop(index=idtidx)
+            individual_df_temp_idx = list(individual_df_temp.index)
+            
+    individual_df['hhid'] = individual_df['hhid'].astype(int)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('13 ------',end=' ')
+    #%% Step 10a: Identify school enrollment for each individual
+    # Final output 0 = not enrolled in school, 1 = enrolled in school 
+    # Assumption 16: Schooling age limits- AP2 and AP3 ( 5 to 18 years old) 
+    # can go to school
+    # Convert distribution table 5a to numpy array
+    # Table 5a contains school enrollment probability
+    for row in range((len(tables['t5a'][0]))):
+        tables['t5a'][0][row]=np.array(tables['t5a'][0][row],dtype=float) 
+    t5a = np.array(tables['t5a'][0]) # Table 5a
+    # Find individuals with age between 5-18 (these are students)
+    # Also find individual Id of students and household Id of students
+    agemask = (individual_df['age'] == 2) | (individual_df['age']==3) 
+    school_df = pd.DataFrame(np.nan, index = range(sum(agemask)),
+                    columns=['individ','hhid','eduattstath','income','enrollment'])
+    school_df_idx = individual_df.loc[agemask,'individ'].index
+    school_df.set_index(school_df_idx, inplace=True)
+    school_df['individ'] = individual_df.loc[agemask,'individ']
+    school_df['hhid'] = individual_df.loc[agemask,'hhid']
+    # Then, pick a slice of individual_df corresponding to the household a student
+    # belongs to. From there, Pick eduAtt status of head of household. To expedite
+    # computation, dataframe columns have been converted to list
+    school_df_hhid_list = list(school_df['hhid'])
+    temp_df = individual_df[individual_df['hhid'].isin(school_df_hhid_list)]
+    head4school_df = temp_df[temp_df['head'] == 1]
+    head4school_df_hhid_list = list(head4school_df['hhid'])
+    head4school_df_edus_list = list(head4school_df['eduattstat'])
+    school_df_edu_list = np.ones(len(school_df_hhid_list))*np.nan
+
+    # Label 'lowIncomeA' and 'lowIncomeB' = 1, 'midIncome' =2, 'highIncome' =3
+    household_df_hhid_list = list(household_df['hhid'])
+    #Use .copy() to avoid SettingwithCopyWarning
+    income4school_df=household_df[household_df['hhid'].\
+                                isin(school_df_hhid_list)].copy()
+    li_mask = (income4school_df['income'] == avg_income_types[0]) |\
+            (income4school_df['income'] == avg_income_types[1]) 
+    lm_mask = income4school_df['income'] == avg_income_types[2]
+    lh_mask = income4school_df['income'] == avg_income_types[3]
+    income4school_df.loc[li_mask,'income'] = 1
+    income4school_df.loc[lm_mask,'income'] = 2
+    income4school_df.loc[lh_mask,'income'] = 3
+    income4school_df_income_list = list(income4school_df['income'])
+    income4school_df_hhid_list = list(income4school_df['hhid'])
+    school_df_income_list = np.ones(len(school_df_hhid_list))*np.nan
+
+    # Faster way
+    #school_df
+    #head4school_df
+    school_df_edu_list_df = school_df[['hhid']].merge(head4school_df[['hhid','eduattstat']], how='left', on='hhid')
+    school_df_edu_list= list(school_df_edu_list_df['eduattstat'])
+ 
+    school_df_income_list_df = school_df[['hhid']].merge(income4school_df[['hhid','income']], how='left', on='hhid')
+    school_df_income_list= list(school_df_income_list_df['income'])
+
+    #count=0
+    # NOTE: If the operation inside this for loop can be replaced with indexing
+    # operation the computation time for this code can be further reduced.
+    #for hhid in school_df_hhid_list:
+    #    #print('hhid',hhid, count, len(school_df_hhid_list))
+    #    #assign education attained by head of household to school_df
+    #    hhid_temp = [i for i, value in enumerate(head4school_df_hhid_list)\
+    #                if value == hhid ]
+    #    school_df_edu_list[count] = head4school_df_edus_list[hhid_temp[0]]
+    #    #assign income type of household to school_df
+    #    hhid_temp2 = [i for i, value in enumerate(income4school_df_hhid_list)\
+    #                if value == hhid ]
+    #    school_df_income_list[count] = income4school_df_income_list[hhid_temp2[0]]
+    #    count+=1
+
+
+
+    #print('original edu')
+    #print(len(school_df_edu_list), school_df_edu_list[:10],school_df_edu_list[-10:])
+    #print('original income')
+    #print(len(school_df_income_list), school_df_income_list[:10],school_df_income_list[-10:])
+        
+    school_df.loc[school_df.index, 'eduattstath'] = school_df_edu_list 
+    school_df['eduattstath'] = school_df['eduattstath'].astype(int)
+    school_df['income'] = school_df_income_list
+    school_df['income'] = school_df['income'].astype(int)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('14 ------',end=' ')
+
+    #assign school enrollment (1 = enrolled, 0 = not enrolled)
+    for incomeclass in range(1,4): # Income class 1,2,3
+        for head_eduattstat in range(1,6): # Education attainment category 1 to 5
+            enrmask = (school_df['income'] == incomeclass) &\
+                    (school_df['eduattstath'] == head_eduattstat)
+            no_of_pstudents = sum(enrmask) # Number of potential students
+            if no_of_pstudents ==0: #continue if no students exist for given case
+                continue
+            i,j = incomeclass-1, head_eduattstat-1 # indices to access table 5a
+            d_limit = no_of_pstudents # Size of array to match after rounding off
+            d_value = [1,0] #1= enrolled, 0 = not enrolled
+            d_number = np.array([t5a[i,j], 1-t5a[i,j]])*no_of_pstudents        
+            insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle') 
+            school_df.loc[enrmask,'enrollment'] = insert_vector
+            
+    school_df['enrollment']= school_df['enrollment'].astype(int)
+    # Substitute the enrollment status back to individual_df dataframe
+    individual_df.loc[school_df.index,'schoolenrollment']=  school_df['enrollment']   
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('15 ------',end=' ')
+    #%% Step 11: Identify approximate total residential building area needed
+    # (approxDwellingAreaNeeded_sqm) 
+    # Assumption 7a on Average dwelling area (sqm) for different income types.
+
+    # The output is stored in the column 'totalbldarea_res' in landuse_res_df,
+    # which represents the total buildable area
+
+    #Sub dataframe of landuse type containing only residential areas
+    landuse_res_df = landuse.loc[nhouse.index].copy()
+    landuse_res_df.loc[nhouse.index,'nhousehold'] = nhouse
+    hh_temp_df = household_df.copy()
+
+    for i in range(0,len(avg_income_types)):
+        hh_temp_df['income'] = hh_temp_df['income'].replace(avg_income_types[i],\
+                                                        average_dwelling_area[i])
+    for index in landuse_res_df.index: # Loop through each residential zone
+        zoneid = landuse_res_df['zoneid'][index]
+        sum_part = hh_temp_df.loc[hh_temp_df['zoneid']==zoneid,'income'].sum()
+        landuse_res_df.loc[index, 'approxDwellingAreaNeeded_sqm'] = sum_part
+        
+    # Zones where no households live i.e. potential commercial or industrial zones    
+    noHH = nhouse_all[nhouse_all<=0].index
+    landuse_ic_df = landuse.loc[noHH].copy()
+    landuse_ic_df['area'] = landuse_ic_df['area']*10000 # Convert hectare to sq m
+        
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('16 ------',end=' ')
+
+    #%% Steps 12,13,14,15: 
+    #    Identify number of residential buildings and generate building layer 
+
+    # Table 7 contains Number of storeys distribution for various LRS and LUT
+    # Table 11 contains code compliance distribution for various LRS and LUT
+    t7= tables['t7'][0]
+    t11 = tables['t11'][0]
+
+    # Convert Table 8 to numpy array
+    # Table8 contains LRS distribution with respect to various LUT
+    for row in range((len(tables['t8'][0]))):
+        tables['t8'][0][row]=np.array(tables['t8'][0][row],dtype=float) 
+    t8 = np.array(tables['t8'][0]) # Table 8
+
+    # Determine the number of buildings in each zone based on average income class 
+    # building footprint range for each landuse zone and Tables 7 and 8
+    no_of_resbldg = 0 # Total residential buildings in all zones
+    footprint_base_sum = 0 # footprint at base, not multiplied by storeys
+    footprint_base_L,storey_L,lrs_L,zoneid_L,codelevel_L = [],[],[],[],[]
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('17 ------',end=' ')
+    for i in landuse_res_df.index: #Loop through zones 
+        zoneid = landuse_res_df['zoneid'][i]
+        #totalbldarea_res = landuse_res_df['totalbldarea_res'][i]
+        #totalbldarea_res is the total residential area that needs to be built
+        totalbldarea_res = landuse_res_df.loc[i,'approxDwellingAreaNeeded_sqm']
+        avgincome = landuse_res_df['avgincome'][i]
+        lut_zone = landuse_res_df['luf'][i]
+        fpt_range = fpt_area[avgincome]
+        # Generate a vector of footprints such that sum of all the footprints in
+        # lenmax equals maximum possible length of vector of building footprints
+        lenmax = int(totalbldarea_res/np.min(fpt_range))
+        footprints_temp = np.random.uniform(np.min(fpt_range),\
+                                        np.max(fpt_range), size=(lenmax,1))
+        footprints_temp = footprints_temp.reshape(len(footprints_temp),)
+        # Select LRS using multinomial distribution and Table 8
+        lrs_number=multinomial(len(footprints_temp), t8[lutidx[lut_zone]],size=1) 
+        lrs_vector=np.array(dist2vector(lrs_types,lrs_number,\
+                                                np.sum(lrs_number),'shuffle')) 
+
+        # Select storeys in a zone for various LRS using multinomial distribution
+        #storey_vector = np.array([],dtype=int)
+        storey_vector = np.array(np.zeros(len(lrs_vector),dtype=int)) #must be assigned after loop
+        for lrs in lrs_types: # Loop through LRS types in a zone
+            t7row = t7[lutidx[lut_zone]] #Extract row for LUT
+            #Extract storey distribution in row for LRS
+            t7dist = np.fromstring(t7row[lrsidx[lrs]],dtype=float, sep=',')
+            lrs_pos = lrs_vector==lrs
+            storey_number = multinomial(sum(lrs_pos),t7dist,size=1)
+            storey_vector_part = np.array([],dtype=int)
+            for idx,st_range in storey_range.items(): #Loop through storey classes
+                sv_temp = \
+                    randint(st_range[0],st_range[1]+1,storey_number[0][idx])
+                storey_vector_part = \
+                    np.concatenate((storey_vector_part,sv_temp),axis =0)
+            # Need to shuffle storey_vector before multiplying and deleting
+            #extra values, otherwise 100% of storeys will be low rise, resulting in 
+            #larger number of buildings        
+            np.random.shuffle(storey_vector_part)         
+            storey_vector[lrs_pos] =storey_vector_part
+        # Select code compliance level for various LRS using multinomial dist
+        cc_vector = [] # code compliance vector for a zone
+        for lrs in lrs_types: # for each LRS in a zone
+            t11row = t11[lutidx[lut_zone]]
+            t11dist = np.fromstring(t11row[lrsidx[lrs]],dtype=float, sep=',')
+            lrs_pos = lrs_vector==lrs
+            cc_number = multinomial(sum(lrs_pos),t11dist,size=1)
+            cc_part = dist2vector(code_level, cc_number,sum(lrs_pos),'shuffle')
+            cc_vector += cc_part
+        random.shuffle(cc_vector)
+        
+        #If it is necessary to equalize number of storeys = number of households
+        storey_vector_cs = np.cumsum(storey_vector)
+        stmask = storey_vector_cs <= landuse_res_df.loc[i,'nhousehold']
+        if sum(stmask)>0:
+            stlimit_idx = np.max(np.where(stmask))+1
+            stlimit_idx_range = range(stlimit_idx+1,len(footprints_temp))
+        else:
+            stlimit_idx_range = range(1,len(footprints_temp))
+        
+        footprints_base = footprints_temp   #Footprints without storey  
+        dwellingArea_temp= footprints_temp*storey_vector
+        dwellingArea_temp_cs = np.cumsum(dwellingArea_temp)
+        
+        #If it is necessary to equalize required footprint = provided footprint
+        #OPTIONAL:Here, introduce a method to match total buildable area (dwelling)
+        # fpmask = dwellingArea_temp_cs <= totalbldarea_res
+        # #Indices of footprints whose sum <= dwelling area needed in a zone
+        # # '+ 1' provides slightly more dwelling area than needed
+        # footprints_idx = np.max(np.where(fpmask)) + 1 
+        
+        # Delete additional entries in the vectors for footprint, lrs and storeys
+        # which do not fit into total buildable area
+        #ftrange = range(footprints_idx+1,len(dwellingArea_temp))
+        
+        ftrange = stlimit_idx_range
+        
+        dwellingArea = np.delete(dwellingArea_temp,ftrange)
+        footprints_base = np.delete(footprints_base,ftrange)
+        lrs_vector_final = np.delete(lrs_vector,ftrange)
+        storey_vector_final = np.delete(storey_vector,ftrange)
+        cc_vector = np.array(cc_vector)
+        cc_vector_final = np.delete(cc_vector,ftrange)
+        no_of_resbldg += len(dwellingArea) 
+        
+        #footprint_base_sum+=np.sum(footprints_base)    
+        # Store the vectors in lists for substitution in dataframe 
+        footprint_base_L +=  list(footprints_base)
+        storey_L += list(storey_vector_final)
+        lrs_L += list(lrs_vector_final)
+        zoneid_L += [zoneid]*len(dwellingArea) 
+        codelevel_L += list(cc_vector_final)
+        
+        landuse_res_df.loc[i,'footprint_sqm'] = np.sum(footprints_base)
+        landuse_res_df.loc[i,'dwellingAreaProvided_sqm'] = np.sum(dwellingArea)
+        
+        landuse_res_df.loc[i, 'Storey_units'] = sum(storey_vector_final)
+        #'No_of_res_buildings' denotes total residential + ResCom buildings
+        landuse_res_df.loc[i, 'No_of_res_buildings'] = len(footprints_base)
+        # Check distribution after deletion (for debugging) by counting LR
+        #print(sum(storey_vector_final<5)/len(storey_vector_final))
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('18 ------',end=' ')
+    # landuse_res_df['area'] denotes the total buildable area   
+    landuse_res_df['area'] *= 10000 # Convert hectares to sq m, 1ha =10^4 sqm
+
+    # landuse_res_df['builtArea_percent'] denotes the percentage of total 
+    # buildable area that needs to be built to accomodate the projected population
+    landuse_res_df['builtArea_percent'] =\
+        landuse_res_df['footprint_sqm']/landuse_res_df['area']*100
+
+    #ADD HERE : EXCEPTION HANDLING for built area exceeding available area
+
+    #print(no_of_resbldg) 
+
+    #ADD: Check if calculated footprint exceeds total buildable area (landuse.area)  
+
+    #Create and populate the building layer, with unassigned values as NaN
+    resbld_df = pd.DataFrame(np.nan, index = range(0, no_of_resbldg),
+                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
+                                    'nhouse', 'residents', 'expstr','fptarea',
+                                    'occbld','lrstype','codelevel',
+                                    'nstoreys'])
+    resbld_range = range(0,no_of_resbldg)
+    #resbld_df.loc[resbld_range,'bldid'] = list(range(1,no_of_resbldg+1))
+    resbld_df.loc[resbld_range,'zoneid'] = zoneid_L
+    resbld_df['zoneid'] = resbld_df['zoneid'].astype('int')
+    resbld_df.loc[resbld_range,'occbld'] = 'Res'
+    resbld_df.loc[resbld_range,'specialfac'] = 0
+    resbld_df.loc[resbld_range,'fptarea'] = footprint_base_L
+    resbld_df.loc[resbld_range,'nstoreys'] = storey_L
+    resbld_df.loc[resbld_range,'lrstype'] = lrs_L
+    resbld_df.loc[resbld_range,'codelevel'] = codelevel_L
+    print(time.time() - tic)
+    tic = time.time()
+    print('19 ------',end=' ')
+    #%% Assign zoneids and building IDs for Res and ResCom
+    # Assign 'ResCom' status based on Table 9
+    # Assumption: Total residential buildings = Res + ResCom
+    # Convert Table 9 to numpy array
+    # Table 9 contains occupancy type with respect to various LUT
+    # Occupancy types: Residential (Res), Industrial (Ind), Commercial (Com)
+    # Residential and commercial mixed (ResCom)
+    for row in range((len(tables['t9'][0]))):
+        tables['t9'][0][row]=np.array(tables['t9'][0][row],dtype=float) 
+    t9 = np.array(tables['t9'][0]) # Table 9
+
+    #available_LUT = list(set(landuse_res_df['luf']))
+    available_zoneid = list(set(resbld_df['zoneid']))
+    for zoneid in available_zoneid: #Loop through zones
+        zonemask = resbld_df['zoneid'] == zoneid
+        zone_idx = list(zonemask.index.values[zonemask])
+        lutlrdidx=landuse_res_df[landuse_res_df['zoneid']==zoneid].index.values[0]
+        #Occupancy type distribution for a zone
+        occtypedist = t9[lutidx[ landuse_res_df['luf'][lutlrdidx]]]
+        no_of_resbld = sum(zonemask) # Number of residential buildings in a zone
+        # if mixed residential+commercial buildings as well as residential buildings exist
+        if occtypedist[3] !=0 and occtypedist[0] !=0 : 
+            # nrc = number of mixed res+com buildings in a zone
+            nrc = int(occtypedist[3]/occtypedist[0]*no_of_resbld)
+        elif occtypedist[3] !=0 and occtypedist[0] ==0:
+            nrc = int(no_of_resbld)
+        else: # if only residential buildings exist
+            continue
+        nrc_idx = sample(zone_idx,nrc)
+        resbld_df.loc[nrc_idx,'occbld'] = 'ResCom'
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('20 ------',end=' ')
+    #Assign building Ids for res and rescom buildings
+    lenresbld = len(resbld_df)
+    resbld_df.loc[range(0,lenresbld),'bldid'] = list(range(1,lenresbld+1))
+    resbld_df['bldid'] = resbld_df['bldid'].astype('int')
+
+    #%% STEP16: Identify and assign number of households and residents for each 
+    #residential building
+    #Assign nhouse, residents. All the households and residents must be assigned
+    #to this layer.
+    print(time.time() - tic)
+    tic = time.time()
+    print('20.2 ------',end=' ')
+    dwellings_str=dist2vector(resbld_df['bldid'],np.array(storey_L),\
+                                        np.sum(np.array(storey_L)),'DoNotShuffle')
+    print(time.time() - tic)
+    tic = time.time()
+    print('20.3 ------',end=' ')
+    dwellings = list(map(int,dwellings_str))
+    #dwellings.sort()
+    dwellings_selected = dwellings[0:len(household_df)]
+    print(time.time() - tic)
+    tic = time.time()
+    print('20.4 ------',end=' ')
+    random.shuffle(dwellings_selected)
+    #Assign building IDs to all households
+    household_df.loc[:,'bldid'] = dwellings_selected
+
+
+    # Assign number of households and residents to residential buildings resbld_df
+    # This loop must be optimized for speed
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('20.5 ------',end=' ')
+
+    # Alternative
+    # Drop the columns which I'll already generate in a second
+    resbld_df = resbld_df.drop(columns=['nhouse','residents'])
+    # Get nind information from household table
+    resbld_w_household = resbld_df[['bldid']].merge(household_df[['bldid','hhid','nind']], how='inner', on='bldid')
+    # Aggregate by bldid. nhouse: count of household, residents: number of individuals 
+    resbld_w_household = resbld_w_household.groupby('bldid').agg({'hhid':'count','nind':'sum'}).reset_index().rename(columns={'hhid':'nhouse','nind':'residents'})
+    # Merge nhouse and residents columns back into building table
+    resbld_df = resbld_df.merge(resbld_w_household,how='inner',on='bldid')
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('21 ------',end=' ')
+    # Remove rows in resbld_df which contains no residents
+    
+  
+
+    #%% Step 17,18: Identify and generate commercial and industrial buildings
+    # No household or individual lives in com, ind, hosp, sch zones
+    # Assumption 10 and 11: Assume a certain number of commercial and industrial
+    # buildings per 1000 individuals 
+        
+    # No commercial and industrial buildings in:recreational areas,agriculture,
+    # residential (gated neighbourhood), residential (low-density)
+    # But com an ind build can occur in any zone where permitted by table 9
+    ncom = round(nindiv/1000*numb_com)
+    nind = round(nindiv/1000*numb_ind)
+    nci = np.array([ncom,nind])
+    occbld_label = ['Com','Ind']
+    nci_cs = np.cumsum(nci)
+    indcom_df = pd.DataFrame(np.nan, index = range(0, ncom+nind),
+                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
+                                    'nhouse', 'residents', 'expstr','fptarea',
+                                    'lut_number','occbld','lrstype','codelevel',
+                                    'nstoreys'])
+
+    t10= tables['t10'][0] # Extract Table 10
+    a = 0
+    for i in range(0,len(nci)): # First commercial, then industrial
+        attr = t10[i]
+        #Extract distributions for footprint, storeys, code compliance and LRS
+        fpt_ic = np.fromstring(attr[0], dtype=float, sep=',')
+        nstorey_ic = np.fromstring(attr[1], dtype=int, sep=',')
+        codelevel_ic = np.fromstring(attr[2], dtype=float, sep=',')
+        lrs_ic = np.fromstring(attr[3], dtype=float, sep=',')
+        range_ic = range(a,nci_cs[i])
+        a = nci_cs[i]
+        # Generate footprints
+        indcom_df.loc[range_ic,'fptarea'] = np.random.uniform(\
+                np.min(fpt_ic),np.max(fpt_ic), size=(nci[i],1)).reshape(nci[i],)
+        # Generate number of storeys
+        indcom_df.loc[range_ic,'nstoreys'] =randint(np.min(nstorey_ic),\
+                np.max(nstorey_ic)+1,size=(nci[i],1)).reshape(nci[i],)
+        # Generate code compliance
+        cc_number_ic = multinomial(nci[i],codelevel_ic,size=1)
+        indcom_df.loc[range_ic,'codelevel'] =\
+                        dist2vector(code_level, cc_number_ic,nci[i],'shuffle')
+        # Generate LRS
+        lrs_number_ic = multinomial(nci[i],lrs_ic,size=1)
+        indcom_df.loc[range_ic,'lrstype'] =\
+                        dist2vector(lrs_types,lrs_number_ic,nci[i],'shuffle')
+        indcom_df.loc[range_ic,'occbld']= occbld_label[i]                     
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('22 ------',end=' ')
+    # Assign number of households, Residents, special facility label
+    range_all_ic = range(0,len(indcom_df))
+    indcom_df.loc[range_all_ic,'nhouse'] = 0
+    indcom_df.loc[range_all_ic,'residents'] = 0
+    indcom_df.loc[range_all_ic,'specialfac'] = 0
+
+    ind_df = indcom_df[indcom_df['occbld'] == 'Ind'].copy()
+    com_df = indcom_df[indcom_df['occbld'] == 'Com'].copy()
+    ind_df.reset_index(drop=True,inplace=True)
+    com_df.reset_index(drop=True,inplace=True)
+        
+    #%% Step 19,20 Generate school and hospitals along with their attributes
+
+    # Assumption 14 and 15: For example : 1 school per 10000 individuals,
+    # 1 hospital per 25000 individuals
+    nsch = round(nindiv/nsch_pi) # Number of schools
+    nhsp = round(nindiv/nhsp_pi) # Number of hospitals
+
+    if nsch == 0:
+        print("WARNING: Total population",nindiv,"is less than the user-specified "\
+            "number of individuals per school",nsch_pi,". So, total school for "\
+            "this population = 1 (by default) \n")
+        nsch = 1
+
+    if nhsp == 0:
+        print("WARNING: Total population",nindiv,"is less than the user-specified "\
+            "number of individuals per hospital",nhsp_pi,". So, total hospital for "\
+            "this population = 1 (by default) \n ")
+        nhsp = 1
+
+    nsh = np.array([nsch,nhsp])
+    nsh_cs = np.cumsum(nsh)
+    occbld_label_sh = ['Edu','Hea']
+    specialfac = [1,2] # Special facility label
+    schhsp_df = pd.DataFrame(np.nan, index = range(0, nsch+nhsp),
+                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
+                                    'nhouse', 'residents', 'expstr','fptarea',
+                                    'lut_number','occbld','lrstype','codelevel',
+                                    'nstoreys'])
+    t14= tables['t14'][0] # Extract Table 14
+    print(time.time() - tic)
+    tic = time.time()
+    print('23 ------',end=' ')
+    a=0
+    for i in range(0,len(t14)): # First school, then hospital
+        attr_sh = t14[i]
+        #Extract distributions for footprint, storeys, code compliance and LRS
+        fpt_sh = np.fromstring(attr_sh[0], dtype=float, sep=',')
+        nstorey_sh = np.fromstring(attr_sh[1], dtype=int, sep=',')
+        codelevel_sh = np.fromstring(attr_sh[2], dtype=float, sep=',')
+        lrs_sh = np.fromstring(attr_sh[3], dtype=float, sep=',')
+        range_sh = range(a,nsh_cs[i])
+        a = nsh_cs[i]
+        # Generate footprints
+        schhsp_df.loc[range_sh,'fptarea'] = np.random.uniform(\
+                np.min(fpt_sh),np.max(fpt_sh), size=(nsh[i],1)).reshape(nsh[i],)
+        # Generate number of storeys
+        schhsp_df.loc[range_sh,'nstoreys'] =randint(np.min(nstorey_sh),\
+                np.max(nstorey_sh)+1,size=(nsh[i],1)).reshape(nsh[i],)
+        # Generate code compliance
+        cc_number_sh = multinomial(nsh[i],codelevel_sh,size=1)
+        schhsp_df.loc[range_sh,'codelevel'] =\
+                        dist2vector(code_level, cc_number_sh,nsh[i],'shuffle')
+        # Generate LRS
+        lrs_number_sh = multinomial(nsh[i],lrs_sh,size=1)
+        schhsp_df.loc[range_sh,'lrstype'] =\
+                        dist2vector(lrs_types,lrs_number_sh,nsh[i],'shuffle')
+        schhsp_df.loc[range_sh,'occbld']= occbld_label_sh[i] 
+
+        # Assign special facility label  
+        schhsp_df.loc[range_sh,'specialfac'] = specialfac[i]                 
+
+    # Assign number of households, Residents, 
+    range_all_sh = range(0,len(schhsp_df))
+    schhsp_df.loc[range_all_sh,'nhouse'] = 0
+    schhsp_df.loc[range_all_sh,'residents'] = 0
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('24 ------',end=' ')
+    #%% Assign zoneIds for Industrial and Commercial buildings
+
+    # The number of industrial and commercial buildings are estimated using the
+    # following 2 methods:
+    # Method 1: Assumption of number of industrial or commercial building per
+    #           1000 individuals. (Done in steps 17,18)
+    # Method 2: Table 9 specifies what the occupancy type distribution should be 
+    #           in different land use types. This gives a different estimate of the
+    #           number of the buiildings as compared to Method 1. (Done here)
+    # To make these two Methods compatible, the value from Method 1 is treated as 
+    # the actual value of the buildings, and Method 2 is used to ensure that
+    # these buildings are distributed in such a way that they follow Table 9.
+    # 
+    # The following method of assigning the ZoneIDs treats the mixed used zones
+    # (residential, residential+commercial) and purely industrial or commercial
+    # zones as 2 separate cases.
+    #
+    # For each of the following 2 cases, we need to first find the number of
+    # industrial and commercial buildings in each zone
+
+    # Case 1: For industrial/commercial buildings in residential areas_____________
+    for i in landuse_res_df.index:
+        #Occupancy type distribution for a zone
+        otd = t9[lutidx[landuse_res_df.loc[i,'luf']]]
+        if otd[1]==0 and otd[2]==0: 
+            # If neither industrial nor commercial buildings exist
+            landuse_res_df.loc[i,'ind_weightage'] = 0
+            landuse_res_df.loc[i,'com_weightage'] = 0
+            continue
+        # Number of residential + rescom building
+        Nrc = landuse_res_df.loc[i, 'No_of_res_buildings']
+        
+        # Tb = total possible number of buildings in a zone (all accupancy types)
+        #      This is used as weightage factor to distribute the buildings 
+        #      according to Method 2. 
+        if otd[0] == 0 and otd[3]==0:
+            Tb = Nrc # If neither residential nor res+com exist
+            print('Warning: If population exists, but neither residential nor '\
+                'residential+commercial buildings are allowed, there is '\
+                'inconsistency between population and current row in table 9.'\
+                'Therefore, it is assumed that total number of buildings in '\
+                'zoneid', landuse_res_df.loc[i,'zoneid'],\
+                '= no. of residential buildings in this zone.')
+            print('Also, consider allowing residential and/or res+com building '\
+                'to this zone in Table 9, if it is assigned population.\n')
+        else:  
+            Tb = Nrc/(otd[0]+otd[3]) # If either residential or res+com exist  
+
+        #Calculate the number of industrial buildings using Table 9   
+        if otd[1]>0:
+            landuse_res_df.loc[i,'ind_weightage'] = ceil(Tb * otd[1])
+            #landuse_res_df.loc[i,'no_of_ind_buildings'] = ceil(Tb * otd[1])
+        else:
+            # landuse_res_df.loc[i,'no_of_ind_buildings'] = 0
+            landuse_res_df.loc[i,'ind_weightage'] = 0
+            
+        #Calculate the number of commercial buildings using Table 9     
+        if otd[2]>0:
+            landuse_res_df.loc[i,'com_weightage'] = ceil(Tb * otd[2])
+            #landuse_res_df.loc[i,'no_of_com_buildings'] = ceil(Tb * otd[2])
+        else:
+            landuse_res_df.loc[i,'com_weightage'] = 0
+            #landuse_res_df.loc[i,'no_of_com_buildings'] = 0
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('25 ------',end=' ')
+    # If number of buildings (industrial/commercial) estimated from Method 2(in the
+    # above steps of Case 1) exceeds the number of buildings estimated from 
+    # Method 1, treat the value from Method 1 as the upper limit. 
+    # Then, using the number of buildings from Method 2 as weightage factor,
+    # distribute the number of  buildings from Method 1 proportionally to
+    # all the mixed use zones. This situation arises if the number of 
+    # industrial/commercial buildings per 1000 people is low.
+    #
+    # Otherwise, if the number of industrial/commercial buildings estimated from
+    # Method 1 is larger than that estimated  from Method 2, it is assumed that the
+    # number of buildings is large enough not to fit into the mixed use zones
+    # being considered under Case 1, and the additional buildings not assigned into
+    # mixed use zones is assigned under case 2 in the following section.
+    # 
+    # This method requires the area of industrial/commercial buildings in the 
+    # mixed use zones to be checked separately to see if they fit into these zones.
+
+    com_wt = landuse_res_df['com_weightage'].copy()   
+    if com_wt.sum() > ncom:
+        landuse_res_df['no_of_com_buildings'] = np.floor(ncom*com_wt/com_wt.sum())
+    else:
+        landuse_res_df['no_of_com_buildings'] = com_wt
+
+    ind_wt = landuse_res_df['ind_weightage'].copy()   
+    if ind_wt.sum() > nind:
+        landuse_res_df['no_of_ind_buildings'] = np.floor(nind*ind_wt/ind_wt.sum())
+    else:
+        landuse_res_df['no_of_ind_buildings'] = ind_wt    
+
+        
+    landuse_res_df['no_of_ind_buildings'] =\
+                        landuse_res_df['no_of_ind_buildings'].astype('int')
+    landuse_res_df['no_of_com_buildings'] =\
+                        landuse_res_df['no_of_com_buildings'].astype('int')
+                        
+    # Number and area of commercial buildings to be assigned    
+    nCom_asgn = landuse_res_df['no_of_com_buildings'].sum()
+    nCom_asgn_area = com_df.loc[range(0, nCom_asgn),'fptarea'].sum() 
+    # Number and area of industrial buildings to be assigned
+    nInd_asgn = landuse_res_df['no_of_ind_buildings'].sum()
+    nInd_asgn_area = ind_df.loc[range(0,nInd_asgn),'fptarea'].sum()
+
+
+    # Assign zoneid to industrial buildings (if any) in residential areas
+    zoneid_r_i = dist2vector(list(landuse_res_df['zoneid']),\
+                list(landuse_res_df['no_of_ind_buildings']),nInd_asgn,'shuffle')
+    ind_df.loc[range(0,nInd_asgn),'zoneid'] = list(map(int,zoneid_r_i))
+
+    # Assign zoneid to commercial buildings (if any) in residential areas
+    zoneid_r_c = dist2vector(list(landuse_res_df['zoneid']),\
+                list(landuse_res_df['no_of_com_buildings']),nCom_asgn,'shuffle')
+    com_df.loc[range(0,nCom_asgn),'zoneid'] = list(map(int,zoneid_r_c))
+
+
+    # Back-calculated number of commercial buildings per 1000 people        
+    #nCom_asgn/(len(individual_df)/1000)
+
+    # Case 2 For industrial/commercial buildings in non-residential areas__________
+
+    # Number of industrial buildings that have not been assigned
+    nInd_tba = int(len(ind_df) - nInd_asgn)
+    # Number of commercial buildings that have not been assigned
+    nCom_tba = int(len(com_df) - nCom_asgn)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('26 ------',end=' ')
+    # Before assigning zones to buildings, find out the area available for buildings
+    # in each zones. Since no population is assigned to residential and commercial
+    # buildings, the number of buildings in a zone is controlled solely by area.
+    for i in landuse_ic_df.index:
+        #Occupancy type distribution for a zone
+        try:
+            otd = t9[lutidx[landuse_ic_df.loc[i,'luf']]]
+        except KeyError:
+            continue
+        
+        if otd[1]>0:
+            landuse_ic_df.loc[i,'areaavailableforind']=\
+                                            AC_ind/100*landuse_ic_df.loc[i,'area']
+        else:
+            landuse_ic_df.loc[i,'areaavailableforind']=0
+
+        if otd[2]>0:
+            landuse_ic_df.loc[i,'areaavailableforcom']=\
+                                            AC_com/100*landuse_ic_df.loc[i,'area']
+        else:
+            landuse_ic_df.loc[i,'areaavailableforcom']=0
+            
+    print(time.time() - tic)
+    tic = time.time()
+    print('27 ------',end=' ')
+    # Check how many of the generated com/ind buildings fit into the available area
+    ind_fptarea_cs = list(np.cumsum(ind_df['fptarea']))
+    com_fptarea_cs = list(np.cumsum(com_df['fptarea']))
+
+    # Total areas available for commercial and industrial buildings in all zones
+    At_c= landuse_ic_df['areaavailableforcom'].sum()
+    At_i = landuse_ic_df['areaavailableforind'].sum()
+    licidx = landuse_ic_df.index
+
+    #Assign number of industrial buildings to industrial zones____
+    # Unassigned area (c or i) = Total footprint (c or i) - area to be assigned(c or i) 
+    unassigned_ind_area = ind_fptarea_cs[-1]-nInd_asgn_area # Total - assigned
+    # if unassigned_ind_area <= At_i:
+    #     landuse_ic_df.loc[licidx,'no_of_ind_buildings'] =\
+    #         landuse_ic_df['areaavailableforind']/At_i*nInd_tba
+    #     landuse_ic_df['no_of_ind_buildings'] =\
+    #         landuse_ic_df['no_of_ind_buildings'].fillna(0)    
+    #     landuse_ic_df['no_of_ind_buildings']=\
+    #         landuse_ic_df['no_of_ind_buildings'].astype('int')
+    # else:
+    #     print('Required industrial buildings do not fit into available land area.')
+    #     sys.exit(1)
+
+    if unassigned_ind_area > At_i:
+        # Need to truncate excess industrial buildings
+        print('WARNING: Required industrial buildings do not fit into available '\
+            'land area. So, excess industrial buildings have been removed.')
+        ind_df_unassignedArea = np.cumsum(ind_df.loc[range(nInd_asgn,len(ind_df)),\
+                                                    'fptarea'])
+        ind_df_UAmask = ind_df_unassignedArea < At_i 
+        nInd_tba = sum(ind_df_UAmask)
+
+    landuse_ic_df.loc[licidx,'no_of_ind_buildings'] =\
+        landuse_ic_df['areaavailableforind']/At_i*nInd_tba
+    landuse_ic_df['no_of_ind_buildings'] =\
+        landuse_ic_df['no_of_ind_buildings'].fillna(0)    
+    landuse_ic_df['no_of_ind_buildings']=\
+        landuse_ic_df['no_of_ind_buildings'].astype('int')
+
+    #Assign number of commercial buildings to commercial zones____
+    unassigned_com_area = com_fptarea_cs[-1]-nCom_asgn_area
+
+    if unassigned_com_area > At_c:
+        # Need to truncate excess commercial buildings
+        print('WARNING: Required commercial buildings do not fit into available '\
+            'land area. So, excess commerical buildings have been removed.')
+        com_df_unassignedArea = np.cumsum(com_df.loc[range(nCom_asgn,len(com_df)),\
+                                                    'fptarea'])
+        com_df_UAmask = com_df_unassignedArea < At_c 
+        nCom_tba = sum(com_df_UAmask)
+
+    landuse_ic_df.loc[licidx,'no_of_com_buildings'] =\
+        landuse_ic_df['areaavailableforcom']/At_c*nCom_tba
+    landuse_ic_df['no_of_com_buildings'] =\
+            landuse_ic_df['no_of_com_buildings'].fillna(0)  
+    landuse_ic_df['no_of_com_buildings']=\
+        landuse_ic_df['no_of_com_buildings'].astype('int')
+
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('28 ------',end=' ')
+    # Begin assigning buildings to zones 
+    # Assign zoneid to industrial buildings (if any) in industrial areas
+    limit_zoneid_ic_i = landuse_ic_df['no_of_ind_buildings'].sum()
+    zoneid_ic_i = dist2vector(list(landuse_ic_df['zoneid']),\
+                list(landuse_ic_df['no_of_ind_buildings']),\
+                limit_zoneid_ic_i,'shuffle')
+    ind_df.loc[range(nInd_asgn,nInd_asgn+limit_zoneid_ic_i),'zoneid']=list(map(int,zoneid_ic_i))
+    ind_df = ind_df[ind_df['zoneid'].notna()] #Remove unassigned buildings
+
+    # Assign zoneid to commercial buildings (if any) in commercial areas
+    limit_zoneid_ic_c = landuse_ic_df['no_of_com_buildings'].sum()
+    zoneid_ic_c = dist2vector(list(landuse_ic_df['zoneid']),\
+                list(landuse_ic_df['no_of_com_buildings']),\
+                limit_zoneid_ic_c,'shuffle')
+    com_df.loc[range(nCom_asgn,nCom_asgn+limit_zoneid_ic_c),'zoneid']=list(map(int,zoneid_ic_c))
+    com_df = com_df[com_df['zoneid'].notna()] #Remove unassigned buildings
+
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('29 ------',end=' ')
+    #%% Find populations in each zones and assign it back to landuse layer
+    for i in landuse.index:
+        zidmask = resbld_df['zoneid'] == landuse.loc[i,'zoneid']
+        if sum(zidmask) == 0: # if no population has been added to the zone
+            landuse.loc[i,'populationAdded'] = 0  
+            continue
+        else: # if new population has been added to the zone
+            zone_nInd = resbld_df['residents'][zidmask]
+            landuse.loc[i,'populationAdded'] = int(zone_nInd.sum())
+    # population=Existing population, populationAdded=Projected future population
+    # populationFinal = existing + future projected population
+    landuse['populationfinal'] = landuse['population']+landuse['populationAdded']
+    landuse['populationfinal'] = landuse['populationfinal'].astype('int')
+
+    #%% Assign zoneIds for schools and hospitals
+    # Assign schools and hospitals to zones starting from the highest 
+    # population until the number of schools and hospitals are reached
+    landuse_sorted = landuse.sort_values(by=['populationfinal'],\
+                                                    ascending=False).copy()
+    landuse_sorted.reset_index(inplace=True, drop=True)
+    #Remove zones without population
+    no_popl_zones = landuse_sorted['populationfinal']==0
+    landuse_sorted =landuse_sorted.drop(index=landuse_sorted.index[no_popl_zones])
+
+    sch_df = schhsp_df[schhsp_df['occbld']=='Edu'].copy() #Educational institutions
+    hsp_df = schhsp_df[schhsp_df['occbld']=='Hea'].copy() #Health institutions
+
+    sch_df.reset_index(drop=True,inplace=True)
+    hsp_df.reset_index(drop=True,inplace=True)
+
+    # Assign zoneids for schools/educational institutions
+    sch_range = range(0,len(sch_df))
+    if len(sch_df) <= len(landuse_sorted):
+        sch_df.loc[sch_range, 'zoneid'] = landuse_sorted.loc[sch_range,'zoneid']
+    else:
+        iterations_s = ceil(len(sch_df)/len(landuse_sorted))
+        a1_s= list(repeat(landuse_sorted['zoneid'].tolist(),iterations_s))
+        a_s = list(chain(*a1_s))
+        sch_df.loc[sch_range, 'zoneid'] = a_s[0:len(sch_df)]
+            
+    # Assign zoneids for hospitals/health institutions
+    hsp_range= range(0,len(hsp_df))
+    if len(hsp_df) <= len(landuse_sorted):
+        hsp_range = range(0,len(hsp_df))
+        hsp_df.loc[hsp_range, 'zoneid'] = landuse_sorted.loc[hsp_range,'zoneid']
+    else:
+        iterations_h = ceil(len(hsp_df)/len(landuse_sorted))
+        a1_h= list(repeat(landuse_sorted['zoneid'].tolist(),iterations_h))
+        a_h = list(chain(*a1_h))
+        hsp_df.loc[hsp_range, 'zoneid'] = a_h[0:len(hsp_df)]
+
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('30 ------',end=' ')
+    #%% Concatenate the residential, industrial/commercial and special facilities
+    # dataframes to obtain the complete building dataframe
+    building_df=pd.concat([resbld_df,ind_df,com_df,sch_df,\
+                            hsp_df]).reset_index(drop=True)
+    #building_df=pd.concat([resbld_df,sch_df, hsp_df]).reset_index(drop=True)
+    building_df['nstoreys'] = building_df['nstoreys'].astype(int)
+
+    #Assign exposure string
+    building_df['expstr'] = building_df['lrstype'].astype(str)+'+'+\
+                            building_df['codelevel'].astype(str)+'+'+\
+                            building_df['nstoreys'].astype(str)+'s'+'+'+\
+                            building_df['occbld'].astype(str)
+    # Assign building ids
+    # lenbdf = len(building_df)
+    # building_df.loc[range(0,lenbdf),'bldid'] = list(range(1,lenbdf+1))
+    building_df.loc[range(len(resbld_df),len(building_df)),'bldid'] =\
+                        list(range(len(resbld_df)+1,len(building_df)+1))
+    building_df['bldid'] = building_df['bldid'].astype('int')
+
+    #%% Step 21 Employment status of the individuals
+    # Assumption 9: Only 20-65 years old individuals can work
+    # Extract Tables 12 and 13
+    t12 = np.array(tables['t12'][0][0],dtype=float) #[Female, Male]
+
+    t13_f = np.array(tables['t13'][0][0],dtype=float) #Female
+    t13_m = np.array(tables['t13'][0][1],dtype=float) #Male
+    t13 = [t13_f,t13_m]
+
+    # Identify individuals who can work
+    working_females_mask = (individual_df['gender']==1) & \
+                (individual_df['age']>=5) & (individual_df['age']<=9)
+    working_males_mask = (individual_df['gender']==2) & \
+                (individual_df['age']>=5) & (individual_df['age']<=9)
+    potential_female_workers = individual_df.index[working_females_mask]
+    potential_male_workers = individual_df.index[working_males_mask]
+        
+    # But according to Table 12, not all individuals who can work are employed,
+    # so the labour force is less than 100%
+    labourforce_female = sample(list(potential_female_workers),\
+                                    int(t12[0]*len(potential_female_workers)))
+    labourforce_male = sample(list(potential_male_workers),\
+                                    int(t12[1]*len(potential_male_workers))) 
+    # labourForce = 1 indicates that an individual is a part of labour force, but 
+    # not necessarily employed.
+    individual_df.loc[labourforce_female,'labourForce'] =1
+    individual_df.loc[labourforce_male,'labourForce'] =1  
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('31 ------',end=' ')
+    # According to Table 13, the employment probability for labourforce differs
+    # based on educational attainment status   
+    for epd_array in t13: #Employment probability distribution for female and male
+        count = 0
+        ind_employed_idx =[]
+        for epd in epd_array: # EPD for various educational attainment status
+            # Individuals in labour force that belong to current EPD
+            eamask = (individual_df['eduattstat'] == education_value[count]) & \
+                    (individual_df['labourForce']==1)
+            nInd_in_epd = sum(eamask)
+            if nInd_in_epd == 0:
+                continue
+            
+            nInd_employed = int(epd*nInd_in_epd)
+            if nInd_employed == 0:
+                continue
+            ind_ea_labourforce = list(individual_df.index[eamask])
+            ind_employed_idx = sample(ind_ea_labourforce, nInd_employed)
+            individual_df.loc[ind_employed_idx,'employed'] = 1
+            
+            #Check ouput epd (for debugging)
+            #print(epd,':',len(ind_employed_idx)/len(ind_ea_labourforce))
+            
+            count+=1
+            
+    print(time.time() - tic)
+    tic = time.time()
+    print('32 ------',end=' ')
+    #%% Step 22 Assign IndividualFacID
+    # bld_ID of the building that the individual regularly visits 
+    # (can be workplace, school, etc.)
+    # Assumption 13: Each individual is working within the total study area extent.
+    # Assumption 17: Each individual (within schooling age limits) goes to 
+    #                school within the total study area extent.
+
+    # indivfacid_1 denotes bldid of the schools
+    # students (schoolenrollment=1) go to, whereas, indivfacid_2 denotes bldid of
+    # com, ind and rescom buildings where working people go to (workplace bldid).
+
+    # Assign working places to employed people in indivfacid_2_________________
+    # Working places are defined as occupancy types 'Ind','Com' and 'ResCom'
+
+    workplacemask=(building_df['occbld']=='Ind') | (building_df['occbld']=='Com')\
+                    | (building_df['occbld'] == 'ResCom')
+    workplaceidx = building_df.index[workplacemask]
+    workplace_bldid = building_df['bldid'][workplaceidx].tolist()
+
+    employedmask = individual_df['employed'] ==1
+    employedidx = individual_df.index[employedmask]
+    if len(employedidx)>len(workplaceidx):
+        repetition = ceil(len(employedidx)/len(workplaceidx))
+        workplace_sample_temp = list(repeat(workplace_bldid,repetition))
+        workplace_sample = list(chain(*workplace_sample_temp))
+    else:
+        workplace_sample = workplace_bldid
+    random.shuffle(workplace_sample)
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('33 ------',end=' ')
+
+    individual_df.loc[employedidx,'indivfacid_2'] = \
+                                workplace_sample[0:sum(employedmask)]
+
+    individual_df.loc[employedidx,'indivfacid'] = \
+                                workplace_sample[0:sum(employedmask)]                               
+
+    # Assign school bldids to enrolled students in indivfacid_1________________
+    schoolmask = building_df['occbld']=='Edu'            
+    schoolidx = building_df.index[schoolmask]
+    school_bldid = building_df['bldid'][schoolidx].tolist()
+
+    studentmask = individual_df['schoolenrollment'] ==1
+    studentidx = individual_df.index[studentmask]
+    if len(studentidx)>len(schoolidx):
+        repetition = ceil(len(studentidx)/len(schoolidx))
+        school_sample_temp = list(repeat(school_bldid,repetition))
+        school_sample = list(chain(*school_sample_temp))
+    else:
+        school_sample = school_bldid
+    random.shuffle(school_sample)
+
+    individual_df.loc[studentidx,'indivfacid_1'] = \
+                                school_sample[0:sum(studentmask)]  
+    individual_df.loc[studentidx,'indivfacid'] = \
+                                school_sample[0:sum(studentmask)]                               
+
+    # Replace missing values with -1 instead of NaN
+    individual_df['indivfacid_1'] = individual_df['indivfacid_1'].fillna(-1)
+    individual_df['indivfacid_2'] = individual_df['indivfacid_2'].fillna(-1) 
+    individual_df['indivfacid'] = individual_df['indivfacid'].fillna(-1)  
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('34 ------',end=' ')
+    #%% Step 23 Assign community facility ID (commfacid) to household layer
+    # commfacid denotes the bldid of the hospital the households usually go to.
+
+    # In this case, randomly assign bldid of hospitals to the households, but in 
+    # next version, households must be assigned hospitals closest to their location
+    hospitalmask = building_df['occbld']=='Hea'
+    hospitalidx = building_df.index[hospitalmask]
+    hospital_bldid = building_df['bldid'][hospitalidx].tolist()
+    repetition = ceil(len(household_df)/len(hospitalidx))
+    hospital_sample_temp = list(repeat(hospital_bldid,repetition))
+    hospital_sample = list(chain(*hospital_sample_temp))
+    random.shuffle(hospital_sample)
+
+    household_df.loc[household_df.index,'commfacid'] =\
+                                    hospital_sample[0:len(household_df)]
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('34.5 ------',end=' ')
+    #%% Step 24 Assign repvalue
+    # Assumption 12: Unit price for replacement wrt occupation type and 
+    # special facility status of the building
+
+    # Assign unit price
+    for occtype in Unit_price:
+        occmask = building_df['occbld'] == occtype
+        occidx = building_df.index[occmask]
+        building_df.loc[occidx, 'unit_price'] = Unit_price[occtype]
+        
+    building_df['repvalue'] = building_df['fptarea'] *\
+                            building_df['nstoreys']* building_df['unit_price']
+
+
+    print(time.time() - tic)
+    tic = time.time()
+    print('35 ------',end=' ')
+    #%% Remove unnecessary columns and save the results 
+    # building_df = building_df.drop(columns=\
+    #          ['lut_number','lrstype','codelevel','nstoreys','occbld','unit_price'])
+    building_df = building_df.drop(columns=['lut_number'])
+    household_df = household_df.drop(columns=\
+            ['income_numb','zonetype','zoneid','approxFootprint'])
+    individual_df = individual_df.drop(columns=\
+                        ['schoolenrollment','labourForce','employed'])
+        
+    # Rename indices to convert all header names to lowercase
+    building_df.rename(columns={'zoneid':'zoneid','bldID':'bldid','expStr':'expstr',\
+    'specialFac':'specialfac','repValue':'repvalue','nHouse':'nhouse'},\
+                                                            inplace=True)
+    household_df.rename(columns={'bldID':'bldid','hhID':'hhid','nIND':'nind',\
+                                'CommFacID':'commfacid'}, inplace=True)
+    individual_df.rename(columns={'hhID':'hhid','indivID':'individ',\
+    'eduAttStat':'eduattstat','indivFacID_1':'indivfacid_1',\
+    'indivFacID_2':'indivfacid_2'}, inplace=True)
+
+
+    #%% Generate building centroid coordinates
+
+    histo = building_df.groupby(['zoneid'])['zoneid'].count()
+    max_val = building_df.groupby(['zoneid'])['fptarea'].max()
+    landuse_layer = landuse_shp
+    building_layer = building_df
+    final_list = []
+    skipped_buildings_count = 0
+    for i in range(len(histo)):
+        df = landuse_layer[landuse_layer['zoneid'] == histo.index[i]].copy()
+        bui_indx = building_layer['zoneid'] == histo.index[i]
+        bui_attr = building_layer.loc[bui_indx].copy()
+        
+        rot_a = random.randint(10, 40)
+        rot_a_rad = rot_a*math.pi/180
+
+        separation_val = math.sqrt(max_val.values[i])/abs(math.cos(rot_a_rad))
+        separation_val = round(separation_val, 2)
+        boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+        boundary_approach = round(boundary_approach, 2)
+        
+        df2 = df.buffer(-boundary_approach)    
+        df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+        df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+        
+        #Continue the loop if buffered dataframe df2 is empty -PR
+        if df2.is_empty[df2.index[0]]:
+            print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+            skipped_buildings_count +=\
+                len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+            continue
+        
+        xmin, ymin, xmax, ymax = df2.total_bounds    
+        xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
+        ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
+        
+        pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
+        points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
+        grid = gpd.GeoSeries(points, crs=df.crs)
+        grid.name = 'geometry'
+        
+        gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
+        
+        def buff(row):
+            return row.geometry.buffer(row.buff_val, cap_style = 3)
+        
+        if len(gridinside) >= histo.values[i]:
+            gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
+            gridinside['xcoord'] = gridinside.geometry.x
+            gridinside['ycoord'] = gridinside.geometry.y
+            
+            buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+            buffered = gridinside.copy()
+            buffered['buff_val'] = buffer_val[0:len(gridinside)]
+            
+            if buffered.shape[0]==0: #PR
+                print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                skipped_buildings_count +=\
+                    len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                continue
+            
+            buffered['geometry'] = buffered.apply(buff, axis=1)
+            polyinside = buffered.rotate(rot_a, origin='centroid')
+            
+            polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+            polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+            polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+            
+            bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+            bui_joined = polyinside2.merge(bui_attr, on='fid')
+            bui_joined = bui_joined.drop(columns=['fid'])
+            
+            bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+            bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+            
+        elif len(gridinside) < histo.values[i]:
+            separation_val = math.sqrt(max_val.values[i])
+            separation_val = round(separation_val, 2)
+            boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+            boundary_approach = round(boundary_approach, 2)
+            
+            df2 = df.buffer(-boundary_approach, 200)
+            df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+            df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+            
+            xmin, ymin, xmax, ymax = df2.total_bounds    
+            xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
+            ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
+            
+            pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
+            points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
+            grid = gpd.GeoSeries(points, crs=df.crs)
+            grid.name = 'geometry'
+            
+            gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
+            
+            gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
+            gridinside['xcoord'] = gridinside.geometry.x
+            gridinside['ycoord'] = gridinside.geometry.y
+            
+            buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+            buffered = gridinside.copy()
+            buffered['buff_val'] = buffer_val[0:len(gridinside)]
+            
+            if buffered.shape[0]==0: #PR
+                print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                skipped_buildings_count +=\
+                    len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                continue
+            
+            buffered['geometry'] = buffered.apply(buff, axis=1)
+            polyinside = buffered.rotate(0, origin='centroid')
+            
+            polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+            polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+            polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+            
+            bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+            bui_joined = polyinside2.merge(bui_attr, on='fid')
+            bui_joined = bui_joined.drop(columns=['fid'])
+            
+            bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+            bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+
+        final_list.append(bui_joined)
+
+    final = pd.concat(final_list)
+    print(time.time() - tic)
+    tic = time.time()
+    print('36 ------',end=' ')
+
+    #print('\nTotal number of buildings generated:', len(building_layer))
+    #print('Total number of coordinate pairs generated:', len(final), '\n')
+
+    # Remove fields corresponding to unassigned buildings from all layers
+    # The footprint generation part of this program may not be able to assign 
+    # building footprint in some cases such as narrow strips or highly irregular
+    # but small land areas. In this case, households and individuals 
+    # corresponding to buildings without footprint coordinates must also be deleted.
+
+    #Original dataframe which contains all generated buildings
+    unique_building_df =  set(building_df['bldid'])
+    #Building dataframe that contains only the building with footprints 
+    unique_final = set(final['bldid'])
+    # Calculate list of buildings that do not exist in the dataframe with building
+    # footprints 
+    missing_buildings = np.array(list(set(unique_building_df).difference(unique_final)))
+
+    # Extract the list of households corresponding to missing buildings
+    hh_missing_idx_list = []
+    for mb in missing_buildings:
+        hh_missing_mask = household_df['bldid'] == mb
+        hh_missing_idx_list.append(household_df.index[hh_missing_mask].tolist())
+
+    # Flatten the list of lists to obtain indices and hhid of missing households
+    hh_missing_idx =  [single_value for sublist in hh_missing_idx_list \
+                                    for single_value in sublist]    
+    hh_missing = household_df.loc[hh_missing_idx,'hhid'].tolist() 
+
+    # Extract the list of individuals corresponding to missing buildings
+    ind_missing_idx_list =[]
+    for mh in hh_missing:
+        ind_missing_mask =individual_df['hhid'] == mh
+        ind_missing_idx_list.append(individual_df.index[ind_missing_mask].tolist())
+
+    ind_missing_idx = [single_value for sublist in ind_missing_idx_list\
+                                    for single_value in sublist]
+
+    # Delete households corresponding to missing buildings
+    household_df.drop(labels = hh_missing_idx, axis=0,inplace=True)
+
+    # Delete individuals corresponding to missing buildings
+    individual_df.drop(labels = ind_missing_idx, axis=0, inplace=True)
+
+    final = final.to_crs("EPSG:4326")
+    
+    print(time.time() - tic)
+    tic = time.time()
+    print('37 ------',end=' ')
+    print(time.time() - tic)
+    return final, household_df, individual_df
+

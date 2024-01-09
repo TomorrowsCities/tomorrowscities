@@ -23,8 +23,8 @@ import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height
-from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics
-from ..backend.utils import building_preprocess, identity_preprocess
+from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
+from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
 from .docs import data_import_help
 import ipywidgets
@@ -40,6 +40,17 @@ layers = solara.reactive({
     'dialog_message_to_be_shown': solara.reactive(None),
     'version': '0.2.4_fix2',
     'layers' : {
+        'parameter': {
+            'render_order': 0,
+            'map_info_tooltip': 'Number of records',
+            'data': solara.reactive(None),
+            'map_layer': solara.reactive(None),
+            'force_render': solara.reactive(False),
+            'visible': solara.reactive(False),
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'attributes_required': [set(['unnamed: 0'])],
+            'attributes': [set(['unnamed: 0'])]},
         'landslide fragility': {
             'render_order': 0,
             'map_info_tooltip': 'Number of landslide fragility records',
@@ -626,6 +637,22 @@ def read_gem_xml(data: [bytes]):
     return d
 
 @solara.component
+def ParameterFileWidget(parameter_file: ParameterFile):
+    df_nc, ipdf, df1, df2, df3 = parameter_file.get_sheets()
+    nonempty_layers = {'sheet 1': solara.reactive(df_nc),
+                        'sheet 2': solara.reactive(ipdf),
+                        'sheet 3': solara.reactive(df1),
+                        'sheet 4': solara.reactive(df2),
+                        'sheet 5': solara.reactive(df3)}
+    nonempty_layer_names = list(nonempty_layers.keys())
+    selected, set_selected = solara.use_state('sheet 1')
+    solara.ToggleButtonsSingle(value=selected, on_value=set_selected, 
+                            values=nonempty_layer_names)
+    data = nonempty_layers[selected].value
+    solara.DataFrame(data, items_per_page=5)
+
+
+@solara.component
 def VulnerabilityFunctionDisplayer(vuln_func):
     vuln_func, _ = solara.use_state_or_update(vuln_func)
 
@@ -796,12 +823,11 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
                         size_of_best_match = len(layer_attributes)
                         logging.debug('There are extra columns', attributes - layer_attributes)
     # Preprocess
-    data = layers.value['layers'][name]['pre_processing'](data)
+    data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
 
-    # Inject columns
-    if name is not None and (isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame)):
-        for col, val in layers.value['layers'][name]['extra_cols'].items():
-            data[col] = val
+    if name == "parameter":
+        data = ParameterFile(content=data_array)
+        
     return (name, data)
 
 @solara.component
@@ -823,6 +849,11 @@ def FileDropZone():
                     if  "geometry" in list(data.columns):
                         center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
                         layers.value['center'].set(center)
+                elif isinstance(data, ParameterFile):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(False)
+                    layers.value['layers'][name]['force_render'].set(False)                    
                 elif isinstance(data, dict):
                     layers.value['layers'][name]['data'].set(data)
                     layers.value['selected_layer'].set(name)
@@ -899,8 +930,8 @@ def LayerDisplayer():
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
                     with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
-        with solara.Row(): #add empty line after attribute table
-            return                                                                
+        elif isinstance(data, ParameterFile):
+            ParameterFileWidget(parameter_file=data)
         if selected == 'gem_vulnerability':
             VulnerabiliyDisplayer(data)
 
@@ -1363,6 +1394,15 @@ def ImportDataZone():
     fileinfo, set_fileinfo = solara.use_state(None)
     result, set_result = solara.use_state(solara.Result(True))
 
+    generate_message, set_generate_message = solara.use_state("")
+    generate_counter, set_generate_counter = solara.use_state(0)
+    generate_btn_disabled, set_generate_btn_disabled = solara.use_state(False)
+    generate_error = solara.reactive("")
+
+    def on_generate():
+        set_generate_counter(generate_counter + 1)
+        generate_error.set("")
+
     def load():
         if fileinfo is not None:
             print('processing file')
@@ -1376,6 +1416,11 @@ def ImportDataZone():
                     if  "geometry" in list(data.columns):
                         center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
                         layers.value['center'].set(center)
+                elif isinstance(data, ParameterFile):
+                    layers.value['layers'][name]['data'].set(data)
+                    layers.value['selected_layer'].set(name)
+                    layers.value['layers'][name]['visible'].set(False)
+                    layers.value['layers'][name]['force_render'].set(False)
                 elif isinstance(data, dict):
                     layers.value['layers'][name]['data'].set(data)
                     layers.value['selected_layer'].set(name)
@@ -1384,6 +1429,34 @@ def ImportDataZone():
             else:
                 return False
         return True
+    
+    def is_ready_to_generate():
+        if layers.value['layers']['parameter']['data'].value is not None and \
+           layers.value['layers']['landuse']['data'].value is not None:
+            return True
+        return False
+
+    def generate():
+        if generate_counter > 0 :
+            set_generate_message('Generating exposure...')
+            print('Generating exposure...')
+            parameter_file = layers.value['layers']['parameter']['data'].value 
+            land_use_file = layers.value['layers']['landuse']['data'].value 
+            building, household, individual = generate_exposure(parameter_file, land_use_file,
+                                                                population_calculate=False, seed=42)
+
+            for name, data in zip(['building','household','individual'],[building, household, individual]):
+                data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
+                print('hkaya',name)
+                print(data)
+                layers.value['layers'][name]['data'].set(data)
+                layers.value['selected_layer'].set(name)
+                layers.value['layers'][name]['visible'].set(True)
+                layers.value['layers'][name]['force_render'].set(True)
+                if  "geometry" in list(data.columns):
+                    center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                    layers.value['center'].set(center)
+
         
     def progress(x):
         set_total_progress(x)
@@ -1392,6 +1465,7 @@ def ImportDataZone():
         set_fileinfo(f)
     
     result = solara.use_thread(load, dependencies=[fileinfo])
+    generate_result = solara.use_thread(generate, dependencies=[generate_counter])
 
     #with solara.Row(justify="center"):
     #    solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
@@ -1407,6 +1481,29 @@ def ImportDataZone():
                 on_file=on_file_deneme, 
                 lazy=False)
         
+    with solara.Card(title="Data Generation", subtitle="Exposure generation"):
+        solara.Markdown('''First, upload parameter file and land use, then click
+                        generate to produce building/household/individual layers
+                        ''')
+        solara.Button("Generate", on_click=on_generate, outlined=True,
+                disabled=generate_btn_disabled)
+
+    if generate_result.error is not None:
+        generate_error.set(generate_error.value + str(generate_result.error))
+
+    if generate_error.value != "":
+        solara.Text(f'{generate_error}', style={"color":"red"})
+    else:
+        solara.Text("Spacer", style={"visibility": "hidden"})
+
+    if generate_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
+        set_generate_btn_disabled(True)
+        solara.Text(generate_message)
+        solara.ProgressLinear(value=True)
+    else:
+        solara.Text("Spacer", style={"visibility": "hidden"})
+        set_generate_btn_disabled(not is_ready_to_generate())
+        solara.ProgressLinear(value=False)
     with solara.Card(title="Sample Dataset", subtitle="Use our sample data"): 
         if storage.value is None:
             solara.Markdown('''
