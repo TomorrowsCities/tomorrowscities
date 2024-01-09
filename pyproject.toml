@@ -22,6 +22,7 @@ dependencies = [
     "rasterio",
     "boto3",
     "cryptography",
+    "ipydatagrid",
 ]
 
 [tool.hatch.version]
