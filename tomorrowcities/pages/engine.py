@@ -914,6 +914,9 @@ def LayerDisplayer():
                 # ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
                 # df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
                 df_filtered = data.drop(columns=['geometry'])
+                # TODO: until pagination support, display only 100 records
+                if selected in ['intensity','individual']:
+                    df_filtered = df_filtered.sample(100)
                 #solara.CrossFilterReport(df_filtered, classes=["py-2"])
                 #solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
                 #solara.CrossFilterDataFrame(df=df_filtered)
