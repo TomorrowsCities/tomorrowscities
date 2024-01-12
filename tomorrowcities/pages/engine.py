@@ -1550,28 +1550,28 @@ def ImportDataZone():
 def WebApp():
     if storage.value is None:
         storage.value = revive_storage()
-        solara.Title("Sidebar")
-        with solara.Sidebar():
-            with solara.lab.Tabs():
-                with solara.lab.Tab("SETTINGS"):
-                    ExecutePanel()
-                with solara.lab.Tab("DATA IMPORT"):    
-                    ImportDataZone()
-            MapInfo()
+    solara.Title("Sidebar")
+    with solara.Sidebar():
+        with solara.lab.Tabs():
+            with solara.lab.Tab("SETTINGS"):
+                ExecutePanel()
+            with solara.lab.Tab("DATA IMPORT"):
+                ImportDataZone()
+        MapInfo()
 
-        # LayerController()
-        MapViewer()
-        with solara.Row(justify="center"):
-            MetricPanel()
-        LayerDisplayer()
+    # LayerController()
+    MapViewer()
+    with solara.Row(justify="center"):
+        MetricPanel()
+    LayerDisplayer()
 
-        with ConfirmationDialog(
-            layers.value['dialog_message_to_be_shown'].value is not None,
-            on_close=clear_help_topic,
-            ok="Close",
-            title="Information Box",
-            ):
-            solara.Markdown(f'{layers.value["dialog_message_to_be_shown"].value}')
+    with ConfirmationDialog(
+        layers.value['dialog_message_to_be_shown'].value is not None,
+        on_close=clear_help_topic,
+        ok="Close",
+        title="Information Box",
+        ):
+        solara.Markdown(f'{layers.value["dialog_message_to_be_shown"].value}')
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
