@@ -1,5 +1,5 @@
 vuetifyThemes = {
     light: {
-        primary: '#75ba76',
+        primary: '#1c4220',
     }
 }
