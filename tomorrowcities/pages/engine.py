@@ -267,6 +267,15 @@ layers = solara.reactive({
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},
         "metric8": {"desc": "Number of casualties", "value": 0, "max_value":100},}})
 
+metric_icon1 = 'tomorrowcities/content/icons/metric1.png'
+metric_icon2 = 'tomorrowcities/content/icons/metric2.png'
+metric_icon3 = 'tomorrowcities/content/icons/metric3.png'
+metric_icon4 = 'tomorrowcities/content/icons/metric4.png'
+metric_icon5 = 'tomorrowcities/content/icons/metric5.png'
+metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
+metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
+metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
+
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
 
@@ -778,7 +787,7 @@ def MetricWidget(name, description, value, max_value, render_count):
 
     with solara.Tooltip(description):
         with solara.Column():
-            solara.FigureEcharts(option=options, attributes={ "style": "height: 100px; width: 100px" })
+            solara.FigureEcharts(option=options, attributes={ "style": "height: 100px; width: 150px" })
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
@@ -947,6 +956,11 @@ def MetricPanel():
         filtered = building.cx[xmin:xmax,ymin:ymax]
         for metric in filtered_metrics.keys():
             filtered_metrics[metric] = int(filtered.cx[xmin:xmax,ymin:ymax][metric].sum())
+
+    metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
+    with solara.Row():                     
+        for i in range(len(metric_icons)):
+            solara.Image(metric_icons[i])
     
     with solara.Row():
         for name, metric in layers.value['metrics'].items():
@@ -983,7 +997,7 @@ def MapViewer():
     base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True)                                                                                                                                         
     map_layers = [base_layer5, base_layer4, base_layer3, base_layer2, base_layer1]
     
-    layout = ipywidgets.Layout.element(width='100%', height='70vh')
+    layout = ipywidgets.Layout.element(width='100%', height='60vh')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
@@ -1330,7 +1344,7 @@ def ExecutePanel():
 def PolicyPanel():
     all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
     with solara.Row():
-        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False)
+        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False, style={"max-width": "30vh", "height": "auto"})
 
 @solara.component
 def MapInfo():
@@ -1557,7 +1571,8 @@ def WebApp():
                 ExecutePanel()
             with solara.lab.Tab("DATA IMPORT"):
                 ImportDataZone()
-        MapInfo()
+            with solara.lab.Tab("MAP INFO"):
+                MapInfo()
 
     # LayerController()
     MapViewer()

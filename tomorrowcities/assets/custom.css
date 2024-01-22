@@ -8,3 +8,11 @@ header {
 .v-application--wrap > div:nth-child(2) > div:nth-child(2){
     display: none !important;
 }
+
+.theme--light.v-sheet {
+	background-color: #EBEBEB;
+}
+
+.v-navigation-drawer__content {
+    background-color: #EBEBEB;
+}
