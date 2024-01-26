@@ -517,7 +517,7 @@ def create_map_layer(df, name):
                                                    disable_clustering_at_zoom=5)
 
     else:
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()),
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=generic_layer_colors)
