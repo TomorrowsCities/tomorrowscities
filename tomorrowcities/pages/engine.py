@@ -38,15 +38,14 @@ layers = solara.reactive({
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
+    'seed': solara.reactive(42),
     'version': '0.2.4_fix2',
     'layers' : {
         'parameter': {
             'render_order': 0,
             'map_info_tooltip': 'Number of records',
             'data': solara.reactive(None),
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
+            'df': solara.reactive(None),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
             'attributes_required': [set(['unnamed: 0'])],
@@ -55,112 +54,102 @@ layers = solara.reactive({
             'render_order': 0,
             'map_info_tooltip': 'Number of landslide fragility records',
             'data': solara.reactive(None),
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
+            'df': solara.reactive(None),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['expstr'],
             'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
             'attributes': [set(['expstr','susceptibility','minor','moderate','severe','description'])]},
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
             'data': solara.reactive(None),
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
+            'df': solara.reactive(None),
             'pre_processing': building_preprocess,
             'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0, 'metric8': 0,
                             'node_id': None,'hospital_access': True, 'has_power': True, 'casualty': 0},
+            'filter_cols': ['occbld'],
             'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
             'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
         'landuse': {
             'render_order': 20,
             'map_info_tooltip': 'Number of landuse zones',
             'data': solara.reactive(None),
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
+            'df': solara.reactive(None),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['luf'],
             'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
             'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
         'household': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of households',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'node_id': None, 'hospital_access': True, 'has_power':True,'hospital_has_power':True},
+            'filter_cols': ['income'],
             'attributes_required': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])],
             'attributes': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])]},
         'individual': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of individuals',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'facility_access':True},
+            'filter_cols': ['gender'],
             'attributes_required': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])],
             'attributes': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])]},
         'intensity': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of intensity measurements',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['im'],
             'attributes_required': [set(['geometry','im']), set(['geometry','pga'])],
             'attributes': [set(['geometry','im']), set(['geometry','pga'])]},
         'fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of records in fragility configuration',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['expstr'],
             'attributes_required': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])],
             'attributes': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])]},
         'vulnerability': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of records in vulnerabilty configuration',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['expstr'],
             'attributes_required': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])],
             'attributes': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])]},
         'gem_vulnerability': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of functions in gem vulnerabilty',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['id'],
             'attributes_required': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
             'attributes': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
         },
         'power nodes': {
             'render_order': 90,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of electrical power nodes',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
+            'filter_cols': ['node_id'],
             'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs'])],
             'attributes': [set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
@@ -168,24 +157,22 @@ layers = solara.reactive({
         'power edges': {
             'render_order': 80,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of connections in power grid',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['edge_id'],
             'attributes_required': [set(['geometry','from_node','to_node', 'edge_id'])],
             'attributes': [set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
                          'geometry', 'to_node', 'length'])]},
         'power fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Number of records in fragility configuration for power',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['vuln_string'],
             'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete'])],
             'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
@@ -193,41 +180,37 @@ layers = solara.reactive({
         'road nodes': {
             'render_order': 90,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': '# nodes in road network',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['node_id'],
             'attributes_required': [set(['geometry', 'node_id'])],
             'attributes': [set(['geometry', 'node_id'])]},
         'road edges': {
             'render_order': 80,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': '# edges in road network',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0,'is_damaged': False},
+            'filter_cols': ['edge_id'],
             'attributes_required': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])],
             'attributes': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])]},
         'road fragility': {
             'render_order': 0,
             'data': solara.reactive(None),
+            'df': solara.reactive(None),
             'map_info_tooltip': 'Road fragility records',
-            'map_layer': solara.reactive(None),
-            'force_render': solara.reactive(False),
-            'visible': solara.reactive(False),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
+            'filter_cols': ['vuln_string'],
             'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'dispersion'])],
             'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'dispersion'])]}
             },
     'center': solara.reactive((41.01,28.98)),
-    'selected_layer' : solara.reactive(None),
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
     'selected_policies': solara.reactive([]),
@@ -304,8 +287,7 @@ def clone_app_state(dictionary):
                 keys = list(path + (key,))
                 if isinstance(value,solara.toestand.Reactive):
                     value = value.value
-                if keys[-1] != 'map_layer':
-                    dict_pars.append((keys, value))
+                dict_pars.append((keys, value))
     
     new_dict = dict()
     for keys, value in dict_pars:
@@ -321,12 +303,11 @@ def load_from_state(source_dict):
                 stack.append((path + (key,), value))
             else:
                 keys = list(path + (key,))
-                if  keys[-1] != 'map_layer':
-                    src_value = get_nested_value(source_dict, keys)
-                    if isinstance(value,solara.toestand.Reactive):
-                        assign_nested_value(layers.value, keys, solara.reactive(src_value))
-                    else:
-                        assign_nested_value(layers.value, keys, src_value)
+                src_value = get_nested_value(source_dict, keys)
+                if isinstance(value,solara.toestand.Reactive):
+                    assign_nested_value(layers.value, keys, solara.reactive(src_value))
+                else:
+                    assign_nested_value(layers.value, keys, src_value)
          
 def create_metadata(data):
     m = dict()
@@ -394,13 +375,12 @@ def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
-    #layers.value['map_info_force_render'].set(True)  
 
 def landuse_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
-    #layers.value['map_info_force_render'].set(True)  
 
+@solara.memoize(key=lambda feature: (feature['properties']['luf']))
 def landuse_colors(feature):
     #print(feature)
     luf_type = feature['properties']['luf']
@@ -478,18 +458,6 @@ def power_node_colors(feature):
     return {'color': ds_to_color[ds], 'fillColor': ds_to_color[ds]}
 
 def create_map_layer(df, name):
-    if df is None:
-        return None 
-    if "geometry" not in list(df.columns):
-        return None 
-    
-    if name not in layers.value['layers'].keys():
-        return None
-    
-    existing_map_layer = layers.value['layers'][name]['map_layer'].value
-    if existing_map_layer is not None and not layers.value['layers'][name]['force_render'].value:
-        return existing_map_layer
-    
     if name == "intensity":
         # Take the largest 500_000 values to display
         im_col = 'pga' if 'pga' in df.columns else 'im'
@@ -504,13 +472,13 @@ def create_map_layer(df, name):
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=landuse_colors)
-        map_layer.on_click(building_click_handler)   
+        map_layer.on_click(landuse_click_handler)   
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=building_colors)
-        map_layer.on_click(landuse_click_handler)
+        map_layer.on_click(building_click_handler)
     elif name == "road edges":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             hover_style={'color': 'orange'},
@@ -554,8 +522,6 @@ def create_map_layer(df, name):
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
             style_callback=generic_layer_colors)
         map_layer.on_click(generic_layer_click_handler)
-    layers.value['layers'][name]['map_layer'].set(map_layer)
-    layers.value['layers'][name]['force_render'].set(False)
     return map_layer
 
 def fast_transform_xy(T,x,y):
@@ -839,113 +805,35 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
         
     return (name, data)
 
-@solara.component
-def FileDropZone():
-    total_progress, set_total_progress = solara.use_state(-1)
-    fileinfo, set_fileinfo = solara.use_state(None)
-    result, set_result = solara.use_state(solara.Result(True))
-
-    def load():
-        if fileinfo is not None:
-            print('processing file')
-            name, data = import_data(fileinfo)
-            if name is not None and data is not None:
-                if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
-                    layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(True)
-                    layers.value['layers'][name]['force_render'].set(True)
-                    if  "geometry" in list(data.columns):
-                        center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
-                        layers.value['center'].set(center)
-                elif isinstance(data, ParameterFile):
-                    layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(False)
-                    layers.value['layers'][name]['force_render'].set(False)                    
-                elif isinstance(data, dict):
-                    layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(True)
-                    layers.value['layers'][name]['force_render'].set(True)
-            else:
-                return False
-        return True
-        
-    def progress(x):
-        set_total_progress(x)
-
-    def on_file_deneme(f):
-        set_fileinfo(f)
-    
-    result = solara.use_thread(load, dependencies=[fileinfo])
-
-    solara.FileDrop(on_total_progress=progress,
-                    on_file=on_file_deneme, 
-                    lazy=False)
-    if total_progress > -1 and total_progress < 100:
-        solara.Text(f"Uploading {total_progress}%")
-        solara.ProgressLinear(value=total_progress)
-    else:
-        if result.state == solara.ResultState.FINISHED:
-            if result.value:
-                solara.Text("Spacer", style={'visibility':'hidden'})
-            else:
-                solara.Text("Unrecognized file")
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.INITIAL:
-            solara.Text("Spacer", style={'visibility':'hidden'})
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.ERROR:
-            solara.Text(f'{result.error}')
-            solara.ProgressLinear(value=False)
-        else:
-            solara.Text("Processing")
-            solara.ProgressLinear(value=True)
 
 @solara.component
 def LayerDisplayer():
     print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
-    nonempty_layer_names = list(nonempty_layers.keys())
-    selected = layers.value['selected_layer'].value
-    def set_selected(s):
-        layers.value['selected_layer'].set(s)
-
-    solara.ToggleButtonsSingle(value=selected, on_value=set_selected, 
-                               values=nonempty_layer_names)
-    if selected is None and len(nonempty_layer_names) > 0:
-        set_selected(nonempty_layer_names[0])
-    if selected is not None:
-        data = nonempty_layers[selected]['data'].value
-        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
-            if "geometry" in data.columns:
-                # ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-                # df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
-                df_filtered = data.drop(columns=['geometry'])
-                # TODO: until pagination support, display only 100 records
-                if selected in ['intensity','individual']:
-                    df_filtered = df_filtered.sample(100)
-                #solara.CrossFilterReport(df_filtered, classes=["py-2"])
-                #solara.CrossFilterSelect(df_filtered, df_filtered.columns[0])
-                #solara.CrossFilterDataFrame(df=df_filtered)
-                ipydatagrid.DataGrid.element(dataframe=df_filtered, layout={"height": "445px"}, auto_fit_columns=True).key(f'datagrid-{df_filtered}')
-            else:
-                #solara.CrossFilterReport(data, classes=["py-2"])
-                #solara.CrossFilterSelect(data, data.columns[0])
-                #solara.CrossFilterDataFrame(df=data)
-                ipydatagrid.DataGrid.element(dataframe=data, layout={"height": "445px"}, auto_fit_columns=True).key(f'datagrid-{data}')
-            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
-                with solara.Row():
-                    file_object = data.to_json()
-                    with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
-                        solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
-                        solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
-        elif isinstance(data, ParameterFile):
-            ParameterFileWidget(parameter_file=data)
-        if selected == 'gem_vulnerability':
-            VulnerabiliyDisplayer(data)
+    with solara.lab.Tabs():
+        for layer_name, layer in nonempty_layers.items():
+            with solara.lab.Tab(layer_name):
+                data = layer['data'].value
+                if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+                    df = layer['df'].value
+                    with solara.VBox():
+                        if layer_name in ['intensity']:
+                            solara.DataFrame(df)
+                        else:
+                            for filter_col in layer['filter_cols']:
+                                solara.CrossFilterSelect(df, filter_col)
+                            solara.CrossFilterDataFrame(df)
+                    if layer_name in ["building","road edges","road nodes","power nodes","power edges"] :
+                        with solara.Row():
+                            file_object = data.to_json()
+                            with solara.FileDownload(file_object, f"{layer_name}_export.geojson", mime_type="application/geo+json"):
+                                solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+                            with solara.FileDownload(data.to_csv(), f"{layer_name}_export.csv", mime_type="text/csv"):
+                                solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
+                elif isinstance(data, ParameterFile):
+                    ParameterFileWidget(parameter_file=data)
+                if layer_name == 'gem_vulnerability':
+                    VulnerabiliyDisplayer(data)
 
 @solara.component
 def MetricPanel():
@@ -970,32 +858,24 @@ def MetricPanel():
                          layers.value['render_count'].value)
         with solara.Link("/docs/metrics"):
             solara.Button(icon_name="mdi-help-circle-outline", icon=True)
-
-@solara.component
-def LayerController():
-    with solara.Row(gap="0px"):
-        for layer_name, layer in layers.value['layers'].items():
-            if layer['map_layer'].value is not None:
-                solara.Checkbox(label=layer_name, 
-                                value=layer['visible'])
                     
 @solara.component
 def MapViewer():
     print('rendering mapviewer')
     default_zoom = 14
-    #default_center = (-1.3, 36.80)
     zoom, set_zoom = solara.use_state(default_zoom)
-    #center, set_center = solara.use_state(default_center)
+    base_layers, set_base_layers = solara.use_state_or_update([])
+    map_layers, set_map_layers = solara.use_state_or_update([])
 
-    # base_map = ipyleaflet.basemaps["OpenStreetMap"]["Mapnik"]
-    # base_layer = ipyleaflet.TileLayer.element(url=base_map.build_url())
-    # map_layers = [base_layer]
-    base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
-    base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
-    base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
-    base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Stadia.StamenTerrain.build_url(),name="StamenTerrain",base = True)
-    base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True)                                                                                                                                         
-    map_layers = [base_layer5, base_layer4, base_layer3, base_layer2, base_layer1]
+    def create_base_layers():
+        base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
+        base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
+        base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
+        base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True)                                                                                                                                         
+        set_base_layers([base_layer4, base_layer3, base_layer2, base_layer1])
+
+    # create base layers only once
+    solara.use_memo(create_base_layers,[])
     
     layout = ipywidgets.Layout.element(width='100%', height='60vh')
 
@@ -1004,16 +884,25 @@ def MapViewer():
     tool3 = ipyleaflet.LayersControl.element(position='topright')
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')                                                                                                                                              
 
-    render_order = [l['render_order'] for _, l in layers.value['layers'].items()]
-    for _, (layer_name, layer) in sorted(zip(render_order,layers.value['layers'].items())):
-        df = layer['data'].value
-        if isinstance(df, gpd.GeoDataFrame):
-            # we have something to display on map
-            if  "geometry" in list(df.columns) and layer['visible'].value:
-                map_layer = create_map_layer(df, layer_name)
-                if map_layer is not None:
-                    map_layers.append(map_layer)
-     
+    filters = dict()
+    for l in layers.value['layers'].keys():
+        filters[l], _ = solara.use_cross_filter(id(layers.value['layers'][l]['df'].value), "dataframe")
+
+    def create_layers():
+        map_layers = []
+        for l in layers.value['layers'].keys():
+            df = layers.value['layers'][l]['data'].value
+            if df is not None and 'geometry' in df.columns:
+                if filters[l] is not None:
+                    map_layer = create_map_layer(df[filters[l]], l)
+                else:
+                    map_layer = create_map_layer(df, l)
+                map_layers.append(map_layer)
+
+        set_map_layers(map_layers)
+
+    solara.use_memo(create_layers,[f for f in filters.values()] + [layers.value['layers'][l]['data'].value for l in layers.value['layers'].keys()])  
+
     ipyleaflet.Map.element(
         zoom=zoom,
         on_zoom=set_zoom,
@@ -1026,7 +915,7 @@ def MapViewer():
         touch_zoom=True,
         box_zoom=True,
         keyboard=True if random.random() > 0.5 else False,
-        layers=map_layers,
+        layers=base_layers + map_layers,
         controls = [tool1, tool2, tool3, tool4],
         layout = layout
         )
@@ -1253,18 +1142,27 @@ def ExecutePanel():
                     layers.value['layers']['power nodes']['data'].set(nodes)
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['household']['data'].set(household)
+                    layers.value['layers']['power nodes']['df'].set(nodes.drop(columns=['geometry']))
+                    layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
+                    layers.value['layers']['household']['df'].set(household)
                 if 'road' in layers.value['infra'].value:
                     edges, buildings, household, individual = execute_road()
                     layers.value['layers']['road edges']['data'].set(edges)
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['household']['data'].set(household)
                     layers.value['layers']['individual']['data'].set(individual)
+                    layers.value['layers']['road edges']['df'].set(edges.drop(columns=['geometry']))
+                    layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
+                    layers.value['layers']['household']['df'].set(household)
+                    layers.value['layers']['individual']['df'].set(individual)
                 if 'building' in layers.value['infra'].value:
                     buildings = execute_building()
                     layers.value['layers']['building']['data'].set(buildings)
+                    layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
 
                 buildings = execute_metric()
                 layers.value['layers']['building']['data'].set(buildings)
+                layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
 
                 # Taking average without storing intermediate values
                 # averaga_n = [(n-1)*average_(n-1) + value_n]/2
@@ -1281,14 +1179,6 @@ def ExecutePanel():
             set_progress_message('')
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
-            if 'power' in layers.value['infra'].value:
-                layers.value['layers']['power nodes']['force_render'].set(True)
-                layers.value['layers']['building']['force_render'].set(True)
-            if 'road' in layers.value['infra'].value:
-                layers.value['layers']['road edges']['force_render'].set(True)
-                layers.value['layers']['building']['force_render'].set(True)
-            if 'building' in layers.value['infra'].value:
-                layers.value['layers']['building']['force_render'].set(True)
 
             layers.value['datetime_analysis'] =  datetime.datetime.utcnow()
 
@@ -1422,27 +1312,20 @@ def ImportDataZone():
 
     def load():
         if fileinfo is not None:
-            print('processing file')
             name, data = import_data(fileinfo)
             if name is not None and data is not None:
-                if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+                if isinstance(data, gpd.GeoDataFrame):
+                    layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
                     layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(True)
-                    layers.value['layers'][name]['force_render'].set(True)
-                    if  "geometry" in list(data.columns):
-                        center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
-                        layers.value['center'].set(center)
+                    center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                    layers.value['center'].set(center)
+                elif isinstance(data, pd.DataFrame):
+                    layers.value['layers'][name]['df'].set(data)
+                    layers.value['layers'][name]['data'].set(data)
                 elif isinstance(data, ParameterFile):
                     layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(False)
-                    layers.value['layers'][name]['force_render'].set(False)
                 elif isinstance(data, dict):
                     layers.value['layers'][name]['data'].set(data)
-                    layers.value['selected_layer'].set(name)
-                    layers.value['layers'][name]['visible'].set(True)
-                    layers.value['layers'][name]['force_render'].set(True)
             else:
                 return False
         return True
@@ -1459,17 +1342,15 @@ def ImportDataZone():
             print('Generating exposure...')
             parameter_file = layers.value['layers']['parameter']['data'].value 
             land_use_file = layers.value['layers']['landuse']['data'].value 
+            seed = layers.value['seed'].value
             building, household, individual = generate_exposure(parameter_file, land_use_file,
-                                                                population_calculate=False, seed=42)
+                                                                population_calculate=False, seed=seed)
 
             for name, data in zip(['building','household','individual'],[building, household, individual]):
                 data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
                 print('hkaya',name)
                 print(data)
                 layers.value['layers'][name]['data'].set(data)
-                layers.value['selected_layer'].set(name)
-                layers.value['layers'][name]['visible'].set(True)
-                layers.value['layers'][name]['force_render'].set(True)
                 if  "geometry" in list(data.columns):
                     center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
                     layers.value['center'].set(center)
@@ -1502,7 +1383,9 @@ def ImportDataZone():
         solara.Markdown('''First, upload parameter file and land use, then click
                         generate to produce building/household/individual layers
                         ''')
-        solara.Button("Generate", on_click=on_generate, outlined=True,
+        with solara.Row():
+            solara.InputInt(label='Random seed',value=layers.value['seed'])
+            solara.Button("Generate", on_click=on_generate, outlined=True,
                 disabled=generate_btn_disabled)
 
     if generate_result.error is not None:
