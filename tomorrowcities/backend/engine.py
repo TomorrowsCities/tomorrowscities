@@ -111,7 +111,7 @@ def compute_road_infra(buildings, household, individual,
         #gdf_edges['log_im'] = np.log(gdf_edges['im'])
         if 'im' in gdf_edges.columns:
             gdf_edges['log_im'] = np.log(gdf_edges['im']/9.81)
-        elif 'pga' in gdf_nodes.columns:
+        elif 'pga' in gdf_edges.columns:
             gdf_edges['log_im'] = np.log(gdf_edges['pga']/9.81)
         
         for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
