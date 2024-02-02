@@ -753,7 +753,7 @@ def MetricWidget(name, description, value, max_value, render_count):
 
     with solara.Tooltip(description):
         with solara.Column():
-            solara.FigureEcharts(option=options, attributes={ "style": "height: 100px; width: 150px" })
+            solara.FigureEcharts(option=options, attributes={ "style": "height:100px; width:175px"})
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
@@ -805,12 +805,11 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
         
     return (name, data)
 
-
 @solara.component
 def LayerDisplayer():
     print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
-    with solara.lab.Tabs():
+    with solara.lab.Tabs(background_color="#ebebeb"):
         for layer_name, layer in nonempty_layers.items():
             with solara.lab.Tab(layer_name):
                 data = layer['data'].value
@@ -856,8 +855,8 @@ def MetricPanel():
                          filtered_metrics[name], 
                          metric['max_value'],
                          layers.value['render_count'].value)
-        with solara.Link("/docs/metrics"):
-            solara.Button(icon_name="mdi-help-circle-outline", icon=True)
+        # with solara.Link("/docs/metrics"):
+            # solara.Button(icon_name="mdi-help-circle-outline", icon=True)
                     
 @solara.component
 def MapViewer():
@@ -877,7 +876,7 @@ def MapViewer():
     # create base layers only once
     solara.use_memo(create_base_layers,[])
     
-    layout = ipywidgets.Layout.element(width='100%', height='60vh')
+    layout = ipywidgets.Layout.element(width='100%', height='55vh')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
@@ -1447,7 +1446,7 @@ def ImportDataZone():
 def WebApp():
     if storage.value is None:
         storage.value = revive_storage()
-    solara.Title("Sidebar")
+    solara.Title(" ")
     with solara.Sidebar():
         with solara.lab.Tabs():
             with solara.lab.Tab("SETTINGS"):
