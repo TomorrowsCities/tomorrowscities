@@ -68,7 +68,7 @@ layers = solara.reactive({
             'pre_processing': building_preprocess,
             'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0, 'metric8': 0,
                             'node_id': None,'hospital_access': True, 'has_power': True, 'casualty': 0},
-            'filter_cols': ['occbld'],
+            'filter_cols': ['expstr'],
             'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
             'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
         'landuse': {
@@ -194,8 +194,8 @@ layers = solara.reactive({
             'map_info_tooltip': '# edges in road network',
             'pre_processing': identity_preprocess,
             'extra_cols': {'ds': 0,'is_damaged': False},
-            'filter_cols': ['edge_id'],
-            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])],
+            'filter_cols': ['bridge_type'],
+            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id','bridge_type','length'])],
             'attributes': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])]},
         'road fragility': {
             'render_order': 0,
@@ -365,7 +365,7 @@ def road_node_click_handler(event=None, feature=None, id=None, properties=None):
 
 def road_edge_colors(feature):
     is_damaged = feature['properties']['is_damaged'] 
-    if feature['properties']['bridge']:
+    if feature['properties']['bridge_type'] is not None:
         color = 'black'
     else:
         color = 'blue'
