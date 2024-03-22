@@ -1182,7 +1182,7 @@ def ExecutePanel():
             layers.value['datetime_analysis'] =  datetime.datetime.utcnow()
 
     # Execute the thread only when the depencency is changed
-    result = solara.use_thread(execute_engine, dependencies=[execute_counter])
+    result = solara.use_thread(execute_engine, dependencies=[execute_counter], intrusive_cancel=False)
 
     with solara.GridFixed(columns=1):
         solara.Markdown("#### Infrastructure")
@@ -1361,8 +1361,8 @@ def ImportDataZone():
     def on_file_deneme(f):
         set_fileinfo(f)
     
-    result = solara.use_thread(load, dependencies=[fileinfo])
-    generate_result = solara.use_thread(generate, dependencies=[generate_counter])
+    result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
+    generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
 
     #with solara.Row(justify="center"):
     #    solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
