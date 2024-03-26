@@ -22,6 +22,7 @@ from .utils import ParameterFile
 def compute_road_infra(buildings, household, individual,
                         nodes, edges, intensity, fragility, hazard, 
                         road_water_height_threshold,
+                        culvert_water_height_threshold,
                         threshold_flood_distance):
 
     DS_NO = 0
@@ -90,8 +91,16 @@ def compute_road_infra(buildings, household, individual,
             print('after')
             print(gdf_edges.loc[0])
         else:
-            gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'ds'] = 1
-            gdf_edges.loc[gdf_edges['im'] > road_water_height_threshold, 'is_damaged'] = True
+            non_bridges = gdf_edges['bridge_type'].isna()
+            culverts = gdf_edges['bridge_type'] == "culvert"
+            flooded_roads = (non_bridges) & (gdf_edges['im'] > road_water_height_threshold)
+            flooded_culverts = (culverts) & (gdf_edges['im'] > culvert_water_height_threshold)
+
+            gdf_edges.loc[flooded_roads, 'ds'] = 1
+            gdf_edges.loc[flooded_roads, 'is_damaged'] = True
+
+            gdf_edges.loc[flooded_culverts, 'ds'] = 1
+            gdf_edges.loc[flooded_culverts, 'is_damaged'] = True
     elif hazard == 'earthquake':
         fragility = fragility.rename(columns={"med_slight": "med_ds1", 
                         "med_moderate": "med_ds2",
@@ -297,7 +306,7 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
         gdf_nodes = gdf_nodes.merge(fragility, left_on='fl_vuln', right_on='expstr', how='left')
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
         y = gdf_nodes[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
-        xnew = gdf_nodes['im'].to_numpy()
+        xnew = gdf_nodes['im'].to_numpy(dtype=np.float64)
         flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
         # TODO: find another way for vectorized interpolate
         gdf_nodes['fl_prob'] = np.diag(flood_mapping(xnew))
@@ -690,7 +699,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
         y = bld_flood[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
-        xnew = bld_flood['im'].to_numpy()
+        xnew = bld_flood['im'].to_numpy(dtype=np.float64)
         flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
         # TODO: find another way for vectorized interpolate
         bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
