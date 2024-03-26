@@ -808,6 +808,15 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
                         name = layer_name
                         size_of_best_match = len(layer_attributes)
                         logging.debug('There are extra columns', attributes - layer_attributes)
+
+    # Internal checking
+    if name in ["road edges", "power edges"]:
+        if "edge_id" in data.columns:
+            if len(pd.unique(data['edge_id'])) != len(data):
+                # workaround: TODO remove later and raise Exception
+                data['edge_id'] = range(len(data))
+                #raise Exception(f'edge_id column is not unique')
+
     # Preprocess
     data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
 
