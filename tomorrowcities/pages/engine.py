@@ -541,7 +541,17 @@ def fast_transform_xy(T,x,y):
 def read_tiff(file_bytes):
     byte_io = io.BytesIO(file_bytes)
     with rasterio.open(byte_io) as src:
-        ims = src.read()
+        if src.nodata == None:
+            ims = src.read()
+            # when nodata is not specificed, do my best to clean data
+            # no negative intensity
+            ims[ims < 0] = 0
+            # very large values indicate nodata
+            ims[ims > 100000] = 0
+        else:
+            # replace nodata with zero
+            ims = src.read(masked=True)
+            ims = ims.filled(fill_value=0)
         band_names = list(src.descriptions)
     n_bands = ims.shape[0] if len(ims.shape) == 3 else 1
     for b,name in enumerate(src.descriptions):
