@@ -26,6 +26,7 @@ from .settings import threshold_flood, threshold_flood_distance, threshold_road_
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
+from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
 import ipywidgets
 import ipydatagrid
@@ -1374,7 +1375,7 @@ def ImportDataZone():
                         the below area. Supported formats are Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
                         For more information, please refer to [Data Formats](/docs/data).
                         ''')
-        solara.FileDrop(on_total_progress=progress,
+        FileDropMultiple(on_total_progress=progress,
                 on_file=on_file_deneme, 
                 lazy=False)
         
