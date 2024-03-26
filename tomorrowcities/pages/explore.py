@@ -557,6 +557,13 @@ def MetricPanel():
     metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
     metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
     metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
+    solara.Markdown('''<h2 style="text-align: center; text-shadow: 2px 2px 10px; font-weight: bold">
+                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
+                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
+                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
+                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
+                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
+                        IMPACTS</h2>''')
     building = layers.value['layers']['building']['data'].value
     filtered_metrics = {name: 0 for name in layers.value['metrics'].keys()}
     if building is not None and layers.value['bounds'].value is not None:
