@@ -622,10 +622,10 @@ def MapInfo():
 
 @solara.component
 def FilterPanel():
-    solara.Markdown('Filters')
+    solara.Markdown('''<h2 style="text-align: left; text-shadow: 2px 2px 5px #1c4220; text-decoration:underline">FILTERS</h2>''')
     if layers.value['layers']['building']['df'].value is not None:
         solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        for filter_col in ['ds','occbld','lrstype']:
+        for filter_col in ['ds']:
             solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
                                      filter_col)  
     else:
