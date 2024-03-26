@@ -90,6 +90,7 @@ landslide_max_trials = solara.reactive(5)
 threshold_flood = solara.reactive(0.2) 
 threshold_flood_distance = solara.reactive(10)
 threshold_road_water_height = solara.reactive(0.3) 
+threshold_culvert_water_height = solara.reactive(1.5)
 
 def storage_control(aws_access_key_id: str, aws_secret_access_key: str, region_name: str, bucket_name: str):
     storage.value = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
@@ -190,5 +191,9 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                         If the water level is beyond this threshold then the road 
                         is assumed to be flooded.''')
         solara.SliderFloat(label='Minimum Water Level Threshold for Roads (meters)', value=threshold_road_water_height, min=0,max=1)
+        solara.Markdown(md_text='''
+                        If the water level is beyond this threshold then the culvert 
+                        hence the road containing it is assumed to be flooded.''')
+        solara.SliderFloat(label='Minimum Water Level Threshold for Culverts (meters)', value=threshold_culvert_water_height, min=0,max=3)
 
     solara.Title(" ")
