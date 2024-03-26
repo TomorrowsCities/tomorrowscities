@@ -212,7 +212,7 @@ class FileListWidget(vy.VuetifyTemplate):
 
 @solara.component
 def S3FileBrowser(
-    s3, bucket_name,
+    storage,
     directory: Union[None, str, Path, solara.Reactive[Path]] = None,
     on_directory_change: Callable[[Path], None] = None,
     on_path_select: Callable[[Optional[Path]], None] = None,
@@ -222,36 +222,15 @@ def S3FileBrowser(
     on_file_name: Callable[[str], None] = None,
     start_directory=None,
     can_select=False,
-):
-    """File/directory browser at the server side.
-
-    There are two modes possible
-
-     * `can_select=False`
-        * `on_file_open`: Triggered when **single** clicking a file or directory.
-        * `on_path_select`: Never triggered
-        * `on_directory_change`: Triggered when clicking a directory
-     * `can_select=True`
-        * `on_file_open`: Triggered when **double** clicking a file or directory.
-        * `on_path_select`: Triggered when clicking a file or directory
-        * `on_directory_change`: Triggered when double clicking a directory
-
-    ## Arguments
-
-     * `directory`: The directory to start in. If `None` the current working directory is used.
-     * `on_directory_change`: Depends on mode, see above.
-     * `on_path_select`: Depends on mode, see above.
-     * `on_file_open`: Depends on mode, see above.
-     * `filter`: A function that takes a `Path` and returns `True` if the file/directory should be shown.
-     * `directory_first`: If `True` directories are shown before files. Default: `False`.
-     * `on_file_name`: (deprecated) Use on_file_open instead.
-     * `start_directory`: (deprecated) Use directory instead.
-    """
-    
+):  
+    print("==================",storage)
 
     def get_s3_file_list():
         file_list = []
-        objects = s3.list_objects(Bucket=bucket_name)
+        print("==================....",storage)
+
+        client = storage.get_client()
+        objects = client.list_objects(Bucket=storage.bucket_name)
         for obj in objects.get('Contents', []):
             extension = obj["Key"].lower().split('.')[-1] 
             if extension in extension_list:
@@ -272,6 +251,7 @@ def S3FileBrowser(
     scroll_pos, set_scroll_pos = solara.use_state(0)
     selected, set_selected = solara.use_state(None)
     s3_file_list, set_s3_file_list = solara.use_state(get_s3_file_list())
+    storage, set_storage = solara.use_state_or_update(storage)
 
     def s3_is_file(path):
         for extension in extension_list:

@@ -3,77 +3,9 @@ from typing import Optional, cast
 import pickle
 import boto3
 import os
-from . import user
+from . import user, S3Storage
 
-class S3Storage:
-    def __init__(self, aws_access_key_id, aws_secret_access_key, region_name, bucket_name):
-        self.aws_access_key_id = aws_access_key_id
-        self.aws_secret_access_key = aws_secret_access_key
-        self.region_name = region_name
-        self.bucket_name = bucket_name
-        self.s3 = self._connect()
 
-    def _connect(self):
-        session = boto3.Session(
-            aws_access_key_id=self.aws_access_key_id,
-            aws_secret_access_key=self.aws_secret_access_key,
-            region_name=self.region_name
-        )
-        return session.client('s3')
-
-    def is_alive(self):
-        print(self.aws_access_key_id)
-        print(self.aws_secret_access_key)
-        print(self.region_name)
-        print(self.bucket_name)
-        buckets = self.s3.list_buckets()
-        for bucket in buckets['Buckets']:
-            if bucket['Name'] == self.bucket_name:
-                return True
-        return False
-
-        
-    def upload_file(self, file_name, object_name=None):
-        if object_name is None:
-            object_name = file_name
-        self.s3.upload_file(file_name, self.bucket_name, object_name)
-        return f"https://{self.bucket_name}.s3.amazonaws.com/{object_name}"
-
-    def load_metadata(self, session_name):
-        # Use the get_object method to read the file
-        self.s3.download_file(self.bucket_name, f'{session_name}.metadata', f'/tmp/{session_name}.metadata')
-
-        with open(f'/tmp/{session_name}.metadata', 'rb') as fileObj:
-            # Access the content of the file from the response
-            metadata = pickle.load(fileObj)
-
-        print(type(metadata))
-
-        return metadata
-    
-    def load_object(self, object_name):
-        # Use the get_object method to read the file
-        self.s3.download_file(self.bucket_name, object_name, f'/tmp/{object_name}')
-        print(f'Downloading {object_name}')
-
-        with open(f'/tmp/{object_name}', 'rb') as fileObj:
-            # Access the content of the file from the response
-            data = pickle.load(fileObj)
-        return data
-    
-    def load_data(self, session_name):
-        return self.load_object(f'{session_name}.data')
-    
-    def list_objects(self): 
-        objects = self.s3.list_objects(Bucket=self.bucket_name)
-        objects_array = set()
-        for obj in objects.get('Contents', []):
-            objects_array.add(obj["Key"].split('.')[:-1][0])
-        return [a for a in objects_array]
-    
-    def list_sessions(self):
-        objects = self.list_objects()
-        return [o for o in objects if "TCDSE_SESSION" in o]
 
 def revive_storage():
     if 'aws_access_key_id' in os.environ:
@@ -136,6 +68,8 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                         bucket_name):
         print('connecting to s3')
         try:
+            print(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
+
             s3 = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
             if s3.is_alive():
                 storage.value = s3
@@ -165,8 +99,8 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                                                             aws_secret_access_key.value, 
                                                             region_name.value,
                                                             bucket_name.value))
-    #else:
-    #    StorageViewer()
+    else:
+        StorageViewer()
 
     if err_message != '':
         solara.Error(err_message)
