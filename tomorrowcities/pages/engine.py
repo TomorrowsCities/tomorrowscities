@@ -1312,21 +1312,31 @@ def ImportDataZone():
 
     def load():
         if fileinfo is not None:
-            name, data = import_data(fileinfo)
-            if name is not None and data is not None:
-                if isinstance(data, gpd.GeoDataFrame):
-                    layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
-                    layers.value['layers'][name]['data'].set(data)
-                    center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
-                    layers.value['center'].set(center)
-                elif isinstance(data, pd.DataFrame):
-                    layers.value['layers'][name]['df'].set(data)
-                    layers.value['layers'][name]['data'].set(data)
-                elif isinstance(data, ParameterFile):
-                    layers.value['layers'][name]['data'].set(data)
-                elif isinstance(data, dict):
-                    layers.value['layers'][name]['data'].set(data)
-            else:
+            unrecognized_file_exists = False
+            # try not to trigger render inside loop
+            updated_center = None
+            for f in fileinfo:
+                print(f'processing file {f["name"]}')
+                name, data = import_data(f)
+                if name is not None and data is not None:
+                    if isinstance(data, gpd.GeoDataFrame):
+                        layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
+                        layers.value['layers'][name]['data'].set(data)
+                        updated_center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                    elif isinstance(data, pd.DataFrame):
+                        layers.value['layers'][name]['df'].set(data)
+                        layers.value['layers'][name]['data'].set(data)
+                    elif isinstance(data, ParameterFile):
+                        layers.value['layers'][name]['data'].set(data)
+                    elif isinstance(data, dict):
+                        layers.value['layers'][name]['data'].set(data)
+                else:
+                    unrecognized_file_exists = True
+            if updated_center:
+                layers.value['center'].set(updated_center)
+            layers.value['render_count'].set(layers.value['render_count'].value + 1)
+
+            if unrecognized_file_exists:
                 return False
         return True
     
