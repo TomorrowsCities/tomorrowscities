@@ -12,7 +12,7 @@ pinned: false
 git clone https://github.com/TomorrowsCities/tomorrowcities
 cd tomorrowcities
 pip install -e .
-solara run tomorrowcities.page
+solara run tomorrowcities.pages
 ~~~
 
 ## Sample Data
