@@ -1230,8 +1230,8 @@ def ExecutePanel():
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
-    #if storage.value is not None:
-    #    solara.Button("Save Session",on_click=save_app_state)
+    if storage.value is not None:
+        solara.Button("Save Session",on_click=save_app_state)
     PolicyPanel()
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
@@ -1445,7 +1445,7 @@ def ImportDataZone():
             solara.Markdown('''You can choose sample data from our AWS S3 repository. 
                             Double click to load data into the platform.
                         ''')   
-            S3FileBrowser(storage.value.s3, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
+            S3FileBrowser(storage.value, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
 
     #with solara.Card(title="Browse", subtitle="Import from your local drive"):
     #    solara.Markdown('''Locate the input files in your drive, and double click
