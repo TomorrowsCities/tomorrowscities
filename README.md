@@ -8,6 +8,8 @@ pinned: false
 ---
 
 ## Installation
+* Make sure your operating system has [GDAL](https://gdal.org/) installed.
+* Make sure you use Python > 3.8
 ~~~bash
 git clone https://github.com/TomorrowsCities/tomorrowcities
 cd tomorrowcities
