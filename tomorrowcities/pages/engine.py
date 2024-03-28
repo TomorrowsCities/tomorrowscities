@@ -1020,9 +1020,10 @@ def ExecutePanel():
 
         missing_buildings = set(household['bldid']) - set(building['bldid'])
         print('missing buildings', missing_buildings)
-        if len(missing_buildings) > 0:
-            return False, f"There are {len(missing_buildings)} household without buildings. Please add buildings for these households."
-        
+        if len(missing_buildings) == 1:
+            return False, f"There is {len(missing_buildings)} household without building. Please check your exposure."          
+        elif len(missing_buildings) > 1:
+            return False, f"There are {len(missing_buildings)} households without buildings. Please check your exposure."
         return True, ''
 
     def execute_engine():
@@ -1180,9 +1181,9 @@ def ExecutePanel():
             is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
             if not is_ready:
                 raise Exception(f'Missing {missing}')
-            #is_ready, message = pre_compute_checks()
-            #if not is_ready:
-            #    raise Exception(message)
+            is_ready, message = pre_compute_checks()
+            if not is_ready:
+                raise Exception(message)
             max_trials = landslide_max_trials.value  if layers.value['hazard'].value == "landslide" else 1
             for trial in range(1,max_trials+1):
                 if trial == 1:
