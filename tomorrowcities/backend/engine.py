@@ -23,7 +23,9 @@ def compute_road_infra(buildings, household, individual,
                         nodes, edges, intensity, fragility, hazard, 
                         road_water_height_threshold,
                         culvert_water_height_threshold,
-                        threshold_flood_distance):
+                        threshold_flood_distance,
+                        preserve_edge_directions,
+                        ):
 
     DS_NO = 0
     DS_SLIGHT = 1
@@ -53,6 +55,10 @@ def compute_road_infra(buildings, household, individual,
         
     for _, edge in gdf_edges.iterrows():
         G.add_edge(*(edge.from_node, edge.to_node))  
+
+    # If the directions are not important, convert to undirected graph 
+    if not preserve_edge_directions:
+        G = nx.Graph(G)
 
     gdf_buildings = gdf_buildings.drop(columns=['node_id'])
     gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes, 
@@ -161,12 +167,20 @@ def compute_road_infra(buildings, household, individual,
     household_w_node_id = household.drop(columns=['node_id']).merge(gdf_buildings[['bldid','node_id']], on='bldid', how='left')
     household_w_node_id['hospital_access'] = False
 
+    # For each node which at least one hospital assigned to
     for hospital_node in hospital_nodes:
-        for node_with_hospital_access in nx.descendants(G_dmg,hospital_node):
+        # every node that can reach to hospital_node
+        for node_with_hospital_access in nx.ancestors(G_dmg, hospital_node) | {hospital_node}:
+            # find the buildings associated with node_with_hospital_access
             idx = gdf_buildings['node_id'] == node_with_hospital_access
+            # these buildings have access to hospital_node
             gdf_buildings.loc[idx, 'hospital_access'] = True
+
+            # for each hospital connected to hospital_node
             for hospital_bld in gdf_buildings[(gdf_buildings['node_id'] == hospital_node) & (gdf_buildings['occupancy'] == 'Hea')]['bldid']:
-                #print(f'node {node_with_hospital_access} has access to {hospital_bld} / {hospital_node}')   
+                # find the households satisfying:
+                #  - if the hospital is the household's community hospital
+                #  - and household's building is reachable from that hospital
                 idx = (household_w_node_id['commfacid'] == hospital_bld) & (household_w_node_id['node_id'] == node_with_hospital_access)
                 household_w_node_id.loc[idx, 'hospital_access'] = True
 
@@ -187,6 +201,7 @@ def compute_road_infra(buildings, household, individual,
     print('individual_w_nodes')
     print(individual_w_nodes)
     # Calculate distances between all nodes in the damaged network
+    # If graph is directed, shortest path calculation obeys the directions
     shortest_distance = nx.shortest_path_length(G_dmg)
 
     # Create a dictionary to store all open connections
@@ -203,7 +218,8 @@ def compute_road_infra(buildings, household, individual,
     return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access'], individual_w_nodes['facility_access']
 
 def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard,
-                        threshold_flood, threshold_flood_distance):
+                        threshold_flood, threshold_flood_distance, preserve_edge_directions,
+                        ):
     print('Computing power infrastructure')
     print(nodes.head())
     print(edges.head())
@@ -231,13 +247,17 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
     gdf_nodes = gdf_nodes.to_crs(f"EPSG:{epsg}")
     gdf_edges = gdf_edges.to_crs(f"EPSG:{epsg}")
 
-    G_power = nx.Graph()
+    G_power = nx.DiGraph()
     for _, node in gdf_nodes.iterrows():
         G_power.add_node(node.node_id, pos=(node.geometry.x, node.geometry.y))
         
     for _, edge in edges.iterrows():
         G_power.add_edge(*(edge.from_node, edge.to_node))  
     
+    # If the directions are not important, convert to undirected graph 
+    if not preserve_edge_directions:
+        G = nx.Graph(G)
+
     # Assign nearest intensity to power nodes
     gdf_nodes = gpd.sjoin_nearest(gdf_nodes,gdf_intensity, 
                 how='left', rsuffix='intensity',distance_col='distance')
