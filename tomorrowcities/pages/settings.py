@@ -23,6 +23,7 @@ threshold_flood = solara.reactive(0.2)
 threshold_flood_distance = solara.reactive(10)
 threshold_road_water_height = solara.reactive(0.3) 
 threshold_culvert_water_height = solara.reactive(1.5)
+preserve_edge_directions = solara.reactive(False)
 
 def storage_control(aws_access_key_id: str, aws_secret_access_key: str, region_name: str, bucket_name: str):
     storage.value = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
@@ -104,6 +105,9 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
 
     if err_message != '':
         solara.Error(err_message)
+
+    with solara.Card(title='Connectivity Parameters',subtitle='Parameters effecting connectivity analysis in road/power networks'):
+        solara.Checkbox(label='Preserve directions in graph edges', value=preserve_edge_directions)
 
     with solara.Card(title='Landslide Parameters',subtitle='Choose the parameters for the landslide simulation'):
         solara.SliderInt(label='Number of Monte-Carlo Trials', value=landslide_max_trials, min=1,max=100)

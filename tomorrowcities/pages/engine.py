@@ -22,7 +22,7 @@ import logging, sys
 import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
-from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
+from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
@@ -1053,7 +1053,7 @@ def ExecutePanel():
                     household_hospital_access, individual_facility_access  = \
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
                 fragility, hazard, threshold_road_water_height.value, threshold_culvert_water_height.value,
-                threshold_flood_distance.value,
+                threshold_flood_distance.value, preserve_edge_directions.value,
                 )
             
             edges['ds'] = list(ds)
@@ -1093,7 +1093,9 @@ def ExecutePanel():
                                     edges,
                                     intensity,
                                     fragility,
-                                    hazard, threshold_flood.value, threshold_flood_distance.value)
+                                    hazard, threshold_flood.value, threshold_flood_distance.value,
+                                    preserve_edge_directions.value,
+                                    )
             
             #power_node_df =  dfs['Power Nodes'].copy()                         
             nodes['ds'] = list(ds)
