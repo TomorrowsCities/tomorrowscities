@@ -1017,6 +1017,8 @@ def ExecutePanel():
         infra = layers.value['infra'].value
         building = layers.value['layers']['building']['data'].value
         household = layers.value['layers']['household']['data'].value
+        landslide_fragility = layers.value['layers']['landslide fragility']['data'].value
+
 
         missing_buildings = set(household['bldid']) - set(building['bldid'])
         print('missing buildings', missing_buildings)
@@ -1024,6 +1026,12 @@ def ExecutePanel():
             return False, f"There is {len(missing_buildings)} household without building. Please check your exposure."          
         elif len(missing_buildings) > 1:
             return False, f"There are {len(missing_buildings)} households without buildings. Please check your exposure."
+        if hazard == 'landslide':
+            unique_records = len(landslide_fragility.groupby(['expstr','susceptibility']).agg({'expstr':'count'}))
+            all_records = len(landslide_fragility)
+            if unique_records != all_records:
+                return False, "there are duplicate expstr + susceptibility records in landslide fragility"
+
         return True, ''
 
     def execute_engine():
