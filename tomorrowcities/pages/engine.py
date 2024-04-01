@@ -29,7 +29,6 @@ from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
 from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
 import ipywidgets
-import ipydatagrid
 
 filters = dict()
 
@@ -54,16 +53,16 @@ def create_new_app_state():
             'extra_cols': {},
             'attributes_required': [set(['unnamed: 0'])],
             'attributes': [set(['unnamed: 0'])]},
-        'landslide fragility': {
-            'render_order': 0,
-            'map_info_tooltip': 'Number of landslide fragility records',
+        'landuse': {
+            'render_order': 20,
+            'map_info_tooltip': 'Number of landuse zones',
             'data': solara.reactive(None),
             'df': solara.reactive(None),
             'pre_processing': identity_preprocess,
             'extra_cols': {},
-            'filter_cols': ['expstr'],
-            'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
-            'attributes': [set(['expstr','susceptibility','minor','moderate','severe','description'])]},
+            'filter_cols': ['luf'],
+            'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
+            'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
@@ -75,16 +74,6 @@ def create_new_app_state():
             'filter_cols': ['expstr'],
             'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
             'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
-        'landuse': {
-            'render_order': 20,
-            'map_info_tooltip': 'Number of landuse zones',
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['luf'],
-            'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
-            'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
         'household': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -125,6 +114,16 @@ def create_new_app_state():
             'filter_cols': ['expstr'],
             'attributes_required': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])],
             'attributes': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])]},
+        'landslide fragility': {
+            'render_order': 0,
+            'map_info_tooltip': 'Number of landslide fragility records',
+            'data': solara.reactive(None),
+            'df': solara.reactive(None),
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'filter_cols': ['expstr'],
+            'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
+            'attributes': [set(['expstr','susceptibility','minor','moderate','severe','description'])]},            
         'vulnerability': {
             'render_order': 0,
             'data': solara.reactive(None),
@@ -215,6 +214,7 @@ def create_new_app_state():
                          'dispersion'])]}
             },
     'center': solara.reactive((41.01,28.98)),
+    'selected_layer' : solara.reactive(None),    
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
     'selected_policies': solara.reactive([]),
@@ -336,8 +336,6 @@ def save_app_state():
         if storage.value is not None:
             print('uploading file', filename)
             storage.value.upload_file(filename)
-        
-
 
 def generic_layer_colors(feature):
     return None
@@ -639,7 +637,6 @@ def ParameterFileWidget(parameter_file: ParameterFile):
     data = nonempty_layers[selected].value
     solara.DataFrame(data, items_per_page=5)
 
-
 @solara.component
 def VulnerabilityFunctionDisplayer(vuln_func):
     vuln_func, _ = solara.use_state_or_update(vuln_func)
@@ -833,53 +830,102 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     return (name, data)
 
 @solara.component
-def LayerDisplayer():
+def FilterPanel():
     global filters
-    print(f'{layers.value["bounds"].value}')
+    #print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
     #with solara.lab.Tabs(background_color="#ebebeb"):
     for layer_name, layer in nonempty_layers.items():
         #with solara.lab.Tab(layer_name):
-            data = layer['data'].value
-            if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
-                df = layer['df'].value
-                with solara.Column():
-                    if layer_name in ['building']:
-                        solara.Markdown('''<h2 style="text-align: left; text-shadow: 2px 2px 5px #1c4220; text-decoration:underline">FILTERS</h2>''')
-                        for filter_col in ['ds']:
-                            solara.CrossFilterSelect(df, filter_col)
-                        filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")               
-                if layer_name in ["building"]:
-                    with solara.Column():
-                        #solara.Text("Spacer", style={"visibility": "hidden"})
-                        solara.Text("Spacer", style={"visibility": "hidden"})
-                        file_object = data.to_json()
-                        with solara.FileDownload(file_object, f"{layer_name}_export.geojson", mime_type="application/geo+json"):
-                            solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")                     
-                        with solara.FileDownload(data.to_csv(), f"{layer_name}_export.csv", mime_type="text/csv"):
-                            solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")                                
-                # with solara.VBox():
-                    # if layer_name in ['intensity']:
-                        # solara.DataFrame(df)
-                    # else:
-                        # for filter_col in layer['filter_cols']:
-                            # solara.CrossFilterSelect(df, filter_col)
-                        #solara.CrossFilterDataFrame(df)
-                # if layer_name in ["building","road edges","road nodes","power nodes","power edges"] :
-                    # with solara.Row():
-                        # file_object = data.to_json()
-                        # with solara.FileDownload(file_object, f"{layer_name}_export.geojson", mime_type="application/geo+json"):
-                            # solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-                        # with solara.FileDownload(data.to_csv(), f"{layer_name}_export.csv", mime_type="text/csv"):
-                            # solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
-            elif isinstance(data, ParameterFile):
-                ParameterFileWidget(parameter_file=data)
-            if layer_name == 'gem_vulnerability':
-                VulnerabiliyDisplayer(data)
+        data = layer['data'].value
+        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+            df = layer['df'].value
+            if layer_name in ['building']:
+                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Damage State Filter</h4>''')
+                for filter_col in ['ds']:
+                    solara.CrossFilterSelect(df, filter_col, multiple=True)
+                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            if layer_name in ['building']:
+                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Income Level Filter</h4>''')
+                for filter_col in ['freqincome']:
+                    solara.CrossFilterSelect(df, filter_col, multiple=True)
+                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Load Resisting System Filter</h4>''')
+                # for filter_col in ['lrstype']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")        
+
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Code Level Filter</h4>''')
+                # for filter_col in ['codelevel']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Height Filter</h4>''')
+                # for filter_col in ['nstoreys']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Occupation Type Filter</h4>''')
+                # for filter_col in ['occbld']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            if layer_name in ['building']:
+                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Special Facility Filter</h4>''')
+                for filter_col in ['specialfac']:
+                    solara.CrossFilterSelect(df, filter_col, multiple=True)
+                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+            if layer_name in ['building']:
+                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Polygon (ZoneID) Filter</h4>''')
+                for filter_col in ['zoneid']:
+                    solara.CrossFilterSelect(df, filter_col, multiple=True)
+                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+
+@solara.component
+def LayerDisplayer():
+    print(f'{layers.value["bounds"].value}')
+    nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
+    nonempty_layer_names = list(nonempty_layers.keys())
+    selected = layers.value['selected_layer'].value
+    def set_selected(s):
+        layers.value['selected_layer'].set(s)
+
+    solara.ToggleButtonsSingle(value=selected, on_value=set_selected,
+                               values=nonempty_layer_names)
+    if selected is None and len(nonempty_layer_names) > 0:
+        set_selected(nonempty_layer_names[0])
+    if selected is not None:
+        data = nonempty_layers[selected]['data'].value
+        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+            if "geometry" in data.columns:
+                ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
+                df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                solara.DataFrame(df_filtered, items_per_page=5)
+            else:
+                solara.DataFrame(data, items_per_page=5)
+            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
+                with solara.Row():
+                    file_object = data.to_json()
+                    with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
+                        solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                        solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
+                solara.Text("Spacer", style={"visibility": "hidden"})
+        elif isinstance(data, ParameterFile):
+            ParameterFileWidget(parameter_file=data)                        
+        if selected == 'gem_vulnerability':
+            VulnerabiliyDisplayer(data)
 
 @solara.component
 def MetricPanel():
-    solara.Markdown('''<h2 style="text-align: center; text-shadow: 2px 2px 10px; font-weight: bold">
+    solara.Markdown('''<h2 style="text-align: center; font-weight: bold">
                         &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
                         &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
                         &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
@@ -934,8 +980,6 @@ def MapViewer():
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')                                                                                                                                              
 
-
-
     def create_layers():
         map_layers = []
         for l in layers.value['layers'].keys():
@@ -955,6 +999,7 @@ def MapViewer():
 
     ipyleaflet.Map.element(
         zoom=zoom,
+        max_zoom=23,                    
         on_zoom=set_zoom,
         on_bounds=layers.value['bounds'].set,
         center=layers.value['center'].value,
@@ -1162,16 +1207,16 @@ def ExecutePanel():
             individual = layers.value['layers']['individual']['data'].value
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
-            implementation_capacity_score = layers.value['implementation_capacity_score'].value
-            if implementation_capacity_score == 'medium':
-                capacity = 1.25
-            elif implementation_capacity_score == 'low':
-                capacity = 1.50
-            else:
-                capacity = 1
+            # implementation_capacity_score = layers.value['implementation_capacity_score'].value
+            # if implementation_capacity_score == 'medium':
+                # capacity = 1.25
+            # elif implementation_capacity_score == 'low':
+                # capacity = 1.50
+            # else:
+                # capacity = 1
             computed_metrics, df_metrics = calculate_metrics(buildings, household, 
                                                              individual, layers.value['infra'].value,
-                                                             layers.value['hazard'].value, policies=policies,capacity=capacity)
+                                                             layers.value['hazard'].value, policies=policies,capacity=1)
             print(computed_metrics)
             for metric in df_metrics.keys():
                 buildings[metric] = list(df_metrics[metric][metric])
@@ -1253,13 +1298,13 @@ def ExecutePanel():
                 solara.ToggleButtonsSingle(value=layers.value['landslide_trigger_level'].value,
                     on_value=layers.value['landslide_trigger_level'].set,
                     values=layers.value['landslide_trigger_level_list'])
-        with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
-            solara.Markdown("#### Implementation Capacity Score")
-        with solara.Row(justify="left"):
-            solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
-                                values=['low','medium','high'],
-                                on_value=layers.value['implementation_capacity_score'].set,
-                                )
+        # with solara.Tooltip("Building-level metrics will be increased by 25% and 50% for medium and low"):
+            # solara.Markdown("#### Implementation Capacity Score")
+        # with solara.Row(justify="left"):
+            # solara.ToggleButtonsSingle(value=layers.value['implementation_capacity_score'].value, 
+                                # values=['low','medium','high'],
+                                # on_value=layers.value['implementation_capacity_score'].set,
+                                # )
     
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
@@ -1289,7 +1334,7 @@ def ExecutePanel():
 def PolicyPanel():
     all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
     with solara.Row():
-        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False, style={"max-width": "30vh", "height": "auto"})
+        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False, style={"width": "35vh", "height": "auto"})
 
 @solara.component
 def MapInfo():
@@ -1428,9 +1473,7 @@ def ImportDataZone():
         set_fileinfo(f)
         
     def open_file_dialog():
-        print('entered open file dialog...')
-                
-        
+        print('entered open file dialog...')    
     
     result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
     generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
@@ -1463,6 +1506,25 @@ def ImportDataZone():
                 print("..............",storage.value)
                 S3FileBrowser(storage.value, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
 
+    if total_progress > -1 and total_progress < 100:
+        solara.Text(f"Uploading {total_progress}%")
+        solara.ProgressLinear(value=total_progress)
+    else:
+        if result.state == solara.ResultState.FINISHED:
+            if result.value:
+                solara.Text("Spacer", style={'visibility':'hidden'})
+            else:
+                solara.Text("Unrecognized file")
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.INITIAL:
+            solara.Text("Spacer", style={'visibility':'hidden'})
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.ERROR:
+            solara.Text(f'{result.error}')
+            solara.ProgressLinear(value=False)
+        else:
+            solara.Text("Processing")
+            solara.ProgressLinear(value=True)                                                   
         
     with solara.Card(title="Data Generation", subtitle="Exposure generation"):
         solara.Markdown('''
@@ -1499,26 +1561,6 @@ def ImportDataZone():
     #    solara.FileBrowser(can_select=True, on_file_open=local_file_open,
     #        filter=lambda p: True if p.is_dir() or p.suffix in extension_list_w_dots else False)
 
-    if total_progress > -1 and total_progress < 100:
-        solara.Text(f"Uploading {total_progress}%")
-        solara.ProgressLinear(value=total_progress)
-    else:
-        if result.state == solara.ResultState.FINISHED:
-            if result.value:
-                solara.Text("Spacer", style={'visibility':'hidden'})
-            else:
-                solara.Text("Unrecognized file")
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.INITIAL:
-            solara.Text("Spacer", style={'visibility':'hidden'})
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.ERROR:
-            solara.Text(f'{result.error}')
-            solara.ProgressLinear(value=False)
-        else:
-            solara.Text("Processing")
-            solara.ProgressLinear(value=True)
-            
 @solara.component
 def WebApp():
     if storage.value is None:
@@ -1528,7 +1570,7 @@ def WebApp():
         with solara.lab.Tabs():
             with solara.lab.Tab("SETTINGS"):
                 ExecutePanel()
-                LayerDisplayer()
+                FilterPanel()
             with solara.lab.Tab("DATA IMPORT"):
                 ImportDataZone()
             with solara.lab.Tab("MAP INFO"):
@@ -1538,6 +1580,7 @@ def WebApp():
     MapViewer()
     with solara.Row(justify="center"):
         MetricPanel()
+    LayerDisplayer()                         
 
     with ConfirmationDialog(
         layers.value['dialog_message_to_be_shown'].value is not None,
