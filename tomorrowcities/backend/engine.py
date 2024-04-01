@@ -256,7 +256,7 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
     
     # If the directions are not important, convert to undirected graph 
     if not preserve_edge_directions:
-        G = nx.Graph(G)
+        G_power = nx.Graph(G_power)
 
     # Assign nearest intensity to power nodes
     gdf_nodes = gpd.sjoin_nearest(gdf_nodes,gdf_intensity, 
