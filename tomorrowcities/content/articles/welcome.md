@@ -11,13 +11,40 @@ category:
   - general
 ---
 
-## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.2: Derry
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.3
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## Documentation
 Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/TomorrowsCities/tomorrowcities/wiki) 
 
 ## What is New?
+
+**Changelog: v0.3**
+
+* Banner removed by @o-z-e-r-e-r in [13](https://github.com/TomorrowsCities/tomorrowscities/pull/13)
+* Update on webapp header and requirements list by @o-z-e-r-e-r in [14](https://github.com/TomorrowsCities/tomorrowscities/pull/14)
+* Update on engine page by @o-z-e-r-e-r in [15](https://github.com/TomorrowsCities/tomorrowscities/pull/15)
+* Visual updates by @o-z-e-r-e-r in [18](https://github.com/TomorrowsCities/tomorrowscities/pull/18)
+* Visual updates (02/02/24) by @o-z-e-r-e-r in [20](https://github.com/TomorrowsCities/tomorrowscities/pull/20)
+* improvement: faster data loading by @hkayabilisim in [24](https://github.com/TomorrowsCities/tomorrowscities/pull/24)
+* feature: added multiple file drop support by @hkayabilisim in [25](https://github.com/TomorrowsCities/tomorrowscities/pull/25)
+* fix: refactor load for multiple file upload by @hkayabilisim in [26](https://github.com/TomorrowsCities/tomorrowscities/pull/26)
+* feature: culvert support for flood+road by @hkayabilisim in [27](https://github.com/TomorrowsCities/tomorrowscities/pull/27)
+* fix: assign zero to nodata locations in geotiff by @hkayabilisim in [28](https://github.com/TomorrowsCities/tomorrowscities/pull/28)
+* fix: workaround for nonunique edge_id in nodes by @hkayabilisim in [29](https://github.com/TomorrowsCities/tomorrowscities/pull/29)
+* feature: session save and load from explore page by @hkayabilisim in [30](https://github.com/TomorrowsCities/tomorrowscities/pull/30)
+* Filter layout by @hkayabilisim in [31](https://github.com/TomorrowsCities/tomorrowscities/pull/31)
+* feat: pre-compute checks by @hkayabilisim in [32](https://github.com/TomorrowsCities/tomorrowscities/pull/32)
+* feat: added option to keep directions in graphs by @hkayabilisim in [34](https://github.com/TomorrowsCities/tomorrowscities/pull/34)
+* feat: uniqueness check for landslide fragility by @hkayabilisim in [38](https://github.com/TomorrowsCities/tomorrowscities/pull/38)
+* fix: uninitialized network object by @hkayabilisim in [39](https://github.com/TomorrowsCities/tomorrowscities/pull/39)
+* ui: activate dataframe view and improve engine & explore page visualisations by @o-z-e-r-e-r in [37](https://github.com/TomorrowsCities/tomorrowscities/pull/37)
+* Merge remote-tracking branch 'origin/main' into branch240401 by @hkayabilisim in [40](https://github.com/TomorrowsCities/tomorrowscities/pull/40)
+* fix: reset existing index in input dataframes by @hkayabilisim in [41](https://github.com/TomorrowsCities/tomorrowscities/pull/41)
+* feat: a pre-check if hospitals exist in building by @hkayabilisim in [42](https://github.com/TomorrowsCities/tomorrowscities/pull/42)
+* Redefine population displacement by @hkayabilisim in [43](https://github.com/TomorrowsCities/tomorrowscities/pull/43)
+
+**Full Changelog**: [v0.2.4_fix2...v0.3](https://github.com/TomorrowsCities/tomorrowscities/compare/v0.2.4_fix2...v0.3)
 
 **Changelog: v0.2.4**
 
