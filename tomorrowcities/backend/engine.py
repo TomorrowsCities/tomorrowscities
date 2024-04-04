@@ -747,7 +747,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     return bld_hazard
 
 
-def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, policies=[],capacity=1.0):
+def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, population_displacement_consensus, policies=[],capacity=1.0):
     # Very handy temporary attributes showin if an individual is associated with a facility 
     # and lost access to facility
     df_individual['has_facility'] = df_individual['indivfacid'].apply(lambda x: x > -1)
@@ -788,7 +788,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
         .merge(df_workers[['individ','ds','has_power']].rename(columns={'ds':'ds_workplace','has_power':'workplace_power'}),on='individ', how='left')\
         .merge(df_students[['individ','ds','has_power']].rename(columns={'ds':'ds_school','has_power':'school_power'}), on='individ', how='left')\
         .merge(df_indiv_household[['individ','ds','hospital_access','hospital_has_power']].rename(columns={'ds':'ds_household'}), on='individ',how='left')\
-        .merge(df_household[['hhid','bldid']],on='hhid',how='left')
+        .merge(df_household[['hhid','bldid','has_power']].rename(columns={'has_power':'household_power'}),on='hhid',how='left')
 
     DS_NO = 0
     DS_SLIGHT = 1
@@ -900,17 +900,20 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
 
     # metric 7 the number of displaced individuals in each building
     # more info: an individual is displaced if at least of the conditions below hold
-    metric7_index = (df_displaced_indiv['ds_household'] > thresholds['metric6']) |\
-                    (df_displaced_indiv['ds_school'] > thresholds['metric2']) |\
-                    (df_displaced_indiv['ds_workplace'] > thresholds['metric1']) |\
-                    (df_displaced_indiv['ds_hospital'] > thresholds['metric4']) 
+    print('population_displacement_consensus', population_displacement_consensus)
+    # direct damage
+    metric7_index = (df_displaced_indiv[['ds_household','ds_school','ds_workplace','ds_hospital']] \
+        > [thresholds['metric6'],thresholds['metric2'],thresholds['metric1'],thresholds['metric4']]).sum(axis=1) >= population_displacement_consensus
+    # inaccebility
     if 'road' in infra:
-        metric7_index = (metric7_index) | (df_displaced_indiv['hospital_access'] == False)
-        metric7_index = (metric7_index) | (df_displaced_indiv['lost_facility_access'] == True)
+        inaccesibility_index = (df_displaced_indiv[['hospital_access','lost_facility_access']] \
+            == [False,True]).sum(axis=1) >= population_displacement_consensus
+        metric7_index = (metric7_index) | (inaccesibility_index)
+    # power loss
     if 'power' in infra:
-        metric7_index = (metric7_index) | (df_displaced_indiv['hospital_has_power'] == False)
-        metric7_index = (metric7_index) | (df_displaced_indiv['workplace_power'] == False)
-        metric7_index = (metric7_index) | (df_displaced_indiv['school_power'] == False)
+        power_loss_index = (df_displaced_indiv[['household_power','hospital_has_power','workplace_power','school_power']] \
+            == [False,False,False,False]).sum(axis=1) >= population_displacement_consensus
+        metric7_index = (metric7_index) | (power_loss_index)
     df_disp_per_bld = df_displaced_indiv[metric7_index]\
                                             .groupby('bldid',as_index=False)\
                                             .agg({'individ':'count'})
