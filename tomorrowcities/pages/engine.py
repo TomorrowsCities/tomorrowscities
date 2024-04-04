@@ -1032,6 +1032,9 @@ def ExecutePanel():
             if unique_records != all_records:
                 return False, "there are duplicate expstr + susceptibility records in landslide fragility"
 
+        missing_hospitals = set(household['commfacid']) - set(building['bldid'])
+        if len(missing_hospitals) > 0:
+            return False, f"Hospital(s) ({missing_hospitals}) do not exist in building data"
         return True, ''
 
     def execute_engine():
