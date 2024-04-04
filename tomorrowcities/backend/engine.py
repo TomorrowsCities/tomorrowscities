@@ -748,6 +748,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
 
 def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, policies=[],capacity=1.0):
+    # Very handy temporary attributes showin if an individual is associated with a facility 
+    # and lost access to facility
+    df_individual['has_facility'] = df_individual['indivfacid'].apply(lambda x: x > -1)
+    df_individual['lost_facility_access'] = df_individual.apply(lambda x: x['has_facility']  and not x['facility_access'], axis=1)
+
     # only use necessary columns
     bld_hazard = gdf_buildings[['bldid','ds','expstr','occupancy','storeys',
                                 'code_level','material','nhouse','residents','hospital_access','has_power','casualty']]
@@ -816,7 +821,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     if 'power' in infra:
         metric1_index = (metric1_index) | (df_workers['has_power'] == False)
     if 'road' in infra:
-        metric1_index = (metric1_index) | (df_workers['facility_access'] == False)
+        metric1_index = (metric1_index) | (df_workers['lost_facility_access'] == True)
     df_workers_per_building = df_workers[metric1_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
@@ -832,7 +837,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
     if 'power' in infra:
         metric2_index = (metric2_index) | (df_students['has_power'] == False)
     if 'road' in infra:
-        metric2_index = (metric2_index) | (df_students['facility_access'] == False)
+        metric2_index = (metric2_index) | (df_students['lost_facility_access'] == True)
     df_students_per_building = df_students[metric2_index][['individ','hhid','ds']].merge(
         df_household[['hhid','bldid']],on='hhid',how='left').groupby(
             'bldid',as_index=False).agg({'individ':'count'})
@@ -901,7 +906,7 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
                     (df_displaced_indiv['ds_hospital'] > thresholds['metric4']) 
     if 'road' in infra:
         metric7_index = (metric7_index) | (df_displaced_indiv['hospital_access'] == False)
-        metric7_index = (metric7_index) | (df_displaced_indiv['facility_access'] == False)
+        metric7_index = (metric7_index) | (df_displaced_indiv['lost_facility_access'] == True)
     if 'power' in infra:
         metric7_index = (metric7_index) | (df_displaced_indiv['hospital_has_power'] == False)
         metric7_index = (metric7_index) | (df_displaced_indiv['workplace_power'] == False)
