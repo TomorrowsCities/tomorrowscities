@@ -788,6 +788,8 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
             data = pd.read_json(json_string)
 
     if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+        # reset existing index to avoid conflicts in index-related computations
+        data = data.reset_index(drop=True)
         data.columns = data.columns.str.lower()
         attributes = set(data.columns)
     elif isinstance(data, dict):
