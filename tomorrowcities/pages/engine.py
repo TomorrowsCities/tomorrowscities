@@ -22,7 +22,8 @@ import logging, sys
 import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
-from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions
+from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
+                      population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
@@ -1229,7 +1230,8 @@ def ExecutePanel():
                 # capacity = 1
             computed_metrics, df_metrics = calculate_metrics(buildings, household, 
                                                              individual, layers.value['infra'].value,
-                                                             layers.value['hazard'].value, policies=policies,capacity=1)
+                                                             layers.value['hazard'].value, population_displacement_consensus.value, 
+                                                             policies=policies,capacity=1)
             print(computed_metrics)
             for metric in df_metrics.keys():
                 buildings[metric] = list(df_metrics[metric][metric])

@@ -24,6 +24,7 @@ threshold_flood_distance = solara.reactive(10)
 threshold_road_water_height = solara.reactive(0.3) 
 threshold_culvert_water_height = solara.reactive(1.5)
 preserve_edge_directions = solara.reactive(False)
+population_displacement_consensus = solara.reactive(2)
 
 def storage_control(aws_access_key_id: str, aws_secret_access_key: str, region_name: str, bucket_name: str):
     storage.value = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
@@ -105,6 +106,10 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
 
     if err_message != '':
         solara.Error(err_message)
+
+    with solara.Card(title='Metric-related Parameters',
+                     subtitle='Minimum number of direct damage, inaccessibility or power lost should be observed to claim a population displacement.'):
+        solara.Select(label='population displacement consensus', values=[1,2,3,4], value=population_displacement_consensus)
 
     with solara.Card(title='Connectivity Parameters',subtitle='Parameters effecting connectivity analysis in road/power networks'):
         solara.Checkbox(label='Preserve directions in graph edges', value=preserve_edge_directions)
