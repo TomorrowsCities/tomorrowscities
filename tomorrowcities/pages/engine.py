@@ -25,7 +25,7 @@ from .settings import storage, landslide_max_trials, revive_storage
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
-from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
+from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
 from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
@@ -145,6 +145,17 @@ def create_new_app_state():
             'filter_cols': ['id'],
             'attributes_required': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
             'attributes': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
+        },
+        'gem_fragility': {
+            'render_order': 0,
+            'data': solara.reactive(None),
+            'df': solara.reactive(None),
+            'map_info_tooltip': 'Number of functions in gem fragility',
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'filter_cols': ['id'],
+            'attributes_required': [set(['id', 'assetCategory', 'lossCategory', 'description', 'fragilityFunctions'])],
+            'attributes': [set(['id', 'assetCategory', 'lossCategory', 'description', 'fragilityFunctions'])],
         },
         'power nodes': {
             'render_order': 90,
@@ -589,39 +600,6 @@ def read_tiff(file_bytes):
     return gdf[(gdf.drop(columns='geometry')>0).any(axis=1)]
     #return gdf.sort_values(by='im',ascending=False).head(10000)
 
-def read_gem_xml(data: [bytes]):
-    content_as_string = data.decode('utf-8')
-    content_as_string = content_as_string.replace('\n','')
-    dom = xml.dom.minidom.parseString(content_as_string)
-
-    def getText(node):
-        nodelist = node.childNodes
-        rc = []
-        for node in nodelist:
-            if node.nodeType == node.TEXT_NODE:
-                rc.append(node.data)
-        return ''.join(rc)
-
-    d = dict()
-    node = dom.getElementsByTagName('vulnerabilityModel')[0]
-    for i in range(node.attributes.length):
-        d[node.attributes.item(i).name] = node.attributes.item(i).value 
-
-    d['description'] = getText(dom.getElementsByTagName('description')[0])
-
-    d['vulnerabilityFunctions'] = []
-    for node in dom.getElementsByTagName('vulnerabilityFunction'):
-        v = dict()
-        for i in range(node.attributes.length):
-            v[node.attributes.item(i).name] = node.attributes.item(i).value 
-        imls = node.getElementsByTagName('imls')[0]
-        v['imt'] = imls.getAttribute('imt')
-        v['imls'] = np.fromstring(getText(imls),dtype=float, sep=' ')
-        v['meanLRs'] = np.fromstring(getText(node.getElementsByTagName('meanLRs')[0]),dtype=float, sep=' ')
-        v['covLRs'] = np.fromstring(getText(node.getElementsByTagName('covLRs')[0]),dtype=float, sep=' ')
-        d['vulnerabilityFunctions'].append(v)
-
-    return d
 
 @solara.component
 def ParameterFileWidget(parameter_file: ParameterFile):
@@ -705,6 +683,103 @@ def VulnerabilityFunctionDisplayer(vuln_func):
     }
     solara.FigureEcharts(option=options) 
 
+
+@solara.component
+def FragilityFunctionDisplayer(vuln_func):
+    vuln_func, _ = solara.use_state_or_update(vuln_func)
+
+    x = vuln_func['imls']
+    y1 = vuln_func['slight']
+    y2 = vuln_func['moderate']
+    y3 = vuln_func['extensive']
+    y4 = vuln_func['complete']
+
+    xlabel = vuln_func['imt']
+   
+    options = { 
+        'title': {
+            'text': vuln_func['id'],
+            'left': 'center'},
+        'tooltip': {
+            'trigger': 'axis',
+            'axisPointer': {
+                'type': 'cross'
+            }
+        },
+        #'legend': {'data': ['Covariance','Mean']},
+        'xAxis': {
+            'axisTick': {
+                'alignWithLabel': True
+            },
+            'data': list(x),
+            'name': xlabel,
+            'nameLocation': 'middle',
+            'nameTextStyle': {'verticalAlign': 'top','padding': [10, 0, 0, 0]}
+        },
+        'yAxis': [
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'green'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'blue'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'yellow'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'purple'}}
+            },
+        ],
+        'series': [
+            {
+            'name': 'slight',
+            'data': list(y1),
+            'type': 'line',
+            'yAxisIndex': 0
+            },
+            {
+            'name': 'moderate',
+            'data': list(y2),
+            'type': 'line',
+            'yAxisIndex': 1
+            },
+            {
+            'name': 'extensive',
+            'data': list(y3),
+            'type': 'line',
+            'yAxisIndex': 2
+            },
+            {
+            'name': 'complete',
+            'data': list(y4),
+            'type': 'line',
+            'yAxisIndex': 3
+            },
+        ],
+    }
+    solara.FigureEcharts(option=options) 
+
+
 @solara.component
 def VulnerabiliyDisplayer(vuln_xml: dict):
     vuln_xml, set_vuln_xml = solara.use_state_or_update(vuln_xml)
@@ -732,6 +807,36 @@ def VulnerabiliyDisplayer(vuln_xml: dict):
                         on_value=set_func_label)
         with solara.Column():
             VulnerabilityFunctionDisplayer(vuln_xml['vulnerabilityFunctions'][func_labels.index(func_label)])
+
+
+@solara.component
+def FragilityDisplayer(vuln_xml: dict):
+    vuln_xml, set_vuln_xml = solara.use_state_or_update(vuln_xml)
+
+    func_labels = [f'{v["imt"]}---{v["id"]}' for v in vuln_xml['fragilityFunctions']]
+    func_label, set_func_label  = solara.use_state_or_update(func_labels[0])
+
+    with solara.GridFixed(columns=2):
+        with solara.Column(gap="1px"):
+            solara.Text('Description:',style={'fontWeight': 'bold'})
+            with solara.Row(justify="left"):
+                solara.Text(f'{vuln_xml["description"]}')   
+            with solara.GridFixed(columns=2,row_gap="1px"):
+                solara.Text('Asset Category:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{vuln_xml["assetCategory"]}')
+                solara.Text('Loss Category:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{vuln_xml["lossCategory"]}')
+                solara.Text('# of vulnerability functions:',style={'fontWeight': 'bold'})
+                with solara.Row(justify="right"):
+                    solara.Text(f'{len(vuln_xml["fragilityFunctions"])}')      
+            solara.Text('Select vulnerability function:',style={'fontWeight': 'bold'})
+            solara.Select(label='',value=func_label, values=func_labels,
+                        on_value=set_func_label)
+        with solara.Column():
+            FragilityFunctionDisplayer(vuln_xml['fragilityFunctions'][func_labels.index(func_label)])
+
 
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count):
@@ -925,6 +1030,8 @@ def LayerDisplayer():
             ParameterFileWidget(parameter_file=data)                        
         if selected == 'gem_vulnerability':
             VulnerabiliyDisplayer(data)
+        elif selected == 'gem_fragility':
+            FragilityDisplayer(data)
 
 @solara.component
 def MetricPanel():
@@ -987,7 +1094,7 @@ def MapViewer():
         map_layers = []
         for l in layers.value['layers'].keys():
             df = layers.value['layers'][l]['data'].value
-            if df is not None and 'geometry' in df.columns:
+            if df is not None and isinstance(df, gpd.GeoDataFrame):
                 df_filtered = df
                 if l in filters.keys():
                     if filters[l] is not None:
@@ -1377,6 +1484,9 @@ def MapInfo():
                             solara.Text(f"{len(data)}")
                         elif isinstance(data, dict) and layer_name == 'gem_vulnerability':
                             solara.Text(f"{len(data['vulnerabilityFunctions'])}")
+                        elif isinstance(data, dict) and layer_name == 'gem_fragility':
+                            solara.Text(f"{len(data['fragilityFunctions'])}")
+
     else:
         with solara.GridFixed(columns=2,row_gap="1px"):
             for key, value in layers.value['map_info_detail'].value.items():
