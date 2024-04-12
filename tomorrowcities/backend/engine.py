@@ -416,6 +416,8 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[],
             threshold_flood = 0.2, threshold_flood_distance = 10):
 
+    gem_fragility = True if isinstance(df_hazard, dict) else False
+    print('gem_fragility mode', gem_fragility)
     if hazard_type != "landslide":
         np.random.seed(seed=0)
 
@@ -447,8 +449,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     epsg = 3857 
 
     # Replace strange TypeX LRS with RCi
-    print('deneme',df_hazard.columns)
-    df_hazard['expstr'] = df_hazard['expstr'].str.replace('Type[0-9]+','RCi',regex=True)
+    if not gem_fragility:
+        print('deneme',df_hazard.columns)
+        df_hazard['expstr'] = df_hazard['expstr'].str.replace('Type[0-9]+','RCi',regex=True)
 
     number_of_unique_buildings = len(pd.unique(gdf_buildings['bldid']))
     print('number of unique building', number_of_unique_buildings)
@@ -662,44 +665,61 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     
      
     if hazard_type == HAZARD_EARTHQUAKE:
-        bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
-        nulls = bld_eq['muds1_g'].isna()
-        print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
-        bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
-        bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
+        if not gem_fragility:
+            bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
+            nulls = bld_eq['muds1_g'].isna()
+            print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
+            bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
+            bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
 
-        # Intensity measure calculation 
-        sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
-        sa_cols = [x for x in bld_eq.columns  if x.startswith('sa ') or x == 'pga']
-        # Means single-channel earthquake density map
-        if len(sa_list) == 0:
-            if 'im' in bld_eq.columns:
-                bld_eq['logim'] = np.log(bld_eq['im']/9.81)
-            elif 'pga' in bld_eq.columns:
-                bld_eq['logim'] = np.log(bld_eq['pga']/9.81)
-            else:
-                raise ValueError('No intensity measure found')    
-        else:
-            # Multi-channel density map
-            for i, row in bld_eq.iterrows():
-                minp, maxp = row['minperiod'], row['maxperiod']
-                if minp > 0 and maxp > 0 and maxp > minp: 
-                    # 0.001 corresponds to pga
-                    x_interp = np.log(np.concatenate(([0.001],sa_list)))
-                    y_interp = np.log(row[sa_cols].to_numpy(dtype=np.float32))
-                    step = 0.01
-                    x_required = np.log(np.linspace(minp, maxp, int((maxp - minp) / step + 1)))
-                    sa_interp = np.exp(np.interp(x_required, x_interp, y_interp))
-                    sa_gmean = np.prod(sa_interp)**(1/len(sa_interp))
-                    bld_eq.at[i,'logim'] = np.log(sa_gmean/9.81)
+            # Intensity measure calculation
+            sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
+            sa_cols = [x for x in bld_eq.columns  if x.startswith('sa ') or x == 'pga']
+            # Means single-channel earthquake density map
+            if len(sa_list) == 0:
+                if 'im' in bld_eq.columns:
+                    bld_eq['logim'] = np.log(bld_eq['im']/9.81)
+                elif 'pga' in bld_eq.columns:
+                    bld_eq['logim'] = np.log(bld_eq['pga']/9.81)
                 else:
-                    bld_eq.at[i,'logim'] = np.log(row['pga']/9.81)
+                    raise ValueError('No intensity measure found')
+            else:
+                # Multi-channel density map
+                for i, row in bld_eq.iterrows():
+                    minp, maxp = row['minperiod'], row['maxperiod']
+                    if minp > 0 and maxp > 0 and maxp > minp:
+                        # 0.001 corresponds to pga
+                        x_interp = np.log(np.concatenate(([0.001],sa_list)))
+                        y_interp = np.log(row[sa_cols].to_numpy(dtype=np.float32))
+                        step = 0.01
+                        x_required = np.log(np.linspace(minp, maxp, int((maxp - minp) / step + 1)))
+                        sa_interp = np.exp(np.interp(x_required, x_interp, y_interp))
+                        sa_gmean = np.prod(sa_interp)**(1/len(sa_interp))
+                        bld_eq.at[i,'logim'] = np.log(sa_gmean/9.81)
+                    else:
+                        bld_eq.at[i,'logim'] = np.log(row['pga']/9.81)
 
-        for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
-            bld_eq[m] = np.log(bld_eq[m]/9.81)
+            for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
+                bld_eq[m] = np.log(bld_eq[m]/9.81)
 
-        for i in [1,2,3,4]: 
-            bld_eq[f'prob_ds{i}'] = norm.cdf(bld_eq['logim'],bld_eq[f'muds{i}_g'],bld_eq[f'sigmads{i}'])
+            for i in [1,2,3,4]:
+                bld_eq[f'prob_ds{i}'] = norm.cdf(bld_eq['logim'],bld_eq[f'muds{i}_g'],bld_eq[f'sigmads{i}'])
+
+
+        else:
+            gem_df = pd.DataFrame(df_hazard['fragilityFunctions'])
+            gem_df['imt_2'] = gem_df['imt'].str.replace('(', ' ').str.replace(')','').str.lower()
+            gem_df['imt_2'] = gem_df['imt_2'].apply(lambda x: f'sa {float(x.split()[-1]):.2f}' if x.startswith('sa ') else x)
+            bld_eq = gdf_building_intensity.merge(gem_df, how='left',left_on='expstr', right_on='id', validate="many_to_one")
+
+            def computer_damage_state(row):
+                prob_ds1 = np.interp(row[row['imt_2']], row['imls'], row['slight'])
+                prob_ds2 = np.interp(row[row['imt_2']], row['imls'], row['moderate'])
+                prob_ds3 = np.interp(row[row['imt_2']], row['imls'], row['extensive'])
+                prob_ds4 = np.interp(row[row['imt_2']], row['imls'], row['complete'])
+                return prob_ds1, prob_ds2, prob_ds3, prob_ds4
+            bld_eq[['prob_ds1','prob_ds2','prob_ds3','prob_ds4']] = bld_eq.apply(computer_damage_state, axis=1,result_type='expand')
+
         bld_eq[['prob_ds0','prob_ds5']] = [1,0]
         for i in [1,2,3,4,5]:
             bld_eq[f'ds_{i}'] = np.abs(bld_eq[f'prob_ds{i-1}'] - bld_eq[f'prob_ds{i}'])

@@ -1147,7 +1147,9 @@ def ExecutePanel():
             if "road" in  infra:
                 missing += list(set(["building","household","individual","road edges","road nodes","intensity","road fragility"]) - existing_layers)
             if "building" in infra:
-                missing += list(set(["landuse","building","household","individual","intensity","fragility"]) - existing_layers)
+                missing += list(set(["landuse","building","household","individual","intensity"]) - existing_layers)
+                if not "fragility" in existing_layers and not "gem_fragility" in existing_layers:
+                    missing += ["fragility or gem_fragility"]
         elif hazard == "flood":
             if "power" in  infra:
                 missing += list(set(["landuse","building","household","individual","power edges","power nodes","intensity","vulnerability"]) - existing_layers)
@@ -1173,6 +1175,9 @@ def ExecutePanel():
         building = layers.value['layers']['building']['data'].value
         household = layers.value['layers']['household']['data'].value
         landslide_fragility = layers.value['layers']['landslide fragility']['data'].value
+        fragility = layers.value['layers']['fragility']['data'].value
+        gem_fragility = layers.value['layers']['gem_fragility']['data'].value
+        intensity = layers.value['layers']['intensity']['data'].value
 
 
         missing_buildings = set(household['bldid']) - set(building['bldid'])
@@ -1190,6 +1195,35 @@ def ExecutePanel():
         missing_hospitals = set(household['commfacid']) - set(building['bldid'])
         if len(missing_hospitals) > 0:
             return False, f"Hospital(s) ({missing_hospitals}) do not exist in building data"
+
+        if "building" in infra and hazard == "earthquake":
+            if gem_fragility is not None:
+                exposure_in_fragility = set([f['id'] for f in gem_fragility['fragilityFunctions']])
+                exposure_in_building= set(pd.unique(building['expstr']))
+                missing_exposures = exposure_in_building - exposure_in_fragility
+                print(exposure_in_building, exposure_in_fragility)
+                if len(missing_exposures) > 0:
+                    return False, f"missing exposures in gem_fragility: {missing_exposures}"
+
+                # Only "discrete" format is supported
+                formats_in_fragility = set([f['format'] for f in gem_fragility['fragilityFunctions']]) 
+                unsupported_formats = formats_in_fragility - set(['discrete'])
+                if len(unsupported_formats) > 0:
+                    return False, f"Unsupported GEM fragility format detected: {unsupported_formats}. Only 'discrete' is supported"
+
+                # Check for missing bands
+                sa_list = np.array([float(x.split()[-1]) for x in intensity.columns if x.startswith('sa ')])
+                sa_cols = [x for x in intensity.columns  if x.startswith('sa ') or x == 'pga']
+                imtypes = set([f['imt'].lower().replace('(',' ').replace(')','') for f in gem_fragility['fragilityFunctions']])
+                sa_list_in_fragility = np.array([float(x.split()[-1]) for x in imtypes if x.startswith('sa ')])
+                missing_bands = set(sa_list_in_fragility) - set(sa_list) 
+
+                non_sa_bands_in_fragility = set([x for x in imtypes if not x.startswith('sa ')])
+                non_sa_bands_in_intensity = set([x for x in intensity.columns if not x.startswith('sa ')])
+                missing_bands = missing_bands.union(non_sa_bands_in_fragility - non_sa_bands_in_intensity)
+                if len(missing_bands) > 0:
+                    return False, f"{missing_bands} band(s) should be in the intensity map"
+
         return True, ''
 
     def execute_engine():
@@ -1307,6 +1341,8 @@ def ExecutePanel():
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value)
             else:
+                if fragility is None:
+                    fragility = layers.value['layers']['gem_fragility']['data'].value
                 df_bld_hazard = compute(
                     landuse,
                     buildings,
