@@ -168,7 +168,7 @@ def create_new_app_state():
             'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs'])],
             'attributes': [set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
                          'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
-                         'income', 'eq_vuln'])]},
+                         'income', 'eq_frgl'])]},
         'power edges': {
             'render_order': 80,
             'data': solara.reactive(None),
