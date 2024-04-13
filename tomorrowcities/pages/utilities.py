@@ -4,6 +4,10 @@ import random
 import json
 import pandas as pd
 import os
+from scipy.stats import norm
+
+
+import solara.lab
 os.environ['USE_PYGEOS'] = '0'
 import geopandas as gpd
 from typing import Tuple, Optional
@@ -363,5 +367,132 @@ def S3FileBrowser(
             Div(style_="font-weight: bold; color: red", children=[warning])
 
     return main
+
+@solara.component
+def FragilityFunctionDisplayer(vuln_func):
+    vuln_func, _ = solara.use_state_or_update(vuln_func)
+
+    x = vuln_func['imls']
+    y1 = vuln_func['slight']
+    y2 = vuln_func['moderate']
+    y3 = vuln_func['extensive']
+    y4 = vuln_func['complete']
+
+    xlabel = vuln_func['imt']
+   
+    options = { 
+        'title': {
+            'text': vuln_func['id'],
+            'left': 'center'},
+        'tooltip': {
+            'trigger': 'axis',
+            'axisPointer': {
+                'type': 'cross'
+            }
+        },
+        #'legend': {'data': ['Covariance','Mean']},
+        'xAxis': {
+            'axisTick': {
+                'alignWithLabel': True
+            },
+            'data': list(x),
+            'name': xlabel,
+            'nameLocation': 'middle',
+            'nameTextStyle': {'verticalAlign': 'top','padding': [10, 0, 0, 0]}
+        },
+        'yAxis': [
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'green'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'blue'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'yellow'}}
+            },
+            {
+                'type': 'value',
+                'position': 'left',
+                'alignTicks': True,
+                'axisLine': {
+                    'show': True,
+                    'lineStyle': {'color': 'purple'}}
+            },
+        ],
+        'series': [
+            {
+            'name': 'slight',
+            'data': list(y1),
+            'type': 'line',
+            'yAxisIndex': 0
+            },
+            {
+            'name': 'moderate',
+            'data': list(y2),
+            'type': 'line',
+            'yAxisIndex': 1
+            },
+            {
+            'name': 'extensive',
+            'data': list(y3),
+            'type': 'line',
+            'yAxisIndex': 2
+            },
+            {
+            'name': 'complete',
+            'data': list(y4),
+            'type': 'line',
+            'yAxisIndex': 3
+            },
+        ],
+    }
+    solara.FigureEcharts(option=options) 
+
+@solara.component
+def PowerFragilityDisplayer(data, items_per_page=5):
+    vuln_strings = list(data['vuln_string'])
+    vuln_string, set_vuln_string  = solara.use_state_or_update(vuln_strings[0])
+
+    # Range barrowed from GEM fragility files
+    im_range = np.array([0.05,0.0561725,0.0631069,0.0708974,0.0796497,0.0894824,0.100529,0.112939,0.126881,0.142545,0.160142,0.179911,0.202121,0.227073,0.255105,0.286598,0.321978,0.361726,0.406381,0.456548,0.512909,0.576227,0.647362,0.727278,0.81706,0.917925,1.03124,1.15855,1.30157,1.46225,1.64276,1.84556,2.07339,2.32935,2.61691,2.93997,3.3029,3.71064,4.16872,4.68335,5.2615,5.91103,6.64074,7.46054,8.38154,9.41623,10.5787,11.8846,13.3517,15])
+    # Convert to in g units and take logarithm
+    im_log_g_range = np.log(im_range/9.81)
+
+    frgl_funcs = {}
+    for i, row in data.iterrows():
+        id = row['vuln_string']
+        frgl_func = dict()
+        frgl_func['id'] = id
+        frgl_func['imt'] = 'pga'
+        frgl_func['imls'] = im_range
+        frgl_func['slight'] = norm.cdf(im_log_g_range, np.log(row['med_slight']), row['beta_slight'])
+        frgl_func['moderate'] = norm.cdf(im_log_g_range, np.log(row['med_moderate']), row['beta_moderate'])
+        frgl_func['extensive'] = norm.cdf(im_log_g_range, np.log(row['med_extensive']), row['beta_extensive'])
+        frgl_func['complete'] = norm.cdf(im_log_g_range, np.log(row['med_complete']), row['beta_complete'])
+        frgl_funcs[id] = frgl_func
+
+    with solara.lab.Tabs():
+        with solara.lab.Tab(label="Table"):
+            solara.DataFrame(data, items_per_page=items_per_page)
+        with solara.lab.Tab(label="Plot"):
+            with solara.Column():
+                FragilityFunctionDisplayer(frgl_funcs[vuln_string])
+                solara.Select(label='vuln_string',value=vuln_string, values=vuln_strings,
+                                on_value=set_vuln_string)
 
 

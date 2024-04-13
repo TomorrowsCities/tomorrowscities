@@ -26,7 +26,7 @@ from .settings import threshold_flood, threshold_flood_distance, threshold_road_
                       population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
-from .utilities import S3FileBrowser, extension_list, extension_list_w_dots
+from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer
 from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
 import ipywidgets
@@ -685,102 +685,6 @@ def VulnerabilityFunctionDisplayer(vuln_func):
 
 
 @solara.component
-def FragilityFunctionDisplayer(vuln_func):
-    vuln_func, _ = solara.use_state_or_update(vuln_func)
-
-    x = vuln_func['imls']
-    y1 = vuln_func['slight']
-    y2 = vuln_func['moderate']
-    y3 = vuln_func['extensive']
-    y4 = vuln_func['complete']
-
-    xlabel = vuln_func['imt']
-   
-    options = { 
-        'title': {
-            'text': vuln_func['id'],
-            'left': 'center'},
-        'tooltip': {
-            'trigger': 'axis',
-            'axisPointer': {
-                'type': 'cross'
-            }
-        },
-        #'legend': {'data': ['Covariance','Mean']},
-        'xAxis': {
-            'axisTick': {
-                'alignWithLabel': True
-            },
-            'data': list(x),
-            'name': xlabel,
-            'nameLocation': 'middle',
-            'nameTextStyle': {'verticalAlign': 'top','padding': [10, 0, 0, 0]}
-        },
-        'yAxis': [
-            {
-                'type': 'value',
-                'position': 'left',
-                'alignTicks': True,
-                'axisLine': {
-                    'show': True,
-                    'lineStyle': {'color': 'green'}}
-            },
-            {
-                'type': 'value',
-                'position': 'left',
-                'alignTicks': True,
-                'axisLine': {
-                    'show': True,
-                    'lineStyle': {'color': 'blue'}}
-            },
-            {
-                'type': 'value',
-                'position': 'left',
-                'alignTicks': True,
-                'axisLine': {
-                    'show': True,
-                    'lineStyle': {'color': 'yellow'}}
-            },
-            {
-                'type': 'value',
-                'position': 'left',
-                'alignTicks': True,
-                'axisLine': {
-                    'show': True,
-                    'lineStyle': {'color': 'purple'}}
-            },
-        ],
-        'series': [
-            {
-            'name': 'slight',
-            'data': list(y1),
-            'type': 'line',
-            'yAxisIndex': 0
-            },
-            {
-            'name': 'moderate',
-            'data': list(y2),
-            'type': 'line',
-            'yAxisIndex': 1
-            },
-            {
-            'name': 'extensive',
-            'data': list(y3),
-            'type': 'line',
-            'yAxisIndex': 2
-            },
-            {
-            'name': 'complete',
-            'data': list(y4),
-            'type': 'line',
-            'yAxisIndex': 3
-            },
-        ],
-    }
-    solara.FigureEcharts(option=options) 
-
-
-@solara.component
 def VulnerabiliyDisplayer(vuln_xml: dict):
     vuln_xml, set_vuln_xml = solara.use_state_or_update(vuln_xml)
 
@@ -1017,7 +921,10 @@ def LayerDisplayer():
                 df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
                 solara.DataFrame(df_filtered, items_per_page=5)
             else:
-                solara.DataFrame(data, items_per_page=5)
+                if selected == "power fragility":
+                    PowerFragilityDisplayer(data, items_per_page=5)
+                else:
+                    solara.DataFrame(data, items_per_page=5)
             if selected in ["building","road edges","road nodes","power nodes","power edges"] :
                 with solara.Row():
                     file_object = data.to_json()
