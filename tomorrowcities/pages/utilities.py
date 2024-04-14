@@ -471,14 +471,14 @@ def PowerFragilityDisplayer(data, items_per_page=5):
     # Range barrowed from GEM fragility files
     im_range = np.array([0.05,0.0561725,0.0631069,0.0708974,0.0796497,0.0894824,0.100529,0.112939,0.126881,0.142545,0.160142,0.179911,0.202121,0.227073,0.255105,0.286598,0.321978,0.361726,0.406381,0.456548,0.512909,0.576227,0.647362,0.727278,0.81706,0.917925,1.03124,1.15855,1.30157,1.46225,1.64276,1.84556,2.07339,2.32935,2.61691,2.93997,3.3029,3.71064,4.16872,4.68335,5.2615,5.91103,6.64074,7.46054,8.38154,9.41623,10.5787,11.8846,13.3517,15])
     # Convert to in g units and take logarithm
-    im_log_g_range = np.log(im_range/9.81)
+    im_log_g_range = np.log(im_range)
 
     frgl_funcs = {}
     for i, row in data.iterrows():
         id = row['vuln_string']
         frgl_func = dict()
         frgl_func['id'] = id
-        frgl_func['imt'] = 'pga'
+        frgl_func['imt'] = 'pga (g)'
         frgl_func['imls'] = im_range
         frgl_func['slight'] = norm.cdf(im_log_g_range, np.log(row['med_slight']), row['beta_slight'])
         frgl_func['moderate'] = norm.cdf(im_log_g_range, np.log(row['med_moderate']), row['beta_moderate'])
