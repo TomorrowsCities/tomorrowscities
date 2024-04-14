@@ -25,6 +25,7 @@ threshold_road_water_height = solara.reactive(0.3)
 threshold_culvert_water_height = solara.reactive(1.5)
 preserve_edge_directions = solara.reactive(False)
 population_displacement_consensus = solara.reactive(2)
+earthquake_intensity_unit = solara.reactive('m/s2')
 
 def storage_control(aws_access_key_id: str, aws_secret_access_key: str, region_name: str, bucket_name: str):
     storage.value = S3Storage(aws_access_key_id, aws_secret_access_key, region_name, bucket_name)
@@ -138,5 +139,12 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                         If the water level is beyond this threshold then the culvert 
                         hence the road containing it is assumed to be flooded.''')
         solara.SliderFloat(label='Minimum Water Level Threshold for Culverts (meters)', value=threshold_culvert_water_height, min=0,max=3)
+
+    with solara.Card(title='Earthquake Parameters',
+                     subtitle='Earthquake-related engine parameters.'):
+        solara.Markdown(md_text='''
+                Please specify the units used in the earthquake intensity maps.
+                It could be "m/s2" (default) or "g"''')
+        solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=earthquake_intensity_unit)
 
     solara.Title(" ")
