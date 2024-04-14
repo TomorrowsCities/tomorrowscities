@@ -23,7 +23,7 @@ import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
-                      population_displacement_consensus
+                      population_displacement_consensus, earthquake_intensity_unit
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer
@@ -1161,6 +1161,7 @@ def ExecutePanel():
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
                 fragility, hazard, threshold_road_water_height.value, threshold_culvert_water_height.value,
                 threshold_flood_distance.value, preserve_edge_directions.value,
+                earthquake_intensity_unit=earthquake_intensity_unit.value,
                 )
             
             edges['ds'] = list(ds)
@@ -1202,6 +1203,7 @@ def ExecutePanel():
                                     fragility,
                                     hazard, threshold_flood.value, threshold_flood_distance.value,
                                     preserve_edge_directions.value,
+                                    earthquake_intensity_unit=earthquake_intensity_unit.value,
                                     )
             
             #power_node_df =  dfs['Power Nodes'].copy()                         
@@ -1246,7 +1248,9 @@ def ExecutePanel():
                     layers.value['hazard'].value,
                     policies=policies,
                     threshold_flood = threshold_flood.value,
-                    threshold_flood_distance = threshold_flood_distance.value)
+                    threshold_flood_distance = threshold_flood_distance.value,
+                    earthquake_intensity_unit=earthquake_intensity_unit.value,
+                    )
             else:
                 if fragility is None:
                     fragility = layers.value['layers']['gem_fragility']['data'].value
@@ -1259,7 +1263,9 @@ def ExecutePanel():
                     fragility if layers.value['hazard'].value == "earthquake" else vulnerability,
                     layers.value['hazard'].value, policies=policies,
                     threshold_flood = threshold_flood.value,
-                    threshold_flood_distance = threshold_flood_distance.value)
+                    threshold_flood_distance = threshold_flood_distance.value,
+                    earthquake_intensity_unit=earthquake_intensity_unit.value,
+                    )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
 

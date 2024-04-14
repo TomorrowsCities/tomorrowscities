@@ -25,7 +25,12 @@ def compute_road_infra(buildings, household, individual,
                         culvert_water_height_threshold,
                         threshold_flood_distance,
                         preserve_edge_directions,
+                        earthquake_intensity_unit = 'm/s2',
                         ):
+
+    earthquake_intensity_normalization_factor = 1
+    if earthquake_intensity_unit == 'm/s2':
+        earthquake_intensity_normalization_factor = 9.81
 
     DS_NO = 0
     DS_SLIGHT = 1
@@ -125,9 +130,9 @@ def compute_road_infra(buildings, household, individual,
 
         #gdf_edges['log_im'] = np.log(gdf_edges['im'])
         if 'im' in gdf_edges.columns:
-            gdf_edges['log_im'] = np.log(gdf_edges['im']/9.81)
+            gdf_edges['log_im'] = np.log(gdf_edges['im']/earthquake_intensity_normalization_factor)
         elif 'pga' in gdf_edges.columns:
-            gdf_edges['log_im'] = np.log(gdf_edges['pga']/9.81)
+            gdf_edges['log_im'] = np.log(gdf_edges['pga']/earthquake_intensity_normalization_factor)
         
         for m in ['med_ds1','med_ds2','med_ds3','med_ds4']:
             gdf_edges[m] = np.log(gdf_edges[m])
@@ -219,7 +224,11 @@ def compute_road_infra(buildings, household, individual,
 
 def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,hazard,
                         threshold_flood, threshold_flood_distance, preserve_edge_directions,
+                        earthquake_intensity_unit = 'm/s2',
                         ):
+    earthquake_intensity_normalization_factor = 1
+    if earthquake_intensity_unit == 'm/s2':
+        earthquake_intensity_normalization_factor = 9.81
     print('Computing power infrastructure')
     print(nodes.head())
     print(edges.head())
@@ -278,9 +287,9 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
         gdf_nodes.loc[nulls, ['beta_ds1','beta_ds2','beta_ds3','beta_ds4']] = [1,1,1,1]
         
         if 'im' in gdf_nodes.columns:
-            gdf_nodes['logim'] = np.log(gdf_nodes['im']/9.81)
+            gdf_nodes['logim'] = np.log(gdf_nodes['im']/earthquake_intensity_normalization_factor)
         elif 'pga' in gdf_nodes.columns:
-            gdf_nodes['logim'] = np.log(gdf_nodes['pga']/9.81)
+            gdf_nodes['logim'] = np.log(gdf_nodes['pga']/earthquake_intensity_normalization_factor)
         else:
             print('not supposed to happen')
 
@@ -414,7 +423,13 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
            gdf_buildings['has_power'], household_w_node_id['has_power'],hospitals['has_power'] 
 
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[],
-            threshold_flood = 0.2, threshold_flood_distance = 10):
+            threshold_flood = 0.2, threshold_flood_distance = 10,
+            earthquake_intensity_unit = 'm/s2',
+            ):
+
+    earthquake_intensity_normalization_factor = 1
+    if earthquake_intensity_unit == 'm/s2':
+        earthquake_intensity_normalization_factor = 9.81
 
     gem_fragility = True if isinstance(df_hazard, dict) else False
     print('gem_fragility mode', gem_fragility)
@@ -678,9 +693,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             # Means single-channel earthquake density map
             if len(sa_list) == 0:
                 if 'im' in bld_eq.columns:
-                    bld_eq['logim'] = np.log(bld_eq['im']/9.81)
+                    bld_eq['logim'] = np.log(bld_eq['im']/earthquake_intensity_normalization_factor)
                 elif 'pga' in bld_eq.columns:
-                    bld_eq['logim'] = np.log(bld_eq['pga']/9.81)
+                    bld_eq['logim'] = np.log(bld_eq['pga']/earthquake_intensity_normalization_factor)
                 else:
                     raise ValueError('No intensity measure found')
             else:
@@ -695,12 +710,13 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                         x_required = np.log(np.linspace(minp, maxp, int((maxp - minp) / step + 1)))
                         sa_interp = np.exp(np.interp(x_required, x_interp, y_interp))
                         sa_gmean = np.prod(sa_interp)**(1/len(sa_interp))
-                        bld_eq.at[i,'logim'] = np.log(sa_gmean/9.81)
+                        bld_eq.at[i,'logim'] = np.log(sa_gmean/earthquake_intensity_normalization_factor)
                     else:
-                        bld_eq.at[i,'logim'] = np.log(row['pga']/9.81)
+                        bld_eq.at[i,'logim'] = np.log(row['pga']/earthquake_intensity_normalization_factor)
 
             for m in ['muds1_g','muds2_g','muds3_g','muds4_g']:
-                bld_eq[m] = np.log(bld_eq[m]/9.81)
+                # TODO: double check if we should apply g-normalization
+                bld_eq[m] = np.log(bld_eq[m])
 
             for i in [1,2,3,4]:
                 bld_eq[f'prob_ds{i}'] = norm.cdf(bld_eq['logim'],bld_eq[f'muds{i}_g'],bld_eq[f'sigmads{i}'])
@@ -713,10 +729,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_eq = gdf_building_intensity.merge(gem_df, how='left',left_on='expstr', right_on='id', validate="many_to_one")
 
             def computer_damage_state(row):
-                prob_ds1 = np.interp(row[row['imt_2']], row['imls'], row['slight'])
-                prob_ds2 = np.interp(row[row['imt_2']], row['imls'], row['moderate'])
-                prob_ds3 = np.interp(row[row['imt_2']], row['imls'], row['extensive'])
-                prob_ds4 = np.interp(row[row['imt_2']], row['imls'], row['complete'])
+                intensity_in_g = row[row['imt_2']] / earthquake_intensity_normalization_factor
+                prob_ds1 = np.interp(intensity_in_g, row['imls'], row['slight'])
+                prob_ds2 = np.interp(intensity_in_g, row['imls'], row['moderate'])
+                prob_ds3 = np.interp(intensity_in_g, row['imls'], row['extensive'])
+                prob_ds4 = np.interp(intensity_in_g, row['imls'], row['complete'])
                 return prob_ds1, prob_ds2, prob_ds3, prob_ds4
             bld_eq[['prob_ds1','prob_ds2','prob_ds3','prob_ds4']] = bld_eq.apply(computer_damage_state, axis=1,result_type='expand')
 
