@@ -1081,6 +1081,7 @@ def ExecutePanel():
         infra = layers.value['infra'].value
         building = layers.value['layers']['building']['data'].value
         household = layers.value['layers']['household']['data'].value
+        individual = layers.value['layers']['individual']['data'].value
         landslide_fragility = layers.value['layers']['landslide fragility']['data'].value
         fragility = layers.value['layers']['fragility']['data'].value
         gem_fragility = layers.value['layers']['gem_fragility']['data'].value
@@ -1102,6 +1103,18 @@ def ExecutePanel():
         missing_hospitals = set(household['commfacid']) - set(building['bldid'])
         if len(missing_hospitals) > 0:
             return False, f"Hospital(s) ({missing_hospitals}) do not exist in building data"
+
+        missing_households = [str(x) for x in set(individual['hhid']) - set(household['hhid'])]
+        if len(missing_households) > 0:
+            error_message = f"There are {len(missing_households)} households associated with individuals but not defined in the household layer: "
+            # if there are too many, only show the first 5 and last 5.
+            if len(missing_households) > 10:
+                error_message += ','.join(missing_households[:5])
+                error_message += ',...,'
+                error_message += ','.join(missing_households[-5:])
+            else:
+                error_message += ','.join(missing_households)
+            return False, error_message
 
         if "building" in infra and hazard == "earthquake":
             if gem_fragility is not None:
