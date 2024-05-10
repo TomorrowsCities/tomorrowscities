@@ -1655,11 +1655,11 @@ def WebApp():
     solara.Title(" ")
     with solara.Sidebar():
         with solara.lab.Tabs():
+            with solara.lab.Tab("DATA IMPORT"):
+                ImportDataZone()
             with solara.lab.Tab("SETTINGS"):
                 ExecutePanel()
                 FilterPanel()
-            with solara.lab.Tab("DATA IMPORT"):
-                ImportDataZone()
             with solara.lab.Tab("MAP INFO"):
                 MapInfo()
 
