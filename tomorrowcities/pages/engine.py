@@ -24,7 +24,8 @@ import datetime
 from .settings import storage, landslide_max_trials, revive_storage
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus, earthquake_intensity_unit
-from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure
+from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
+    create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer
 from ..components.file_drop import FileDropMultiple
@@ -256,6 +257,7 @@ def create_new_app_state():
     'data_import_method': solara.reactive("drag&drop"),
     'map_info_button': solara.reactive("summary"),
     'map_info_detail': solara.reactive({}),
+    'tally': solara.reactive(None),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -904,6 +906,10 @@ def FilterPanel():
 def LayerDisplayer():
     print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
+    
+    tally = layers.value['tally'].value
+    if  tally is not None:
+        nonempty_layers['tally'] = tally
     nonempty_layer_names = list(nonempty_layers.keys())
     selected = layers.value['selected_layer'].value
     def set_selected(s):
@@ -914,7 +920,10 @@ def LayerDisplayer():
     if selected is None and len(nonempty_layer_names) > 0:
         set_selected(nonempty_layer_names[0])
     if selected is not None:
-        data = nonempty_layers[selected]['data'].value
+        if selected is 'tally':
+            data = tally
+        else:
+            data = nonempty_layers[selected]['data'].value
         if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
             if "geometry" in data.columns:
                 ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
@@ -925,7 +934,7 @@ def LayerDisplayer():
                     PowerFragilityDisplayer(data, items_per_page=5)
                 else:
                     solara.DataFrame(data, items_per_page=5)
-            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
+            if selected in ["building","tally","road edges","road nodes","power nodes","power edges"] :
                 with solara.Row():
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
@@ -949,13 +958,18 @@ def MetricPanel():
                         &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
                         &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
                         IMPACTS</h2>''')
-    building = layers.value['layers']['building']['data'].value    
-    filtered_metrics = {name: 0 for name in layers.value['metrics'].keys()}
-    if building is not None and layers.value['bounds'].value is not None:
+    
+    filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
+    tally = layers.value['tally'].value
+    if tally is not None and layers.value['bounds'].value is not None:
+
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-        filtered = building.cx[xmin:xmax,ymin:ymax]
-        for metric in filtered_metrics.keys():
-            filtered_metrics[metric] = int(filtered.cx[xmin:xmax,ymin:ymax][metric].sum())
+        
+        tally_filtered = tally.cx[xmin:xmax,ymin:ymax]
+        hazard_type = layers.value['hazard'].value
+        print('Triggering generate_metrics')
+        filtered_metrics = generate_metrics(tally_filtered, tally, hazard_type, population_displacement_consensus.value)
+    print('filtered_metrics', filtered_metrics)
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
     with solara.Row():                     
@@ -963,9 +977,9 @@ def MetricPanel():
             solara.Image(metric_icons[i])
     
     with solara.Row():
-        for name, metric in layers.value['metrics'].items():
+        for name, metric in filtered_metrics.items():
             MetricWidget(name, metric['desc'], 
-                         filtered_metrics[name], 
+                         metric['value'], 
                          metric['max_value'],
                          layers.value['render_count'].value)
         # with solara.Link("/docs/metrics"):
@@ -1285,6 +1299,8 @@ def ExecutePanel():
             return buildings
 
         def execute_metric():
+            hazard_type = layers.value['hazard'].value
+            landuse = layers.value['layers']['landuse']['data'].value
             buildings = layers.value['layers']['building']['data'].value
             household = layers.value['layers']['household']['data'].value
             individual = layers.value['layers']['individual']['data'].value
@@ -1297,16 +1313,9 @@ def ExecutePanel():
                 # capacity = 1.50
             # else:
                 # capacity = 1
-            computed_metrics, df_metrics = calculate_metrics(buildings, household, 
-                                                             individual, layers.value['infra'].value,
-                                                             layers.value['hazard'].value, population_displacement_consensus.value, 
-                                                             policies=policies,capacity=1)
-            print(computed_metrics)
-            for metric in df_metrics.keys():
-                buildings[metric] = list(df_metrics[metric][metric])
-                layers.value['metrics'][metric]['value'] = computed_metrics[metric]['value']
-                layers.value['metrics'][metric]['max_value'] = computed_metrics[metric]['max_value']
-            return buildings
+            
+            tally = create_tally(landuse, buildings, household, individual)
+            return tally
 
         if execute_counter > 0 :
             is_ready, missing = is_ready_to_run(layers.value['infra'].value, layers.value['hazard'].value)
@@ -1344,22 +1353,8 @@ def ExecutePanel():
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
 
-                buildings = execute_metric()
-                layers.value['layers']['building']['data'].set(buildings)
-                layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
-
-                # Taking average without storing intermediate values
-                # averaga_n = [(n-1)*average_(n-1) + value_n]/2
-                if trial == 1:
-                    avg_metrics = buildings[layers.value['metrics'].keys()]
-                else:
-                    avg_metrics = ((trial-1) * avg_metrics + buildings[layers.value['metrics'].keys()])/trial
-                for metric in layers.value['metrics'].keys():
-                    print('average', metric, avg_metrics[metric].sum())
-
-            for metric in layers.value['metrics'].keys():
-                buildings[metric] = list(avg_metrics[metric])
-                layers.value['metrics'][metric]['value'] = avg_metrics[metric].sum()
+                tally = execute_metric()
+                layers.value['tally'].set(tally)
             set_progress_message('')
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
