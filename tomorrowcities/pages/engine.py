@@ -37,7 +37,7 @@ def create_new_app_state():
     return solara.reactive({
     'infra': solara.reactive(["building"]),
     'hazard': solara.reactive("flood"),
-    'hazard_list': ["earthquake","flood","landslide"],
+    'hazard_list': ["earthquake","flood"],
     'datetime_analysis': datetime.datetime.utcnow(),
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
