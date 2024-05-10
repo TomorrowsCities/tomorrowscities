@@ -11,13 +11,30 @@ category:
   - general
 ---
 
-## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.3
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.4
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## Documentation
 Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/TomorrowsCities/tomorrowcities/wiki) 
 
 ## What is New?
+
+
+**Changelog: v0.4**
+
+* feature: switching to fine-level metrics by @hkayabilisim in [54](https://github.com/TomorrowsCities/tomorrowscities/pull/54)
+* feature: disable lanslide option by @hkayabilisim in [52](https://github.com/TomorrowsCities/tomorrowscities/pull/52)
+* feature: unit selection for earthquake intensities by @hkayabilisim in [50](https://github.com/TomorrowsCities/tomorrowscities/pull/50)
+* feature: GEM fragility XML import by @hkayabilisim in [45](https://github.com/TomorrowsCities/tomorrowscities/pull/45)
+* feature: GEM format for earthquake calculations by @hkayabilisim in [46](https://github.com/TomorrowsCities/tomorrowscities/pull/46)
+* feature: power fragility displayer by @hkayabilisim in [48](https://github.com/TomorrowsCities/tomorrowscities/pull/48)
+* ui: data import is the first tab in engine by @hkayabilisim in [53](https://github.com/TomorrowsCities/tomorrowscities/pull/53)
+* fix: g-normalization in displayer is disabled by @hkayabilisim in [49](https://github.com/TomorrowsCities/tomorrowscities/pull/49)
+* fix: corrected attribute list of power node by @hkayabilisim in [47](https://github.com/TomorrowsCities/tomorrowscities/pull/47)
+* fix: add precheck for missing housholds by @hkayabilisim in [51](https://github.com/TomorrowsCities/tomorrowscities/pull/51)
+
+
+**Full Changelog**: [v0.3...v0.4](https://github.com/TomorrowsCities/tomorrowscities/compare/v0.3...v0.4)
 
 **Changelog: v0.3**
 
