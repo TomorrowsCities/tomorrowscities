@@ -44,7 +44,7 @@ def create_new_app_state():
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
-    'version': '0.3',
+    'version': '0.4',
     'layers' : {
         'parameter': {
             'render_order': 0,
