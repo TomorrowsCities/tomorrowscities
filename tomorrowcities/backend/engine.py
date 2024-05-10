@@ -783,6 +783,214 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     
     return bld_hazard
 
+def create_tally(l, b, h, i):
+    '''Create a tally dataframe from exposure'''
+
+    tally = i.merge(h, how='left',left_on='hhid', right_on='hhid', validate='many_to_one')\
+         .merge(b, how='left', left_on='bldid', right_on='bldid', validate='many_to_one', suffixes=(None,"_building"))\
+         .merge(l.drop(columns='geometry'), how='left', left_on='zoneid', right_on='zoneid', validate='many_to_one')\
+         .merge(b[['bldid','occupancy','ds','has_power']]\
+                .rename(columns={'occupancy':'occupancy_facility','ds':'ds_facility','has_power':'has_power_facility'}),
+                how='left',left_on='indivfacid', right_on='bldid',validate='many_to_one',suffixes=(None,'_facility'))\
+         .merge(b[['bldid','ds']]\
+                .rename(columns={'ds':'ds_hospital'}),
+                how='left',left_on='commfacid', right_on='bldid',validate='many_to_one',suffixes=(None,'_hospital'))
+
+    tally = tally.rename(columns={'casualty': 'casualty_in_building'})
+    tally['casualty'] = 0
+
+    #tally.to_excel('/tmp/tally.xlsx')
+    building_level_casualties = tally[tally['casualty_in_building'] > 0][['bldid','casualty_in_building']].drop_duplicates()
+    for (row, bldid, casualty_in_building) in building_level_casualties.itertuples(name=None):
+        individuals_in_building = tally[tally['bldid'] == bldid]['individ']
+        selected_individuals = individuals_in_building.sample(casualty_in_building)
+        tally.loc[selected_individuals.index, 'casualty'] = 1
+
+    tally['has_facility'] = tally['indivfacid'].apply(lambda x: x > -1)
+    tally['lost_facility_access'] = tally.apply(lambda x: x['has_facility'] and not x['facility_access'], axis=1)
+
+    tally = gpd.GeoDataFrame(tally, geometry="geometry")
+
+    return tally
+
+
+def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
+    DS_NO = 0
+    DS_SLIGHT = 1
+    DS_MODERATE = 2
+    DS_EXTENSIZE = 3
+    DS_COLLAPSED = 4
+
+    # Hazard Types
+    HAZARD_EARTHQUAKE = "earthquake"
+    HAZARD_FLOOD = "flood"
+    HAZARD_DEBRIS = "debris"
+
+    if hazard_type == HAZARD_EARTHQUAKE:
+    # Effect of policies on thresholds
+    # First get the global threshold
+        thresholds = {f'metric{id}': DS_SLIGHT for id in range(8)}
+    else:
+        # Default thresholds for flood and debris
+        # For flood, there are only two states: 0 or 1.
+        # So threshold is set to 0.
+        thresholds = {f'metric{id}': DS_NO for id in range(8)}
+
+
+
+    # find the workers
+    is_worker = \
+        ( # there must be an associated facility
+            t['bldid_facility'] > -1
+        ) & \
+        ( # associated facility must be a workplace
+            (t['occupancy_facility'] == 'Com')    | \
+            (t['occupancy_facility'] == 'ResCom') | \
+            (t['occupancy_facility'] == 'Ind')
+        )
+
+    is_unemployed = \
+        ( # must be a worker
+            is_worker
+        ) & \
+        ( # workplace must be damaged or lost power or inaccessible
+            (t['ds_facility'] > thresholds['metric1']) | \
+            (t['has_power_facility'] == False) | \
+            (t['facility_access'] == False)
+        )
+
+    # find the students
+    is_student = \
+        ( # there must be an associated facility
+            t['bldid_facility'] > -1
+        ) & \
+        ( # associated facility must be an educational inst.
+            t['occupancy_facility'] == 'Edu'
+        )
+
+    lost_school = \
+        ( # must be a student
+            is_student
+        ) & \
+        ( # school must be damaged or lost power or inaccessible
+            (t['ds_facility'] > thresholds['metric2']) | \
+            (t['has_power_facility'] == False) | \
+            (t['facility_access'] == False)
+        )
+
+    # i individual associated with a hospital?
+    has_hospital = \
+        ( # there must be a association
+            t['commfacid'] > -1
+        ) & \
+        ( # associated building id must be legit
+            t['bldid_hospital'] > -1
+        )
+
+    household_lost_hospital = \
+        (
+            has_hospital
+        ) & \
+        (
+            (t['ds_hospital'] > thresholds['metric3']) | \
+            (t['hospital_has_power'] == False) | \
+            (t['hospital_access'] == False) 
+        )
+
+    lost_hospital = \
+        (
+            has_hospital
+        ) & \
+        (
+            (t['ds_hospital'] > thresholds['metric4']) | \
+            (t['hospital_has_power'] == False) | \
+            (t['hospital_access'] == False) 
+        )
+
+    lost_household = \
+        (
+            t['ds'] > thresholds['metric5']
+        )
+
+    is_homeless = \
+        (
+            t['ds'] > thresholds['metric6']
+        )
+
+    is_displaced = \
+        (
+            (t[['ds','ds_facility','ds_hospital']] \
+                > [thresholds['metric6'], thresholds['metric1'], thresholds['metric4']]).sum(axis=1) \
+                >= population_displacement_consensus
+        ) | \
+        (
+            (t[['hospital_access','lost_facility_access']] \
+                == [False, True]).sum(axis=1) \
+                >= population_displacement_consensus  
+        ) | \
+        (
+            (t[['has_power','hospital_has_power','has_power_facility']] \
+                == [False, False, False]).sum(axis=1) \
+                >= population_displacement_consensus  
+        )
+
+    is_casualty = \
+        (
+            t['casualty'] == 1
+        )
+
+    for j in range(1,10):
+        t[f'metric{j}'] = 0
+
+    metric1 = len(t[is_unemployed])
+    metric2 = len(t[lost_school])
+    metric3 = len(t[household_lost_hospital]['hhid'].unique())
+    metric4 = len(t[lost_hospital])
+    metric5 = len(t[lost_household]['hhid'].unique())
+    metric6 = len(t[is_homeless])
+    metric7 = len(t[is_displaced])
+    metric8 = len(t[is_casualty])
+
+
+    # I also need to find all workers and students to calculate
+    # max_value
+    # find the workers
+    is_worker_in_full = \
+        ( # there must be an associated facility
+            t_full['bldid_facility'] > -1
+        ) & \
+        ( # associated facility must be a workplace
+            (t_full['occupancy_facility'] == 'Com')    | \
+            (t_full['occupancy_facility'] == 'ResCom') | \
+            (t_full['occupancy_facility'] == 'Ind')
+        ) 
+    
+    # find the students
+    is_student_in_full = \
+        ( # there must be an associated facility
+            t_full['bldid_facility'] > -1
+        ) & \
+        ( # associated facility must be an educational inst.
+            t_full['occupancy_facility'] == 'Edu'
+        ) 
+    
+    # Max values are based on full tally table
+    number_of_workers = len(t_full[is_worker_in_full])
+    number_of_students = len(t_full[is_student_in_full])
+    number_of_individuals = len(t_full)
+    number_of_households = len(t_full['hhid'].unique())
+
+    new_metrics = {"metric1": {"desc": "Number of workers unemployed", "value": metric1, "max_value": number_of_workers},
+                "metric2": {"desc": "Number of children with no access to education", "value": metric2, "max_value": number_of_students},
+                "metric3": {"desc": "Number of households with no access to hospital", "value": metric3, "max_value": number_of_households},
+                "metric4": {"desc": "Number of individuals with no access to hospital", "value": metric4, "max_value": number_of_individuals},
+                "metric5": {"desc": "Number of households displaced", "value": metric5, "max_value": number_of_households},
+                "metric6": {"desc": "Number of homeless individuals", "value": metric6, "max_value": number_of_individuals},
+                "metric7": {"desc": "Population displacement", "value": metric7, "max_value": number_of_individuals},
+                "metric8": {"desc": "Number of casualties", "value": metric8, "max_value": number_of_individuals},
+                }
+
+    return new_metrics
 
 def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_type, population_displacement_consensus, policies=[],capacity=1.0):
     # Very handy temporary attributes showin if an individual is associated with a facility 
