@@ -779,8 +779,9 @@ def MetricWidget(name, description, value, max_value, render_count):
     print(f'value/max_value {value}:{max_value}')
 
     with solara.Tooltip(description):
-        with solara.Column():
-            solara.FigureEcharts(option=options, attributes={"style": "height:100px; width:175px"})
+        #with solara.Column():
+        with solara.GridFixed(columns=1):
+            solara.FigureEcharts(option=options, attributes={"style": "height:100%; width:100%"})
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
@@ -951,14 +952,6 @@ def LayerDisplayer():
 
 @solara.component
 def MetricPanel():
-    solara.Markdown('''<h2 style="text-align: center; font-weight: bold">
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        IMPACTS</h2>''')
-    
     filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
     tally = layers.value['tally'].value
     if tally is not None and layers.value['bounds'].value is not None:
@@ -972,11 +965,14 @@ def MetricPanel():
     print('filtered_metrics', filtered_metrics)
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row():                     
+    with solara.Row(justify="space-around"):
+        solara.Markdown('''<h2 style="font-weight: bold">IMPACTS</h2>''')
+        
+    with solara.Row(justify="space-around"):                     
         for i in range(len(metric_icons)):
             solara.Image(metric_icons[i])
     
-    with solara.Row():
+    with solara.Row(justify="space-around"):
         for name, metric in filtered_metrics.items():
             MetricWidget(name, metric['desc'], 
                          metric['value'], 
