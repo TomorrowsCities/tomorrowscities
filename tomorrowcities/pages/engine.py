@@ -846,26 +846,26 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
 
 @solara.component
 def FilterPanel():
-    global filters
+    # global filters
     #print(f'{layers.value["bounds"].value}')
-    nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
+    # nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
     #with solara.lab.Tabs(background_color="#ebebeb"):
-    for layer_name, layer in nonempty_layers.items():
+    # for layer_name, layer in nonempty_layers.items():
         #with solara.lab.Tab(layer_name):
-        data = layer['data'].value
-        if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
-            df = layer['df'].value
-            if layer_name in ['building']:
-                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Damage State Filter</h4>''')
-                for filter_col in ['ds']:
-                    solara.CrossFilterSelect(df, filter_col, multiple=True)
-                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+        # data = layer['data'].value
+        # if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
+            # df = layer['df'].value
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Damage State Filter</h4>''')
+                # for filter_col in ['ds']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
 
-            if layer_name in ['building']:
-                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Income Level Filter</h4>''')
-                for filter_col in ['freqincome']:
-                    solara.CrossFilterSelect(df, filter_col, multiple=True)
-                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Income Level Filter</h4>''')
+                # for filter_col in ['freqincome']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
 
             # if layer_name in ['building']:
                 # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Load Resisting System Filter</h4>''')
@@ -891,17 +891,35 @@ def FilterPanel():
                     # solara.CrossFilterSelect(df, filter_col, multiple=True)
                 # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
 
-            if layer_name in ['building']:
-                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Special Facility Filter</h4>''')
-                for filter_col in ['specialfac']:
-                    solara.CrossFilterSelect(df, filter_col, multiple=True)
-                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Special Facility Filter</h4>''')
+                # for filter_col in ['specialfac']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
 
-            if layer_name in ['building']:
-                solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Polygon (ZoneID) Filter</h4>''')
-                for filter_col in ['zoneid']:
-                    solara.CrossFilterSelect(df, filter_col, multiple=True)
-                filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+            # if layer_name in ['building']:
+                # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Polygon (ZoneID) Filter</h4>''')
+                # for filter_col in ['zoneid']:
+                    # solara.CrossFilterSelect(df, filter_col, multiple=True)
+                # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+    data = layers.value['tally'].value
+    if data is not None:
+        with solara.Row(): #spacer
+            solara.Markdown('''<h5 style=""></h5>''') 
+        btn = solara.Button("FILTERS")
+        with solara.Column(align="stretch"):
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+                df = data.drop(columns=['geometry'])
+                solara.provide_cross_filter()
+                solara.CrossFilterReport(df)    
+                solara.CrossFilterSelect(df, "ds", multiple=True)
+                solara.CrossFilterSelect(df, "income", multiple=True)        
+                solara.CrossFilterSelect(df, "material", multiple=True)      
+                solara.CrossFilterSelect(df, "codelevel", multiple=True)      
+                solara.CrossFilterSelect(df, "nstoreys", multiple=True)  
+                solara.CrossFilterSelect(df, "occupancy", multiple=True)
+                solara.CrossFilterSelect(df, "specialfac", multiple=True)  
+                solara.CrossFilterSelect(df, "zoneid", multiple=True)                
 
 @solara.component
 def LayerDisplayer():
