@@ -550,13 +550,6 @@ def MetricPanel():
     metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
     metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
     metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
-    solara.Markdown('''<h2 style="text-align: center; font-weight: bold">
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        &nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp
-                        IMPACTS</h2>''')
     building = layers.value['layers']['building']['data'].value
     filtered_metrics = {name: 0 for name in layers.value['metrics'].keys()}
     if building is not None and layers.value['bounds'].value is not None:
@@ -566,11 +559,14 @@ def MetricPanel():
             filtered_metrics[metric] = int(filtered.cx[xmin:xmax,ymin:ymax][metric].sum())
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row():                     
+    with solara.Row(justify="space-around"):
+        solara.Markdown('''<h2 style="font-weight: bold">IMPACTS</h2>''')
+        
+    with solara.Row(justify="space-around"):                     
         for i in range(len(metric_icons)):
             solara.Image(metric_icons[i])
     
-    with solara.Row():
+    with solara.Row(justify="space-around"):
         for name, metric in layers.value['metrics'].items():
             MetricWidget(name, metric['desc'], 
                          filtered_metrics[name], 
