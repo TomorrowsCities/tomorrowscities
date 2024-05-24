@@ -809,9 +809,9 @@ def create_tally(l, b, h, i):
     tally['has_facility'] = tally['indivfacid'].apply(lambda x: x > -1)
     tally['lost_facility_access'] = tally.apply(lambda x: x['has_facility'] and not x['facility_access'], axis=1)
 
-    tally = gpd.GeoDataFrame(tally, geometry="geometry")
+    tally_geo = gpd.GeoDataFrame(tally, geometry="geometry")
 
-    return tally
+    return tally, tally_geo
 
 
 def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
