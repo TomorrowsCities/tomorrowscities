@@ -1599,7 +1599,12 @@ def ImportDataZone():
                     if isinstance(data, gpd.GeoDataFrame):
                         layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
                         layers.value['layers'][name]['data'].set(data)
-                        updated_center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                        # centroids in geometric coordinates (3857: Pseuod-Mercator in meters)
+                        # Geographic --> geometric --> calculate centroid --> geographic
+                        centroids = data.set_crs("epsg:4326",allow_override=True).to_crs('epsg:3857').centroid.to_crs('epsg:4326')
+                        center_y = centroids.y.mean()
+                        center_x = centroids.x.mean()
+                        updated_center = (center_y, center_x)
                     elif isinstance(data, pd.DataFrame):
                         layers.value['layers'][name]['df'].set(data)
                         layers.value['layers'][name]['data'].set(data)
