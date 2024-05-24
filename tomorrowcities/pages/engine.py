@@ -916,7 +916,14 @@ def FilterPanel():
                 building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
                 solara.CrossFilterReport(building)
                 solara.CrossFilterSelect(building, "ds", multiple=True)
-                solara.CrossFilterSelect(building, "zoneid", multiple=True)      
+                solara.CrossFilterSelect(building, "specialfac", multiple=True)
+                solara.CrossFilterSelect(building, "nhouse", multiple=True)
+                solara.CrossFilterSelect(building, "residents", multiple=True)
+                solara.CrossFilterSelect(building, "occupancy", multiple=True)
+                solara.CrossFilterSelect(building, "storeys", multiple=True)
+                solara.CrossFilterSelect(building, "code_level", multiple=True)
+                solara.CrossFilterSelect(building, "material", multiple=True)
+                solara.CrossFilterSelect(building, "zoneid", multiple=True)
 
     landuse = layers.value['layers']['landuse']['df'].value
     if landuse is not None:
