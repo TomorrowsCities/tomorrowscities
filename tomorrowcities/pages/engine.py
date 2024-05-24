@@ -23,7 +23,7 @@ import pickle
 import datetime
 from .settings import storage, landslide_max_trials, revive_storage
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
-                      population_displacement_consensus, earthquake_intensity_unit
+                      population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
@@ -45,6 +45,7 @@ def create_new_app_state():
     'datetime_analysis': datetime.datetime.utcnow(),
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
+    'earthquake_intensity_unit': solara.reactive('m/s2'),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
     'version': '0.4',
@@ -1257,6 +1258,7 @@ def ExecutePanel():
             edges = layers.value['layers']['road edges']['data'].value
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['road fragility']['data'].value
+            earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
                 trigger_level= layers.value['landslide_trigger_level'].value
@@ -1275,7 +1277,7 @@ def ExecutePanel():
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
                 fragility, hazard, threshold_road_water_height.value, threshold_culvert_water_height.value,
                 threshold_flood_distance.value, preserve_edge_directions.value,
-                earthquake_intensity_unit=earthquake_intensity_unit.value,
+                earthquake_intensity_unit=earthquake_intensity_unit,
                 )
             
             edges['ds'] = list(ds)
@@ -1299,6 +1301,7 @@ def ExecutePanel():
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['power fragility']['data'].value
             hazard = layers.value['hazard'].value
+            earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
 
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
@@ -1317,7 +1320,7 @@ def ExecutePanel():
                                     fragility,
                                     hazard, threshold_flood.value, threshold_flood_distance.value,
                                     preserve_edge_directions.value,
-                                    earthquake_intensity_unit=earthquake_intensity_unit.value,
+                                    earthquake_intensity_unit=earthquake_intensity_unit,
                                     )
             
             #power_node_df =  dfs['Power Nodes'].copy()                         
@@ -1338,6 +1341,8 @@ def ExecutePanel():
 
             fragility = layers.value['layers']['fragility']['data'].value
             vulnerability = layers.value['layers']['vulnerability']['data'].value
+            earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
+
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
@@ -1363,7 +1368,7 @@ def ExecutePanel():
                     policies=policies,
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value,
-                    earthquake_intensity_unit=earthquake_intensity_unit.value,
+                    earthquake_intensity_unit=earthquake_intensity_unit,
                     )
             else:
                 if fragility is None:
@@ -1378,7 +1383,7 @@ def ExecutePanel():
                     layers.value['hazard'].value, policies=policies,
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value,
-                    earthquake_intensity_unit=earthquake_intensity_unit.value,
+                    earthquake_intensity_unit=earthquake_intensity_unit,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
@@ -1459,6 +1464,8 @@ def ExecutePanel():
         solara.Markdown("#### Hazard")
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
+        if layers.value['hazard'].value == 'earthquake':
+            solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
         if layers.value['hazard'].value == 'landslide':
             solara.Markdown("#### Landslide trigger level")
             with solara.Row(justify="left"):
