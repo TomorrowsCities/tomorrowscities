@@ -22,6 +22,7 @@ import pickle
 import datetime
 import ipywidgets
 import ipydatagrid
+from solara.lab import task
 
 from . import S3Storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
@@ -430,6 +431,7 @@ def post_processing_after_load():
         building_data = building_data.merge(landuse_data[['zoneid','avgincome']],on='zoneid',how='left')
         layers.value['layers']['building']['data'].set(building_data) 
 
+@task
 def load_session():
 
     #print('loading', session_name.value)
@@ -455,9 +457,10 @@ def StorageViewer():
         solara.Button(style={"width":"48%","margin":"1%"},label="Refresh List", on_click=lambda: refresh_session_list(),
                       disabled = True if storage.value is None else False)
         solara.Button(style={"width":"48%","margin":"1%"},label="Revive Storage", on_click=lambda: revive_storage())
-        solara.Button(style={"width":"48%","margin":"1%"},label="Load session", on_click = lambda: load_session(), 
+        solara.Button(style={"width":"48%","margin":"1%"},label="Load session", on_click = load_session, 
                       disabled=True if session_name.value is None else False)
         solara.Button(style={"width":"48%","margin":"1%"},label='Clear Session', on_click=lambda: clear_session())
+    solara.ProgressLinear(load_session.pending)
     solara.Text(text=status_text.value)
 
 @solara.component
