@@ -75,7 +75,7 @@ def create_new_app_state():
             'data': solara.reactive(None),
             'df': solara.reactive(None),
             'pre_processing': building_preprocess,
-            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0, 'metric8': 0,
+            'extra_cols': {'freqincome': '', 'ds': 0,
                             'node_id': None,'hospital_access': True, 'has_power': True, 'casualty': 0},
             'filter_cols': ['expstr'],
             'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],

@@ -939,8 +939,6 @@ def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
             t['casualty'] == 1
         )
 
-    for j in range(1,10):
-        t[f'metric{j}'] = 0
 
     metric1 = len(t[is_unemployed])
     metric2 = len(t[lost_school])
