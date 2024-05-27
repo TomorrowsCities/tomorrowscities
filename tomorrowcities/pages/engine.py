@@ -341,7 +341,8 @@ def create_metadata(data):
     m['datetime_analysis'] = data['datetime_analysis']
     m['datetime_upload'] = datetime.datetime.utcnow()
     return m
-    
+
+@task 
 def save_app_state():
     data = clone_app_state(layers.value)
     metadata = create_metadata(data)
@@ -1485,6 +1486,7 @@ def ExecutePanel():
                 disabled=execute_btn_disabled)
     if storage.value is not None:
         solara.Button("Save Session",on_click=save_app_state)
+        solara.ProgressLinear(save_app_state.pending)
     PolicyPanel()
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
