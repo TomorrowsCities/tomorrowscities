@@ -27,7 +27,9 @@ from solara.lab import task
 from . import S3Storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors
-from .engine import MetricWidget
+from .engine import MetricWidget, create_new_app_state
+from ..backend.engine import generate_metrics
+from .settings import population_displacement_consensus
 
 storage = solara.reactive(None)  
 session_name = solara.reactive(None)
@@ -36,229 +38,11 @@ status_text = solara.reactive("")
 selected_tab = solara.reactive(None)
 render_count = solara.reactive(0)
 zoom = solara.reactive(14)
+tally_filter = solara.reactive(None)
+building_filter = solara.reactive(None)
+landuse_filter = solara.reactive(None)
 
-def create_new_app_state():
-    return {
-    'infra': solara.reactive(["building"]),
-    'hazard': solara.reactive("flood"),
-    'hazard_list': ["earthquake","flood","landslide"],
-    'datetime_analysis': datetime.datetime.utcnow(),
-    'landslide_trigger_level': solara.reactive('moderate'),
-    'landslide_trigger_level_list': ['minor','moderate','severe'],
-    'dialog_message_to_be_shown': solara.reactive(None),
-    'seed': solara.reactive(42),
-    'version': '0.2.4_fix2',
-    'layers' : {
-        'parameter': {
-            'render_order': 0,
-            'map_info_tooltip': 'Number of records',
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'attributes_required': [set(['unnamed: 0'])],
-            'attributes': [set(['unnamed: 0'])]},
-        'landuse': {
-            'render_order': 20,
-            'map_info_tooltip': 'Number of landuse zones',
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['luf'],
-            'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
-            'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
-        'building': {
-            'render_order': 50,
-            'map_info_tooltip': 'Number of buildings',
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'pre_processing': building_preprocess,
-            'extra_cols': {'freqincome': '', 'ds': 0, 'metric1': 0, 'metric2': 0, 'metric3': 0,'metric4': 0, 'metric5': 0,'metric6': 0,'metric7': 0, 'metric8': 0,
-                            'node_id': None,'hospital_access': True, 'has_power': True, 'casualty': 0},
-            'filter_cols': ['occbld','specialfac'], # TODO: cols exist only after analysis
-            'attributes_required': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])],
-            'attributes': [set(['residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'])]},
-        'household': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of households',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {'node_id': None, 'hospital_access': True, 'has_power':True,'hospital_has_power':True},
-            'filter_cols': ['income'],
-            'attributes_required': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])],
-            'attributes': [set(['hhid', 'nind', 'income', 'bldid', 'commfacid'])]},
-        'individual': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of individuals',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {'facility_access':True},
-            'filter_cols': ['gender'],
-            'attributes_required': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])],
-            'attributes': [set(['individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'])]},
-        'intensity': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of intensity measurements',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['im'],
-            'attributes_required': [set(['geometry','im']), set(['geometry','pga'])],
-            'attributes': [set(['geometry','im']), set(['geometry','pga'])]},
-        'fragility': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of records in fragility configuration',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['expstr'],
-            'attributes_required': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])],
-            'attributes': [set(['expstr','muds1_g','muds2_g','muds3_g','muds4_g','sigmads1','sigmads2','sigmads3','sigmads4'])]},
-        'landslide fragility': {
-            'render_order': 0,
-            'map_info_tooltip': 'Number of landslide fragility records',
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['expstr'],
-            'attributes_required': [set(['expstr','susceptibility','minor','moderate','severe'])],
-            'attributes': [set(['expstr','susceptibility','minor','moderate','severe','description'])]},            
-        'vulnerability': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of records in vulnerabilty configuration',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['expstr'],
-            'attributes_required': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])],
-            'attributes': [set(['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5','hw6'])]},
-        'gem_vulnerability': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of functions in gem vulnerabilty',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['id'],
-            'attributes_required': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
-            'attributes': [set(['id', 'assetCategory', 'lossCategory', 'description', 'vulnerabilityFunctions'])],
-        },
-        'power nodes': {
-            'render_order': 90,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of electrical power nodes',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {'ds': 0, 'is_damaged': False, 'is_operational': True},
-            'filter_cols': ['node_id'],
-            'attributes_required': [set(['geometry', 'node_id', 'pwr_plant', 'n_bldgs'])],
-            'attributes': [set(['geometry', 'fltytype', 'strctype', 'utilfcltyc', 'indpnode', 'guid', 
-                         'node_id', 'x_coord', 'y_coord', 'pwr_plant', 'serv_area', 'n_bldgs', 
-                         'income', 'eq_frgl'])]},
-        'power edges': {
-            'render_order': 80,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of connections in power grid',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['edge_id'],
-            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id'])],
-            'attributes': [set(['from_node', 'direction', 'pipetype', 'edge_id', 'guid', 'capacity', 
-                         'geometry', 'to_node', 'length'])]},
-        'power fragility': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Number of records in fragility configuration for power',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['vuln_string'],
-            'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete'])],
-            'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'beta_slight', 'beta_moderate', 'beta_extensive', 'beta_complete', 'description'])]},
-        'road nodes': {
-            'render_order': 90,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': '# nodes in road network',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['node_id'],
-            'attributes_required': [set(['geometry', 'node_id'])],
-            'attributes': [set(['geometry', 'node_id'])]},
-        'road edges': {
-            'render_order': 80,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': '# edges in road network',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {'ds': 0,'is_damaged': False},
-            'filter_cols': ['bridge_type'],
-            'attributes_required': [set(['geometry','from_node','to_node', 'edge_id','bridge_type','length'])],
-            'attributes': [set(['geometry','from_node','to_node', 'edge_id','bridge','bridge_type','length'])]},
-        'road fragility': {
-            'render_order': 0,
-            'data': solara.reactive(None),
-            'df': solara.reactive(None),
-            'map_info_tooltip': 'Road fragility records',
-            'pre_processing': identity_preprocess,
-            'extra_cols': {},
-            'filter_cols': ['vuln_string'],
-            'attributes_required': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'dispersion'])],
-            'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
-                         'dispersion'])]}
-            },
-    'center': solara.reactive((41.01,28.98)),
-    'render_count': solara.reactive(0),
-    'bounds': solara.reactive(None),
-    'selected_policies': solara.reactive([]),
-    'policies': {
-        '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
-        '2': {'id':2, 'label': 'P2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
-        '3': {'id':3, 'label': 'P3', 'description': 'Robust investment in WASH (water, sanitation and hygiene) and flood-control infrastructure', 'applied': solara.reactive(False)},
-        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks and public spaces through conventional paving', 'applied': solara.reactive(False)},
-        '5': {'id':5, 'label': 'P5', 'description': 'Shelter Law - All low-income and informal settlements should have physical and free access to community centres and shelters', 'applied': solara.reactive(False)},
-        '6': {'id':6, 'label': 'P6', 'description': 'Funding community-based networks in low-income areas (holistic approaches)', 'applied': solara.reactive(False)},
-        '7': {'id':7, 'label': 'P7', 'description': 'Urban farming programs', 'applied': solara.reactive(False)},
-        '8': {'id':8, 'label': 'P8', 'description': 'Emergency cash transfers to vulnerable households', 'applied': solara.reactive(False)},
-        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and rivers cleaning program ', 'applied': solara.reactive(False)},
-        '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
-        '11': {'id':11, 'label': 'I1', 'description': 'DRR-oriented zoning and urban transformation', 'applied': solara.reactive(False)},
-        '12': {'id':12, 'label': 'I2', 'description': 'Increased monitoring and supervision on new constructions in terms of disaster-resilience', 'applied': solara.reactive(False)},
-        '13': {'id':13, 'label': 'I3', 'description': 'Taking social equality into consideration in the making of urbanisation and DRR policies', 'applied': solara.reactive(False)},
-        '14': {'id':14, 'label': 'I4', 'description': 'Establishing financial supports to incentivise the public, which can be referred to as "policy financing"', 'applied': solara.reactive(False)},
-        '15': {'id':15, 'label': 'I5', 'description': 'Awareness raising on disasters and disaster risk reduction', 'applied': solara.reactive(False)},
-        '16': {'id':16, 'label': 'I6', 'description': 'Strengthening of Büyükçekmece bridge against earthquake and tsunami risks', 'applied': solara.reactive(False)},
-        '17': {'id':17, 'label': 'I7', 'description': 'Strengthening of public buildings (especially schools) against earthquake', 'applied': solara.reactive(False)},
-        '18': {'id':18, 'label': 'I8', 'description': 'Increased financial assistance for people whose apartments are under urban transformation', 'applied': solara.reactive(False)},
-        '19': {'id':19, 'label': 'I9', 'description': 'Increased monitoring and supervision of building stock', 'applied': solara.reactive(False)},
-        '20': {'id':20, 'label': 'I10', 'description': 'Improvement of infrastructure', 'applied': solara.reactive(False)},
-    },
-    'implementation_capacity_score': solara.reactive("high"),
-    'data_import_method': solara.reactive("drag&drop"),
-    'map_info_button': solara.reactive("summary"),
-    'map_info_detail': solara.reactive({}),
-    'metrics': {
-        "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
-        "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
-        "metric3": {"desc": "Number of households with no access to hospital", "value": 0, "max_value": 100},
-        "metric4": {"desc": "Number of individuals with no access to hospital", "value": 0, "max_value": 100},
-        "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
-        "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
-        "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},
-        "metric8": {"desc": "Number of casualties", "value": 0, "max_value":100},}}
-
-layers = solara.reactive(create_new_app_state())
+layers = create_new_app_state()
 
 def create_map_layer(df, name):
     if name == "intensity":
@@ -517,7 +301,7 @@ def MapViewer():
             if l == 'building':
                 continue
             df = layers.value['layers'][l]['data'].value
-            if df is not None:
+            if df is not None and isinstance(df, gpd.GeoDataFrame):
                 map_layer_dict[l] = create_map_layer(df, l)
         set_map_layers(map_layer_dict)
 
@@ -542,7 +326,30 @@ def MapViewer():
         layout = layout
         )
     print(f"render count {render_count.value}")
-    
+
+metric_update_pending = solara.reactive(False)
+
+
+@task
+def generate_metrics_local():
+    metric_update_pending.set(True)
+    print("Emtering generate_metrics_local")
+    metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
+
+    tally = layers.value['tally'].value
+    tally_geo = layers.value['tally_geo'].value
+    if tally_geo is not None and layers.value['bounds'].value is not None:
+        ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
+        tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
+        if tally_filter.value is not None:
+            tally_filtered = tally_filtered[tally_filter.value]
+        hazard_type = layers.value['hazard'].value
+        print('Triggering generate_metrics')
+        metrics = generate_metrics(tally_filtered, tally_geo, hazard_type, population_displacement_consensus.value)
+        print('metrics', metrics)
+    metric_update_pending.set(False)
+    return metrics
+
 @solara.component
 def MetricPanel():
     metric_icon1 = 'tomorrowcities/content/icons/metric1.png'
@@ -553,30 +360,29 @@ def MetricPanel():
     metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
     metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
     metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
-    building = layers.value['layers']['building']['data'].value
-    filtered_metrics = {name: 0 for name in layers.value['metrics'].keys()}
-    if building is not None and layers.value['bounds'].value is not None:
-        ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-        filtered = building.cx[xmin:xmax,ymin:ymax]
-        for metric in filtered_metrics.keys():
-            filtered_metrics[metric] = int(filtered.cx[xmin:xmax,ymin:ymax][metric].sum())
+    filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
+    solara.use_memo(generate_metrics_local, 
+                    [layers.value['tally_geo'].value,
+                     layers.value['bounds'].value,
+                     tally_filter.value], debug_name="generate_metrics_loca")
+    if generate_metrics_local.finished:
+        filtered_metrics = generate_metrics_local.value
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
     with solara.Row(justify="space-around"):
         solara.Markdown('''<h2 style="font-weight: bold">IMPACTS</h2>''')
-        
+    solara.ProgressLinear(metric_update_pending.value)
     with solara.Row(justify="space-around"):                     
         for i in range(len(metric_icons)):
             solara.Image(metric_icons[i])
     
     with solara.Row(justify="space-around"):
-        for name, metric in layers.value['metrics'].items():
+        for name, metric in filtered_metrics.items():
             MetricWidget(name, metric['desc'], 
-                         filtered_metrics[name], 
-                         metric['max_value'],
-                         render_count.value)
-        # with solara.Link("/docs/metrics"):
-            # solara.Button(icon_name="mdi-help-circle-outline", icon=True)
+                        metric['value'],
+                        metric['max_value'],
+                        layers.value['render_count'].value)
+
     print(f"render count {render_count.value}")
 
 @solara.component
