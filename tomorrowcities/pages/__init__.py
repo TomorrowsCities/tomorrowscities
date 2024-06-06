@@ -7,10 +7,42 @@ import os
 import pickle
 import pprint
 from cryptography.fernet import Fernet
-
+from dotenv import dotenv_values
+import secrets
+from requests_oauthlib import OAuth2Session
+from typing import Dict
 from ..data import articles
 
-route_order = ["/", "engine","explore","settings"]
+config = {
+    **dotenv_values(".env.global"),  # global
+    **dotenv_values(".env.local"),  # local sensitive variables
+    **os.environ,  # override loaded values with environment variables
+}
+
+session_storage: Dict[str, Dict[str,str]] = {}
+
+github_client = OAuth2Session(config['github_client_id'], 
+                    scope=[config['github_scope']], 
+                    redirect_uri=config['github_redirect_uri'])
+google_client = OAuth2Session(config['google_client_id'], 
+                    scope=[config['google_scope']], 
+                    redirect_uri=config['google_redirect_uri'])
+
+route_order = ["/", "engine","explore","settings","account"]
+
+def store_in_session_storage(key, value):
+    sesssion_id = solara.get_session_id()
+    if sesssion_id in session_storage.keys():
+        session_storage[sesssion_id][key] = value
+    else:
+        session_storage[sesssion_id] = {key: value}
+
+def read_from_session_storage(key):
+    sesssion_id = solara.get_session_id()
+    if sesssion_id in session_storage.keys():
+        if key in session_storage[sesssion_id].keys():
+            return session_storage[sesssion_id][key]
+    return None
 
 def check_auth(route, children):
     # This can be replaced by a custom function that checks if the user is
@@ -36,10 +68,11 @@ def check_auth(route, children):
 @dataclasses.dataclass
 class User:
     username: str
+    user_profile: Dict = None
     admin: bool = False
 
 
-user = solara.reactive(cast(Optional[User], None))
+user = solara.reactive(cast(Optional[User], read_from_session_storage('user')))
 login_failed = solara.reactive(False)
 
 
@@ -48,24 +81,42 @@ def login_control(username: str, password: str):
     if username == "test" and password == "test":
         user.value = User(username, admin=False)
         login_failed.value = False
+        store_in_session_storage('user', user.value)
     elif username == "admin" and password == "admin":
         user.value = User(username, admin=True)
         login_failed.value = False
+        store_in_session_storage('user', user.value)
     else:
         login_failed.value = True
 
 
 @solara.component
 def LoginForm():
+    github_authorization_url, github_state = github_client.authorization_url(
+        config['github_authorization_base_url'],
+        access_type="offline", 
+        prompt="select_account"
+    )
+
+    google_authorization_url, google_state = google_client.authorization_url(
+        config['google_authorization_base_url'],
+        access_type="offline", 
+        prompt="select_account"
+    )
+
+    store_in_session_storage('github_state', github_state)
+    store_in_session_storage('google_state', google_state)
+
     username = solara.use_reactive("")
     password = solara.use_reactive("")
     with solara.Card("Login"):
-        solara.Markdown(
-            """
-        This is an example login form.
-          * use test/test to login as a normal user.
-        """
-        )
+        with solara.Row():
+            solara.Button(label="Login via Google", icon_name="mdi-google", 
+                attributes={"href": google_authorization_url}, text=True, outlined=True, 
+                on_click=lambda: store_in_session_storage('auth_company','google'))
+            solara.Button(label="Login via GitHub", icon_name="mdi-github-circle", 
+                attributes={"href": github_authorization_url}, text=True, outlined=True,
+                on_click=lambda: store_in_session_storage('auth_company','github'))
         solara.InputText(label="Username", value=username)
         solara.InputText(label="Password", password=True, value=password)
         solara.Button(label="Login", on_click=lambda: login_control(username.value, password.value))

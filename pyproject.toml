@@ -23,6 +23,8 @@ dependencies = [
     "boto3",
     "cryptography",
     "ipydatagrid",
+    "requests_oauthlib",
+    "python-dotenv",
 ]
 
 [tool.hatch.version]
