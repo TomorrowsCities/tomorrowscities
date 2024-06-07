@@ -11,13 +11,44 @@ category:
   - general
 ---
 
-## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.4
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.5
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## Documentation
 Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/TomorrowsCities/tomorrowcities/wiki) 
 
 ## What is New?
+
+
+**Changelog: v0.5**
+
+* feature: github/google authentication via OAuth2 by @hkayabilisim in [68](https://github.com/TomorrowsCities/tomorrowscities/pull/68)
+* feature: storage-related improvements by @hkayabilisim in [69](https://github.com/TomorrowsCities/tomorrowscities/pull/69)
+
+
+    - AWS credentials are now in local secret env. This makes it possible
+      to deploy the webapp pre-configures to have access to S3 bucket
+    - Storage-related configs are removed from settings page
+    - Storage initialization is moved into __init__
+    - User information is added to the session metadata
+    - Metadata viewer is added
+    - Session save is disable if no run is made
+    - session list is loaded on initialization
+
+
+* feature: redundant policies redefined, step 1 by @hkayabilisim in [56](https://github.com/TomorrowsCities/tomorrowscities/pull/56)
+* feature: separeated map and metric filters by @hkayabilisim in [59](https://github.com/TomorrowsCities/tomorrowscities/pull/59)
+* feature: add more features to building filter by @hkayabilisim in [60](https://github.com/TomorrowsCities/tomorrowscities/pull/60)
+* ui: provide auto-resize metric panel by @o-z-e-r-e-r in [57](https://github.com/TomorrowsCities/tomorrowscities/pull/57)
+* ui: moved "earthquake_intensity_unit" to ENGINE by @hkayabilisim in [61](https://github.com/TomorrowsCities/tomorrowscities/pull/61)
+* ui: added progress bar during session upload by @hkayabilisim in [65](https://github.com/TomorrowsCities/tomorrowscities/pull/65)
+* ui: added progress bar during session load by @hkayabilisim in [66](https://github.com/TomorrowsCities/tomorrowscities/pull/66)
+* fix: refactored explore for indiv-based metrics by @hkayabilisim in [67](https://github.com/TomorrowsCities/tomorrowscities/pull/67)
+* fix: center calculation is now in geometric by @hkayabilisim in [62](https://github.com/TomorrowsCities/tomorrowscities/pull/62)
+* fix: remove pandas warning message by @hkayabilisim in [63](https://github.com/TomorrowsCities/tomorrowscities/pull/63)
+* fix: remove metricX cols from building by @hkayabilisim in [64](https://github.com/TomorrowsCities/tomorrowscities/pull/64)
+
+**Full Changelog**: [v0.4...v0.5](https://github.com/TomorrowsCities/tomorrowscities/compare/v0.4...v0.5)
 
 
 **Changelog: v0.4**

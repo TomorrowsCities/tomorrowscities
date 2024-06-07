@@ -49,7 +49,7 @@ def create_new_app_state():
     'earthquake_intensity_unit': solara.reactive('m/s2'),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
-    'version': '0.4',
+    'version': '0.5',
     'layers' : {
         'parameter': {
             'render_order': 0,
