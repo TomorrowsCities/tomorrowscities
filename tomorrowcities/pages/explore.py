@@ -23,17 +23,22 @@ import datetime
 import ipywidgets
 import ipydatagrid
 from solara.lab import task
+import secrets
 
-from . import S3Storage
+from . import storage, connect_storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors
 from .engine import MetricWidget, create_new_app_state
 from ..backend.engine import generate_metrics
 from .settings import population_displacement_consensus
 
-storage = solara.reactive(None)  
+def get_session_list():
+    if storage.value is not None:
+        return sorted(storage.value.list_sessions(),reverse=True)
+    return None
+
 session_name = solara.reactive(None)
-session_list = solara.reactive([])
+session_list = solara.reactive(get_session_list())
 status_text = solara.reactive("")
 selected_tab = solara.reactive(None)
 render_count = solara.reactive(0)
@@ -139,13 +144,8 @@ def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_button'].set("detail")  
 
 def revive_storage():
-    if 'aws_access_key_id' in os.environ:
-        print('reviving storage from env')
-        revived_storage = S3Storage(
-                    os.environ['aws_access_key_id'],
-                    os.environ['aws_secret_access_key'],
-                    os.environ['region_name'],
-                    os.environ['bucket_name'])
+    if storage.value is None:
+        revived_storage = connect_storage()
         if revive_storage is None:
             status_text.value = "Couldn't connect to datastore"
         else:
@@ -154,13 +154,15 @@ def revive_storage():
     else:
         status_text.value = "No storage configuration!"   
 
+
+
 def refresh_session_list():
-    if storage.value is not None:
-        print('++++++++++++++',storage.value,'+++++++++')
-        session_list.set(sorted(storage.value.list_sessions(),reverse=True))
+    sess_list = get_session_list()
+    if sess_list is not None:
+        session_list.set(sess_list)
         status_text.value = ""
     else:
-        storage.value = revive_storage()
+        session_list.set([])
         status_text.value = "no connections to AWS"
 
 def assign_nested_value(dictionary, keys, value):
@@ -195,10 +197,6 @@ def load_app_state():
         loaded_state = pickle.load(fileObj)
         #layers.set(loaded_state)
         load_from_state(loaded_state)
-    with open('session.metadata', 'rb') as fileObj:
-        print('Opening session.metadata...')
-        loaded_state = pickle.load(fileObj)
-        #print(loaded_state)
 
 def post_processing_after_load():
     # DF : no geometry
@@ -226,6 +224,30 @@ def load_session():
     post_processing_after_load()
     force_render()
 
+def fetch_metadata(session_name):
+    storage.value.get_client().download_file(storage.value.bucket_name, session_name + '.metadata', f'session.metadata')
+    with open('session.metadata', 'rb') as fileObj:
+        print('Opening session.metadata...')
+        metadata = pickle.load(fileObj)
+        return metadata
+
+@solara.component
+def MetaDataViewer(session_name):
+    session_name, _ = solara.use_state_or_update(session_name.value)
+    if session_name is not None:
+        metadata = fetch_metadata(session_name)
+
+        with solara.GridFixed(columns=2,row_gap="1px"):
+            for key,value in metadata.items():
+
+                solara.Text(f'{key}')
+                with solara.Row(justify="right"):
+                    if value is None:
+                        solara.Text('None')
+                    else:
+                        solara.Text(f'{value}')
+        print(metadata)
+
 def clear_session():
     layers.value = create_new_app_state()
     force_render()
@@ -246,6 +268,7 @@ def StorageViewer():
         solara.Button(style={"width":"48%","margin":"1%"},label='Clear Session', on_click=lambda: clear_session())
     solara.ProgressLinear(load_session.pending)
     solara.Text(text=status_text.value)
+    MetaDataViewer(session_name)
 
 @solara.component
 def MapViewer():
