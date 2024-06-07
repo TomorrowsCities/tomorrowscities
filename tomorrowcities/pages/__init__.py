@@ -69,7 +69,15 @@ def check_auth(route, children):
 class User:
     username: str
     user_profile: Dict = None
+    auth_company: str = None
     admin: bool = False
+
+    def get_unique_id(self):
+        if self.user_profile and self.auth_company:
+            unique_id = f'{self.auth_company}-{self.user_profile["id"]}'
+        else:
+            unique_id = f'{self.username}'
+        return unique_id
 
 
 user = solara.reactive(cast(Optional[User], read_from_session_storage('user')))
@@ -239,6 +247,24 @@ class S3Storage(dict):
     def list_sessions(self):
         objects = self.list_objects()
         return [o for o in objects if "TCDSE_SESSION" in o]
+
+def connect_storage():
+    print('reviving storage from env')
+    try:
+
+        storage = S3Storage(
+                    config['aws_access_key_id'],
+                    config['aws_secret_access_key'],
+                    config['region_name'],
+                    config['bucket_name'])
+        print('storage is', storage)
+        if storage.is_alive():
+            return storage
+    except Exception as e:
+        print(e)
+        return None
+
+storage = solara.reactive(connect_storage())  
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):

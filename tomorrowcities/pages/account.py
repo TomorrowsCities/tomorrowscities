@@ -29,6 +29,7 @@ def Page():
         LoginForm()        
     else:
         solara.Text(f'Hello {user.value.username}')
+        solara.Text(f'Univeral id {user.value.get_unique_id()}')
         if user.value.user_profile:
             for key, value in user.value.user_profile.items():
                 if key in ['avatar_url', 'picture']:
@@ -69,7 +70,7 @@ def Page():
             user_dict = json.loads(r.content.decode('utf-8'))
             print(user_dict)
             username = user_dict['name']
-            user.value = User(username, admin=False, user_profile=user_dict)
+            user.value = User(username, admin=False, auth_company=auth_company, user_profile=user_dict)
             
             login_failed.value = False
 

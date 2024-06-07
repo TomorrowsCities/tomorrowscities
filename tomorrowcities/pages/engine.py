@@ -21,7 +21,8 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
-from .settings import storage, landslide_max_trials, revive_storage
+from . import storage, user
+from .settings import landslide_max_trials
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
@@ -340,6 +341,10 @@ def create_metadata(data):
     m['infra'] = data['infra']
     m['datetime_analysis'] = data['datetime_analysis']
     m['datetime_upload'] = datetime.datetime.utcnow()
+    if user.value:
+        m['user_id'] = user.value.get_unique_id()
+    else:
+        m['user_id'] = None
     return m
 
 @task 
@@ -1485,7 +1490,12 @@ def ExecutePanel():
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
     if storage.value is not None:
-        solara.Button("Save Session",on_click=save_app_state)
+        tally = layers.value['tally'].value
+        if tally is None:
+            with solara.Tooltip('Generate results first'):
+                solara.Button("Save Session",on_click=save_app_state, disabled=True)
+        else:
+            solara.Button("Save Session",on_click=save_app_state, disabled=False)
         solara.ProgressLinear(save_app_state.pending)
     PolicyPanel()
     # The statements in this block are passed several times during thread execution
@@ -1559,14 +1569,14 @@ def MapInfo():
 def ImportDataZone():
     def s3_file_open(p):
         #print(p)
-        storage.value.s3.download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
+        storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
 
         with open(f'/tmp/aws.tmp', 'rb') as fileObj:
             fileContent = fileObj.read()
             file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
                                                              size=len(fileContent),
                                                              data=fileContent)
-            set_fileinfo(file_info)
+            set_fileinfo([file_info])
 
     def local_file_open(p):
         with open(p, 'rb') as fileObj:
@@ -1574,7 +1584,7 @@ def ImportDataZone():
             file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
                                                              size=len(fileContent),
                                                              data=fileContent)
-            set_fileinfo(file_info)
+            set_fileinfo([file_info])
 
     total_progress, set_total_progress = solara.use_state(-1)
     fileinfo, set_fileinfo = solara.use_state(None)
@@ -1749,8 +1759,6 @@ def ImportDataZone():
 
 @solara.component
 def WebApp():
-    if storage.value is None:
-        storage.value = revive_storage()
     solara.Title(" ")
     with solara.Sidebar():
         with solara.lab.Tabs():
