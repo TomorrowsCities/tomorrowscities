@@ -5,7 +5,7 @@ import pprint
 from urllib.parse import parse_qs
 import json
 
-from . import user, User, login_failed, config, LoginForm, \
+from . import user, User, config, LoginForm, \
               github_client, google_client, \
               session_storage, read_from_session_storage, store_in_session_storage
 
@@ -72,8 +72,6 @@ def Page():
             username = user_dict['name']
             user.value = User(username, admin=False, auth_company=auth_company, user_profile=user_dict)
             
-            login_failed.value = False
-
             store_in_session_storage('user', user.value)
            
             # used only to force updating of the page
