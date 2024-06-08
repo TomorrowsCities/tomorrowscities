@@ -81,21 +81,6 @@ class User:
 
 
 user = solara.reactive(cast(Optional[User], read_from_session_storage('user')))
-login_failed = solara.reactive(False)
-
-
-def login_control(username: str, password: str):
-    # this function can be replace by a custom username/password check
-    if username == "test" and password == "test":
-        user.value = User(username, admin=False)
-        login_failed.value = False
-        store_in_session_storage('user', user.value)
-    elif username == "admin" and password == "admin":
-        user.value = User(username, admin=True)
-        login_failed.value = False
-        store_in_session_storage('user', user.value)
-    else:
-        login_failed.value = True
 
 
 @solara.component
@@ -125,12 +110,6 @@ def LoginForm():
             solara.Button(label="Login via GitHub", icon_name="mdi-github-circle", 
                 attributes={"href": github_authorization_url}, text=True, outlined=True,
                 on_click=lambda: store_in_session_storage('auth_company','github'))
-        solara.InputText(label="Username", value=username)
-        solara.InputText(label="Password", password=True, value=password)
-        solara.Button(label="Login", on_click=lambda: login_control(username.value, password.value))
-        if login_failed.value:
-            solara.Error("Wrong username or password")
-
 
 
 @solara.component
