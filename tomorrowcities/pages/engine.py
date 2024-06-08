@@ -1491,9 +1491,8 @@ def ExecutePanel():
                 disabled=execute_btn_disabled)
     if storage.value is not None:
         tally = layers.value['tally'].value
-        if tally is None:
-            with solara.Tooltip('Generate results first'):
-                solara.Button("Save Session",on_click=save_app_state, disabled=True)
+        if tally is None or user.value is None:
+            solara.Button("Save Session", disabled=True)
         else:
             solara.Button("Save Session",on_click=save_app_state, disabled=False)
         solara.ProgressLinear(save_app_state.pending)
