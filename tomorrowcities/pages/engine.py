@@ -33,6 +33,7 @@ from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
 import ipywidgets
 from solara.lab import task
+import tempfile
 
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
@@ -356,11 +357,13 @@ def save_app_state():
     basename = f'TCDSE_SESSION_{date_string}_PKL'
     for ext, var in zip(['data','metadata'],[data,metadata]):
         filename = f'{basename}.{ext}'
-        with open(filename, 'wb') as fileObj:
-            pickle.dump(var, fileObj)
-        if storage.value is not None:
-            print('uploading file', filename)
-            storage.value.upload_file(filename)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with open(os.path.join(temp_dir,filename), 'wb') as fileObj:
+                pickle.dump(var, fileObj)
+            if storage.value is not None:
+                print('uploading file', filename)
+                storage.value.upload_file(os.path.join(temp_dir,filename), filename)
+                os.unlink(os.path.join(temp_dir, filename))
 
 def generic_layer_colors(feature):
     return None
