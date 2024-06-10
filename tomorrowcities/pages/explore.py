@@ -24,6 +24,7 @@ import ipywidgets
 import ipydatagrid
 from solara.lab import task
 import secrets
+import tempfile
 
 from . import storage, connect_storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
@@ -190,13 +191,7 @@ def load_from_state(source_dict):
                 else:
                     assign_nested_value(layers.value, keys, src_value)
 
-def load_app_state():
 
-    with open('session.data', 'rb') as fileObj:
-        print('Opening session.data...')
-        loaded_state = pickle.load(fileObj)
-        #layers.set(loaded_state)
-        load_from_state(loaded_state)
 
 def post_processing_after_load():
     # DF : no geometry
@@ -215,21 +210,28 @@ def post_processing_after_load():
 
 @task
 def load_session():
-
-    #print('loading', session_name.value)
-    storage.value.get_client().download_file(storage.value.bucket_name, session_name.value + '.data', f'session.data')
-    storage.value.get_client().download_file(storage.value.bucket_name, session_name.value + '.metadata', f'session.metadata')
-
-    load_app_state()
+    tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
+    storage.value.get_client().download_fileobj(storage.value.bucket_name, session_name.value + '.data', tmp_file)
+    tmp_file.close()
+    with open(tmp_file.name, 'rb') as obj_file:
+        print('unpickle session..', session_name.value)
+        loaded_state = pickle.load(obj_file)
+        load_from_state(loaded_state)
+    os.unlink(tmp_file.name)  
     post_processing_after_load()
     force_render()
 
 def fetch_metadata(session_name):
-    storage.value.get_client().download_file(storage.value.bucket_name, session_name + '.metadata', f'session.metadata')
-    with open('session.metadata', 'rb') as fileObj:
+    tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
+    storage.value.get_client().download_fileobj(storage.value.bucket_name, session_name + '.metadata', tmp_file)
+    tmp_file.close()
+    # Read tmp_file in binary read
+    with open(tmp_file.name, 'rb') as obj_file:
         print('Opening session.metadata...')
-        metadata = pickle.load(fileObj)
-        return metadata
+        metadata = pickle.load(obj_file)
+    # Delete tmp_file
+    os.unlink(tmp_file.name)
+    return metadata
 
 @solara.component
 def MetaDataViewer(session_name):
