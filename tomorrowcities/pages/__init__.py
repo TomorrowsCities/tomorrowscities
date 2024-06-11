@@ -111,9 +111,14 @@ def LoginForm():
                 attributes={"href": github_authorization_url}, text=True, outlined=True,
                 on_click=lambda: store_in_session_storage('auth_company','github'))
 
+def logout():
+    store_in_session_storage('user', None)
+    user.set(None)
 
 @solara.component
 def Layout(children=[]):
+    user.value = read_from_session_storage('user')
+
     router = solara.use_context(solara.routing.router_context)
     route, routes = solara.use_route(peek=True)
 
@@ -134,7 +139,7 @@ def Layout(children=[]):
                 solara.Text(f"Logged in as {user.value.username} as {'admin' if user.value.admin else 'user'}")
                 with solara.Tooltip("Logout"):
                     with solara.Link(f"/account"):
-                        solara.Button(icon_name="mdi-logout", icon=True, on_click=lambda: user.set(None))
+                        solara.Button(icon_name="mdi-logout", icon=True, on_click=logout)
             else:
                 with solara.Link(f"/account"):
                     solara.Button(icon_name="mdi-login",label='login', icon=True)
