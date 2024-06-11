@@ -275,9 +275,10 @@ def StorageViewer():
 @solara.component
 def MapViewer():
     print('rendering mapviewer')
+    default_zoom = 14
+    zoom, set_zoom = solara.use_state(default_zoom)
     base_layers, set_base_layers = solara.use_state_or_update([])
-    map_layers, set_map_layers = solara.use_state_or_update({})
-    building_layer, set_building_layer = solara.use_state([])
+    map_layers, set_map_layers = solara.use_state_or_update([])
 
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
@@ -296,47 +297,32 @@ def MapViewer():
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')
 
-    building_filter, _ = solara.use_cross_filter(id(layers.value['layers']['building']['df'].value), "building")
-
-    #filters = dict()
-    #for l in layers.value['layers'].keys():
-        #print(l, type(layers.value['layers'][l]['df']), id(None))
-        #print(layers.value['layers'])
-
-        #filters[l], _ = solara.use_cross_filter(id(layers.value['layers'][l]['df'].value), "dataframe")
-        #filters[l], _ = solara.use_cross_filter(id(None), "dataframe")
-
-    def update_building_layer():
-        print('update buildings')
-        df = layers.value['layers']['building']['data'].value
-        if df is None:
-            set_building_layer([])
-        else:
-            set_building_layer([create_map_layer(df, 'building')])
-            if building_filter is None:
-                print('filter is none')
-                set_building_layer([create_map_layer(df, 'building')])
-            else:
-                print(len(df[building_filter]))
-                set_building_layer([create_map_layer(df[building_filter], 'building')])
-
     def create_layers():
-        map_layer_dict = {}
+        map_layers = []
         for l in layers.value['layers'].keys():
-            if l == 'building':
-                continue
             df = layers.value['layers'][l]['data'].value
             if df is not None and isinstance(df, gpd.GeoDataFrame):
-                map_layer_dict[l] = create_map_layer(df, l)
-        set_map_layers(map_layer_dict)
+                df_filtered = df
+                if l == 'building':
+                    if building_filter.value is not None:
+                        df_filtered = df[building_filter.value]
+                if l == 'landuse':
+                    if landuse_filter.value is not None:
+                        df_filtered = df[landuse_filter.value]
 
-    solara.use_memo(create_layers, [layer['df'].value for name, layer in layers.value['layers'].items()])
-    solara.use_memo(update_building_layer, [building_filter, layers.value['layers']['building']['df'].value])
+                map_layer = create_map_layer(df_filtered, l)
+                map_layers.append(map_layer)
+
+        set_map_layers(map_layers)
+
+    solara.use_memo(create_layers,
+                    [building_filter.value, landuse_filter.value] +
+                    [render_count.value])
 
     ipyleaflet.Map.element(
-        zoom=zoom.value,
-        max_zoom=23,        
-        on_zoom=zoom.set,
+        zoom=zoom,
+        max_zoom=23,
+        on_zoom=set_zoom,
         on_bounds=layers.value['bounds'].set,
         center=layers.value['center'].value,
         on_center=layers.value['center'].set,
@@ -346,11 +332,11 @@ def MapViewer():
         touch_zoom=True,
         box_zoom=True,
         keyboard=True if random.random() > 0.5 else False,
-        layers=base_layers + list(map_layers.values()) + building_layer,
+        layers=base_layers + map_layers,
         controls = [tool1, tool2, tool3, tool4],
         layout = layout
         )
-    print(f"render count {render_count.value}")
+    print(f"MapViewer render count {render_count.value}")
 
 metric_update_pending = solara.reactive(False)
 
@@ -452,85 +438,28 @@ def MapInfo():
     
 @solara.component
 def FilterPanel():
-    solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Damage State Filter</h4>''')
-    if layers.value['layers']['building']['df'].value is not None:
-        solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        for filter_col in ['ds']:
-            solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     filter_col)  
+    lbl = {'ds': 'Damage State',
+           'material': 'Load-Resisting System (Material)',
+            'code_level': 'Code Level',
+            'storeys': 'Number of Floors',
+            'occupancy': 'Occupancy Type',
+            'specialfac': 'Special Facility'}
+    building = layers.value['layers']['building']['df'].value
+    building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
+
+    if building is not None:
+        with solara.Row(): #spacer
+            solara.Markdown('''<h5 style=""></h5>''')
+        for attr, attr_name in lbl.items():
+            btn = solara.Button(attr_name)
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"
+                    #solara.CrossFilterReport(building)
+                    solara.CrossFilterSelect(building, attr, multiple=True, configurable=False)
     else:
-        solara.Info('No data to filter')
+        solara.Text("No data to filter")
     print(f"fiter panel render count {render_count.value}")
 
-    solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Income Level Filter</h4>''')
-    if layers.value['layers']['building']['df'].value is not None:
-        solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        for filter_col in ['freqincome']:
-            solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     filter_col)  
-    else:
-        solara.Info('No data to filter')
-    print(f"fiter panel render count {render_count.value}")
-
-    # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Load Resisting System Filter</h4>''')
-    # if layers.value['layers']['building']['df'].value is not None:
-        # solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        # for filter_col in ['lrstype']:
-            # solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     # filter_col)  
-    # else:
-        # solara.Info('No data to filter')
-    # print(f"fiter panel render count {render_count.value}")
-    
-    # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Code Level Filter</h4>''')
-    # if layers.value['layers']['building']['df'].value is not None:
-        # solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        # for filter_col in ['codelevel']:
-            # solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     # filter_col)  
-    # else:
-        # solara.Info('No data to filter')
-    # print(f"fiter panel render count {render_count.value}")
-    
-    # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Height Filter</h4>''')
-    # if layers.value['layers']['building']['df'].value is not None:
-        # solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        # for filter_col in ['nstoreys']:
-            # solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     # filter_col)  
-    # else:
-        # solara.Info('No data to filter')
-    # print(f"fiter panel render count {render_count.value}")
-
-    # solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Occupation Type Filter</h4>''')
-    # if layers.value['layers']['building']['df'].value is not None:
-        # solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        # for filter_col in ['occbld']:
-            # solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     # filter_col)  
-    # else:
-        # solara.Info('No data to filter')
-    # print(f"fiter panel render count {render_count.value}")
-
-    solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Special Facility Filter</h4>''')
-    if layers.value['layers']['building']['df'].value is not None:
-        solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        for filter_col in ['specialfac']:
-            solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     filter_col)  
-    else:
-        solara.Info('No data to filter')
-    print(f"fiter panel render count {render_count.value}")
-    
-    solara.Markdown('''<h4 style="text-align: left; text-decoration:underline">Polygon (ZoneID) Filter</h4>''')
-    if layers.value['layers']['building']['df'].value is not None:
-        solara.CrossFilterReport(layers.value['layers']['building']['df'].value, classes=["py-2"])
-        for filter_col in ['zoneid']:
-            solara.CrossFilterSelect(layers.value['layers']['building']['df'].value, 
-                                     filter_col)  
-    else:
-        solara.Info('No data to filter')
-    print(f"fiter panel render count {render_count.value}")
 
 @solara.component
 def Page():    
