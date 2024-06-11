@@ -286,6 +286,9 @@ metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
 metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
 metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
 
+ds_to_color = {0: '#d7191c', 1: '#fdae61', 2:'#ffffbf', 3:'#abd9e9', 4: '#2c7bb6'}
+# approximate color names when hex codes can't be used
+ds_to_color_approx = {0: 'red', 1: 'orange', 2:'beige', 3:'lightblue', 4: 'darkblue'}
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
 
@@ -373,15 +376,8 @@ def generic_layer_click_handler(event=None, feature=None, id=None, properties=No
     layers.value['map_info_button'].set("detail")  
 
 def building_colors(feature):
-    ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
     ds = feature['properties']['ds']
-    hospital_access = feature['properties']['hospital_access']
-    has_power = feature['properties']['has_power']
-
-    occupancy = feature['properties']['occupancy']
-    normal_color = 'green' if occupancy == 'Hea' else 'blue'
-    #return {'fillColor': 'black', 'color': 'red' if hospital_access == False else normal_color}
-    return {'fillColor': 'black', 'color': 'green' if ds == 0 else 'red'}
+    return {'fillColor': ds_to_color[ds], 'color': 'black'}
 
 def building_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_detail'].set(properties)
@@ -393,14 +389,25 @@ def road_node_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_button'].set("detail")  
 
 def road_edge_colors(feature):
-    is_damaged = feature['properties']['is_damaged'] 
-    if feature['properties']['bridge_type'] is not None:
-        color = 'black'
+    is_damaged = feature['properties']['is_damaged']
+    if is_damaged:
+        return {'color': 'black',  'dashArray': '8'}
     else:
-        color = 'blue'
-    return {'color': 'red' if is_damaged else color}
+        return {'color': 'black',  'dashArray': '0'}
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
+    #print(properties)
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail") 
+
+def power_edge_colors(feature):
+    is_damaged = feature['properties'].get('is_damaged', False)
+    if is_damaged:
+        return {'color': 'blue',  'dashArray': '8'}
+    else:
+        return {'color': 'blue',  'dashArray': '0'}
+
+def power_edge_click_handler(event=None, feature=None, id=None, properties=None):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
@@ -412,79 +419,44 @@ def landuse_click_handler(event=None, feature=None, id=None, properties=None):
 @solara.memoize(key=lambda feature: (feature['properties']['luf']))
 def landuse_colors(feature):
     #print(feature)
-    luf_type = feature['properties']['luf']
-    if luf_type == 'RESIDENTIAL (HIGH DENSITY)':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#A0522D', # sienna
-        }    
-    elif luf_type == 'HISTORICAL PRESERVATION AREA':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#673147', # plum
-        }    
-    elif luf_type == 'RESIDENTIAL (MODERATE DENSITY)':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#cd853f', # peru
-        }   
-    elif luf_type == 'COMMERCIAL AND RESIDENTIAL':
-        luf_color = {
-        'color': 'black',
-        'fillColor': 'red',
-        }   
-    elif luf_type == 'CITY CENTER':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#E6E6FA', # lavender
-        }   
-    elif luf_type == 'INDUSTRY':
-        luf_color = {
-        'color': 'black',
-        'fillColor': 'grey',
-        }   
-    elif luf_type == 'RESIDENTIAL (LOW DENSITY)':
-        luf_color= {
-        'color': 'black',
-        'fillColor': '#D2B48C', # tan
-        }   
-    elif luf_type == 'RESIDENTIAL (GATED NEIGHBORHOOD)':
-        luf_color= {
-        'color': 'black',
-        'fillColor': 'orange',
-        }   
-    elif luf_type == 'AGRICULTURE':
-        luf_color= {
-        'color': 'black',
-        'fillColor': 'yellow',
-        }   
-    elif luf_type == 'FOREST':
-        luf_color= {
-        'color': 'black',
-        'fillColor': 'green',
-        }   
-    elif luf_type == 'VACANT ZONE':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#90EE90', # lightgreen
-        }   
-    elif luf_type == 'RECREATION AREA':
-        luf_color = {
-        'color': 'black',
-        'fillColor': '#32CD32', #lime
-        }   
+    luf_type = set(feature['properties']['luf'].lower().replace('(','').replace(')','').split())
+    if {'high','residential','density'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#AF2418'}
+    elif {'medium','residential','density'}.issubset(luf_type) or {'moderate','residential','density'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#EB5149'}
+    elif {'low','residential','density'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#EF8784'}
+    elif {'commercial','residential'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#B73A51'}
+    elif {'water'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#9DEFE6'}
+    elif {'agriculture'}.issubset(luf_type) or {'agricultural'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#FFFFB2'}
+    elif {'forest'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#3D8A26'}
+    elif {'industry'}.issubset(luf_type) or {'industrial'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#8A00FF'}
+    elif {'road'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#949595'}
+    elif {'railway'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#595959'}
+    elif {'logistical'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#E1CDCB'}
+    elif {'urban','green'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#9EDA43'}
+    elif {'sports'}.issubset(luf_type) or {'leisure'}.issubset(luf_type) or {'recreational'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#B6D1A9'}
+    elif {'pasture'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#E6E669'}
+    elif {'wetland'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#A5A6F9'}
+    elif {'public'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#8A60FF'}
+    elif {'commercial'}.issubset(luf_type):
+        luf_color = {'color': 'black', 'fillColor': '#BD55EB'}
     else:
-        luf_color = {
-        'color': 'black',
-        'fillColor': random.choice(['red', 'yellow', 'green', 'orange','blue']),
-        } 
+        luf_color = {'color': 'black','fillColor': 'orange'} 
     return luf_color
-
-def power_node_colors(feature):
-    #print(feature)
-    ds_to_color = {0: 'lavender', 1:'violet',2:'fuchsia',3:'indigo',4:'darkslateblue',5:'black'}
-    ds = random.randint(0,5) #feature['properties']['ds'] 
-    return {'color': ds_to_color[ds], 'fillColor': ds_to_color[ds]}
 
 def create_map_layer(df, name):
     if name == "intensity":
@@ -498,14 +470,14 @@ def create_map_layer(df, name):
         map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1, name = name) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=landuse_colors)
         map_layer.on_click(landuse_click_handler)   
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=building_colors)
         map_layer.on_click(building_click_handler)
     elif name == "road edges":
@@ -515,7 +487,7 @@ def create_map_layer(df, name):
         map_layer.on_click(road_edge_click_handler)
     elif name == "road nodes":
         df_squares = df.copy()
-        half_side = 0.0002
+        half_side = 0.00005
         df_squares['geometry']  = df['geometry'].apply(lambda point: Polygon([
                     (point.x - half_side, point.y - half_side),
                     (point.x + half_side, point.y - half_side),
@@ -531,7 +503,7 @@ def create_map_layer(df, name):
         for index, node in df.iterrows():
             x = node.geometry.x
             y = node.geometry.y
-            marker_color = 'blue' if node['is_operational'] else 'red'
+            marker_color = ds_to_color_approx[node['ds']]
             icon_name = 'fa-industry' if node['pwr_plant'] == 1 else 'bolt'
             icon_color = 'black'
             marker = Marker(icon=AwesomeIcon(
@@ -544,7 +516,11 @@ def create_map_layer(df, name):
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
                                                    disable_clustering_at_zoom=5)
-
+    elif name == 'power edges':
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            hover_style={'color': 'orange'},
+            style_callback=power_edge_colors)
+        map_layer.on_click(power_edge_click_handler)
     else:
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},

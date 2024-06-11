@@ -28,7 +28,8 @@ import tempfile
 
 from . import storage, connect_storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
-from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors
+from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors,\
+                    power_edge_colors, ds_to_color, ds_to_color_approx
 from .engine import MetricWidget, create_new_app_state
 from ..backend.engine import generate_metrics
 from .settings import population_displacement_consensus
@@ -62,14 +63,14 @@ def create_map_layer(df, name):
         map_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name) 
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=landuse_colors)
         map_layer.on_click(landuse_click_handler)   
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
+            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=building_colors)
         map_layer.on_click(building_click_handler)
     elif name == "road edges":
@@ -79,7 +80,7 @@ def create_map_layer(df, name):
         map_layer.on_click(road_edge_click_handler)
     elif name == "road nodes":
         df_squares = df.copy()
-        half_side = 0.0002
+        half_side = 0.00005
         df_squares['geometry']  = df['geometry'].apply(lambda point: Polygon([
                     (point.x - half_side, point.y - half_side),
                     (point.x + half_side, point.y - half_side),
@@ -95,7 +96,7 @@ def create_map_layer(df, name):
         for index, node in df.iterrows():
             x = node.geometry.x
             y = node.geometry.y
-            marker_color = 'blue' if node['is_operational'] else 'red'
+            marker_color = ds_to_color_approx[node['ds']]
             icon_name = 'fa-industry' if node['pwr_plant'] == 1 else 'bolt'
             icon_color = 'black'
             marker = Marker(icon=AwesomeIcon(
@@ -108,7 +109,11 @@ def create_map_layer(df, name):
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
                                                    disable_clustering_at_zoom=5)
-
+    elif name == 'power edges':
+        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            hover_style={'color': 'orange'},
+            style_callback=power_edge_colors)
+        map_layer.on_click(power_edge_click_handler)
     else:
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
@@ -123,6 +128,11 @@ def road_node_click_handler(event=None, feature=None, id=None, properties=None):
     layers.value['map_info_button'].set("detail")  
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
+    #print(properties)
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")  
+
+def power_edge_click_handler(event=None, feature=None, id=None, properties=None):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
