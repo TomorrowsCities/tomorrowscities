@@ -114,7 +114,7 @@ def LoginForm():
             solara.Button(label="Login via GitHub", icon_name="mdi-github-circle", 
                 attributes={"href": github_authorization_url}, text=True, outlined=True,
                 on_click=lambda: store_in_session_storage('auth_company','github'))
-            if config.get('enable_test_logon', False):
+            if config.get('enable_test_logon', 'False').lower() == 'true':
                 solara.Button(label="Login via Local Test User", icon_name="mdi-account",
                     text=True, outlined=True, on_click=test_logon)
 
