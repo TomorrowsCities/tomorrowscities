@@ -251,7 +251,7 @@ def MetaDataViewer(session_name):
         print(metadata)
 
 def clear_session():
-    layers.value = create_new_app_state()
+    layers.set(create_new_app_state().value)
     force_render()
 
 def force_render():
