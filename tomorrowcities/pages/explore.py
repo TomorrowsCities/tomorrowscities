@@ -446,18 +446,56 @@ def FilterPanel():
             'specialfac': 'Special Facility'}
     building = layers.value['layers']['building']['df'].value
     building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
-
     if building is not None:
         with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''')
-        for attr, attr_name in lbl.items():
-            btn = solara.Button(attr_name)
-            with solara.Column(align="stretch"):
-                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"
-                    #solara.CrossFilterReport(building)
-                    solara.CrossFilterSelect(building, attr, multiple=True, configurable=False)
-    else:
-        solara.Text("No data to filter")
+            solara.Markdown('''<h5 style=""></h5>''') 
+        btn = solara.Button("BUILDING FILTERS")
+        with solara.Column(align="stretch"):
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"
+                solara.CrossFilterReport(building)
+                solara.CrossFilterSelect(building, "ds", multiple=True)
+                solara.CrossFilterSelect(building, "specialfac", multiple=True)
+                solara.CrossFilterSelect(building, "nhouse", multiple=True)
+                solara.CrossFilterSelect(building, "residents", multiple=True)
+                solara.CrossFilterSelect(building, "occupancy", multiple=True)
+                solara.CrossFilterSelect(building, "storeys", multiple=True)
+                solara.CrossFilterSelect(building, "code_level", multiple=True)
+                solara.CrossFilterSelect(building, "material", multiple=True)
+                solara.CrossFilterSelect(building, "zoneid", multiple=True)
+
+    landuse = layers.value['layers']['landuse']['df'].value
+    landuse_filter.value, _ = solara.use_cross_filter(id(landuse), "landuse_filter")
+    if landuse is not None:
+        with solara.Row(): #spacer
+            solara.Markdown('''<h5 style=""></h5>''') 
+        btn = solara.Button("LANDUSE FILTERS")
+        with solara.Column(align="stretch"):
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+                solara.CrossFilterReport(landuse)
+                solara.CrossFilterSelect(landuse, "luf", multiple=True)
+                solara.CrossFilterSelect(landuse, "avgincome", multiple=True)      
+
+
+    tally = layers.value['tally'].value
+    tally_filter.value, _ = solara.use_cross_filter(id(tally), "tally_filter")
+    if tally is not None:
+        with solara.Row(): #spacer
+            solara.Markdown('''<h5 style=""></h5>''') 
+        btn = solara.Button("METRIC FILTERS")
+        with solara.Column(align="stretch"):
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+                solara.CrossFilterReport(tally)
+                solara.CrossFilterSelect(tally, "ds", multiple=True)
+                solara.CrossFilterSelect(tally, "income", multiple=True)        
+                solara.CrossFilterSelect(tally, "material", multiple=True)      
+                solara.CrossFilterSelect(tally, "gender", multiple=True)      
+                solara.CrossFilterSelect(tally, "age", multiple=True)      
+                solara.CrossFilterSelect(tally, "head", multiple=True)      
+                solara.CrossFilterSelect(tally, "eduattstat", multiple=True)      
+                solara.CrossFilterSelect(tally, "luf", multiple=True)  
+                solara.CrossFilterSelect(tally, "occupancy", multiple=True)
+                solara.CrossFilterSelect(tally, "storeys", multiple=True)  
+                solara.CrossFilterSelect(tally, "zoneid", multiple=True)        
     print(f"fiter panel render count {render_count.value}")
 
 
