@@ -1,10 +1,10 @@
-FROM python:3.9
+FROM python:3.10
 
 RUN useradd -m -u 1000 user
 
 #USER root
 RUN apt update
-RUN apt -y install gdal-bin libgdal-dev
+RUN apt -y install gdal-bin libgdal-dev git-lfs
 
 USER user
 
