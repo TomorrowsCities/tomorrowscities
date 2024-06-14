@@ -286,9 +286,9 @@ metric_icon6 = 'tomorrowcities/content/icons/metric6.png'
 metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
 metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
 
-ds_to_color = {0: '#d7191c', 1: '#fdae61', 2:'#ffffbf', 3:'#abd9e9', 4: '#2c7bb6'}
+ds_to_color = {0: '#2c7bb6', 1: '#abd9e9', 2:'#ffffbf', 3:'#fdae61', 4: '#d7191c'}
 # approximate color names when hex codes can't be used
-ds_to_color_approx = {0: 'red', 1: 'orange', 2:'beige', 3:'lightblue', 4: 'darkblue'}
+ds_to_color_approx = {0: 'darkblue', 1: 'lightblue', 2:'beige', 3:'orange', 4: 'red'}
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
 
