@@ -1527,7 +1527,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         household_num = nHouse[i] * household_prop
         # Round the household numbers for various numbers of individuals 
         # without exceeding total household number
-        cumsum_household_num = np.round_(np.cumsum(household_num)).astype('int32')
+        cumsum_household_num = np.round(np.cumsum(household_num)).astype('int32')
         cumsum_household_num_diff = np.diff(cumsum_household_num)
         first_val = nHouse[i] - sum(cumsum_household_num_diff)
         household_num_round = np.insert(cumsum_household_num_diff,0,first_val)
