@@ -1633,7 +1633,8 @@ def ImportDataZone():
                     center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
                     layers.value['center'].set(center)
 
-        
+            layers.value['render_count'].value += 1
+
     def progress(x):
         set_total_progress(x)
 
