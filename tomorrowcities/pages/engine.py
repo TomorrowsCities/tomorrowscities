@@ -1700,7 +1700,7 @@ def ImportDataZone():
         
     with solara.Card(title="Data Generation", subtitle="Exposure generation"):
         solara.Markdown('''<div style="text-align: justify">
-                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/tree/6679e7e33704158fabcd7498b4b1a0f8efc89678/tomorrowcities/public/data_gen_sample_dataset.zip" target="_blank">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.<br/><br/>
+                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=" target="_blank">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.<br/><br/>
                         </div">
                         ''')
         with solara.Row():
