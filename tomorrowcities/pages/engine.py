@@ -267,6 +267,7 @@ def create_new_app_state():
     'map_info_button': solara.reactive("summary"),
     'map_info_detail': solara.reactive({}),
     'tally_filter_cols': ['ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
+    'tally_is_available': solara.reactive(False),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -1414,6 +1415,7 @@ def ExecutePanel():
                 store_in_session_storage('tally', tally)
                 store_in_session_storage('tally_geo', tally_geo)
                 store_in_session_storage('tally_minimal', tally[layers.value['tally_filter_cols']])
+                layers.value['tally_is_available'].value = True
                 tally_counter.value += 1
             set_progress_message('')
             # trigger render event
@@ -1450,12 +1452,11 @@ def ExecutePanel():
     solara.ProgressLinear(value=False)
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
-    if storage.value is not None:
-        tally = read_from_session_storage('tally')
-        if tally is None or user.value is None:
-            solara.Button("Save Session", disabled=True)
-        else:
+    if storage.value is not None:        
+        if layers.value['tally_is_available'].value and user.value is not None:
             solara.Button("Save Session",on_click=save_app_state, disabled=False)
+        else:
+            solara.Button("Save Session", disabled=True)
         solara.ProgressLinear(save_app_state.pending)
     PolicyPanel()
     policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]

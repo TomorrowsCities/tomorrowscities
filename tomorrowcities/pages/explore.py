@@ -26,10 +26,10 @@ from solara.lab import task
 import secrets
 import tempfile
 
-from . import storage, connect_storage
+from . import storage, connect_storage, read_from_session_storage, store_in_session_storage
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors,\
-                    power_edge_colors, ds_to_color, ds_to_color_approx
+                    power_edge_colors, ds_to_color, ds_to_color_approx, create_tally
 from .engine import MetricWidget, create_new_app_state
 from ..backend.engine import generate_metrics
 from .settings import population_displacement_consensus
@@ -45,6 +45,7 @@ status_text = solara.reactive("")
 selected_tab = solara.reactive(None)
 render_count = solara.reactive(0)
 zoom = solara.reactive(14)
+tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
@@ -216,8 +217,18 @@ def post_processing_after_load():
     landuse_data = layers.value['layers']['landuse']['data'].value 
     if building_data is not None and landuse_data is not None:
         building_data = building_data.merge(landuse_data[['zoneid','avgincome']],on='zoneid',how='left')
-        layers.value['layers']['building']['data'].set(building_data) 
+        layers.value['layers']['building']['data'].set(building_data)
 
+    l = layers.value['layers']['landuse']['data'].value
+    b = layers.value['layers']['building']['data'].value
+    h = layers.value['layers']['household']['data'].value
+    i = layers.value['layers']['individual']['data'].value
+    
+    _, tally_geo =  create_tally(l, b, h, i)
+    store_in_session_storage('explore_tally_geo', tally_geo)
+    store_in_session_storage('explore_tally_minimal', tally_geo[layers.value['tally_filter_cols']])
+    tally_counter.value += 1
+    
 @task
 def load_session():
     tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
@@ -357,8 +368,7 @@ def generate_metrics_local():
     print("Emtering generate_metrics_local")
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
-    tally = layers.value['tally'].value
-    tally_geo = layers.value['tally_geo'].value
+    tally_geo = read_from_session_storage('explore_tally_geo')
     if tally_geo is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
         tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
@@ -383,7 +393,7 @@ def MetricPanel():
     metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
     filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
     solara.use_memo(generate_metrics_local, 
-                    [layers.value['tally_geo'].value,
+                    [tally_counter.value,
                      layers.value['bounds'].value,
                      tally_filter.value], debug_name="generate_metrics_loca")
     if generate_metrics_local.finished:
@@ -486,26 +496,19 @@ def FilterPanel():
                 solara.CrossFilterSelect(landuse, "avgincome", multiple=True)      
 
 
-    tally = layers.value['tally'].value
-    tally_filter.value, _ = solara.use_cross_filter(id(tally), "tally_filter")
-    if tally is not None:
+    tc = tally_counter.value
+    print('tally_counter', tc)
+    tally_minimal = read_from_session_storage('explore_tally_minimal')
+    if tally_minimal is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                solara.CrossFilterReport(tally)
-                solara.CrossFilterSelect(tally, "ds", multiple=True)
-                solara.CrossFilterSelect(tally, "income", multiple=True)        
-                solara.CrossFilterSelect(tally, "material", multiple=True)      
-                solara.CrossFilterSelect(tally, "gender", multiple=True)      
-                solara.CrossFilterSelect(tally, "age", multiple=True)      
-                solara.CrossFilterSelect(tally, "head", multiple=True)      
-                solara.CrossFilterSelect(tally, "eduattstat", multiple=True)      
-                solara.CrossFilterSelect(tally, "luf", multiple=True)  
-                solara.CrossFilterSelect(tally, "occupancy", multiple=True)
-                solara.CrossFilterSelect(tally, "storeys", multiple=True)  
-                solara.CrossFilterSelect(tally, "zoneid", multiple=True)        
+                tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
+                solara.CrossFilterReport(tally_minimal)
+                for col in layers.value['tally_filter_cols']:
+                    solara.CrossFilterSelect(tally_minimal, col, multiple=True)    
     print(f"fiter panel render count {render_count.value}")
 
 
