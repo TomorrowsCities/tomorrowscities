@@ -21,7 +21,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
-from . import storage, user
+from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage
 from .settings import landslide_max_trials
 from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
@@ -35,6 +35,7 @@ import ipywidgets
 from solara.lab import task
 import tempfile
 
+tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
@@ -263,8 +264,7 @@ def create_new_app_state():
     'data_import_method': solara.reactive("drag&drop"),
     'map_info_button': solara.reactive("summary"),
     'map_info_detail': solara.reactive({}),
-    'tally': solara.reactive(None),
-    'tally_geo': solara.reactive(None),
+    'tally_filter_cols': ['ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -923,49 +923,24 @@ def FilterPanel():
                 solara.CrossFilterSelect(landuse, "luf", multiple=True)
                 solara.CrossFilterSelect(landuse, "avgincome", multiple=True)      
 
-
-    tally = layers.value['tally'].value
-    if tally is not None:
+    tc = tally_counter.value
+    print('tally_counter', tc)
+    tally_minimal = read_from_session_storage('tally_minimal')
+    if tally_minimal is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                tally_filter.value, _ = solara.use_cross_filter(id(tally), "tally_filter")
-                solara.CrossFilterReport(tally)
-                solara.CrossFilterSelect(tally, "ds", multiple=True)
-                solara.CrossFilterSelect(tally, "income", multiple=True)        
-                solara.CrossFilterSelect(tally, "material", multiple=True)      
-                solara.CrossFilterSelect(tally, "gender", multiple=True)      
-                solara.CrossFilterSelect(tally, "age", multiple=True)      
-                solara.CrossFilterSelect(tally, "head", multiple=True)      
-                solara.CrossFilterSelect(tally, "eduattstat", multiple=True)      
-                solara.CrossFilterSelect(tally, "luf", multiple=True)  
-                solara.CrossFilterSelect(tally, "occupancy", multiple=True)
-                solara.CrossFilterSelect(tally, "storeys", multiple=True)  
-                solara.CrossFilterSelect(tally, "zoneid", multiple=True)                
+                tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
+                solara.CrossFilterReport(tally_minimal)
+                for col in layers.value['tally_filter_cols']:
+                    solara.CrossFilterSelect(tally_minimal, col, multiple=True)
 
 @solara.component
 def LayerDisplayer():
-    tally_data, set_tally_data = solara.use_state_or_update(None)
-
-    def update_tally_data():
-        data = layers.value['tally_geo'].value
-        df_filtered = data
-        if df_filtered is not None:
-            if tally_filter.value is not None:
-                df_filtered = df_filtered[tally_filter.value]
-        set_tally_data(df_filtered)
-        
-    solara.use_memo(update_tally_data, [tally_filter.value, layers.value['tally_geo'].value])
     print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
-    
-    tally = layers.value['tally'].value
-    tally_geo = layers.value['tally_geo'].value
-
-    if  tally is not None:
-        nonempty_layers['tally'] = tally
     nonempty_layer_names = list(nonempty_layers.keys())
     selected = layers.value['selected_layer'].value
     def set_selected(s):
@@ -976,10 +951,7 @@ def LayerDisplayer():
     if selected is None and len(nonempty_layer_names) > 0:
         set_selected(nonempty_layer_names[0])
     if selected is not None:
-        if selected is 'tally':
-            data = tally_data
-        else:
-            data = nonempty_layers[selected]['data'].value
+        data = nonempty_layers[selected]['data'].value
         if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
             if "geometry" in data.columns:
                 ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
@@ -990,7 +962,7 @@ def LayerDisplayer():
                     PowerFragilityDisplayer(data, items_per_page=5)
                 else:
                     solara.DataFrame(data, items_per_page=5)
-            if selected in ["building","tally","road edges","road nodes","power nodes","power edges"] :
+            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
                 with solara.Row():
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
@@ -1013,8 +985,7 @@ def generate_metrics_local():
     print("Emtering generate_metrics_local")
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
-    tally = layers.value['tally'].value
-    tally_geo = layers.value['tally_geo'].value
+    tally_geo = read_from_session_storage('tally_geo')
     if tally_geo is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
         tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
@@ -1031,7 +1002,7 @@ def generate_metrics_local():
 def MetricPanel():
     filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
     solara.use_memo(generate_metrics_local, 
-                    [layers.value['tally_geo'].value,
+                    [tally_counter.value,
                      layers.value['bounds'].value,
                      tally_filter.value], debug_name="generate_metrics_loca")
     if generate_metrics_local.finished:
@@ -1431,8 +1402,11 @@ def ExecutePanel():
                     layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
 
                 tally, tally_geo = execute_metric()
-                layers.value['tally'].set(tally)
-                layers.value['tally_geo'].set(tally_geo)
+
+                store_in_session_storage('tally', tally)
+                store_in_session_storage('tally_geo', tally_geo)
+                store_in_session_storage('tally_minimal', tally[layers.value['tally_filter_cols']])
+                tally_counter.value += 1
             set_progress_message('')
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
@@ -1469,7 +1443,7 @@ def ExecutePanel():
     solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
     if storage.value is not None:
-        tally = layers.value['tally'].value
+        tally = read_from_session_storage('tally')
         if tally is None or user.value is None:
             solara.Button("Save Session", disabled=True)
         else:
