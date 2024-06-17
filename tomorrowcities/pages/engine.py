@@ -1653,9 +1653,11 @@ def ImportDataZone():
     #                            style={"align-items": "center"})
     with solara.Card(title="Upload Data"):
     #with solara.Card(title="Upload", subtitle="Drag & Drop from your local drive"):
-        solara.Markdown('''Drag & drop your local files to 
+        solara.Markdown('''<div style="text-align: justify">
+                        Drag & drop your local files to 
                         the below area. Supported formats are Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
                         For more information, please refer to <a href="docs/data" target="_blank">Data Formats</a>.
+                        </div">
                         ''')
         FileDropMultiple(on_total_progress=progress,
                 on_file=on_file_deneme, 
@@ -1664,9 +1666,11 @@ def ImportDataZone():
 
         with solara.Column():       
             if storage.value is None:
-                solara.Markdown('''
+                solara.Markdown('''<div style="text-align: justify">
                                 You can download and extract our
-                                <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.''')
+                                <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
+                                </div">
+                                ''')
             else:
                 solara.Markdown('''You can choose sample data from our AWS S3 repository. 
                                 Double click to load data into the platform.
@@ -1695,9 +1699,9 @@ def ImportDataZone():
             solara.ProgressLinear(value=True)                                                   
         
     with solara.Card(title="Data Generation", subtitle="Exposure generation"):
-        solara.Markdown('''
-                        First, upload parameter file and land use, then click generate to produce building/household/individual layers.
-                        ##
+        solara.Markdown('''<div style="text-align: justify">
+                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/tree/6679e7e33704158fabcd7498b4b1a0f8efc89678/tomorrowcities/public/data_gen_sample_dataset.zip" target="_blank">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.<br/><br/>
+                        </div">
                         ''')
         with solara.Row():
             solara.InputInt(label='Random seed',value=layers.value['seed'])
