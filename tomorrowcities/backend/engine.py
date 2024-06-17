@@ -1216,7 +1216,6 @@ def calculate_metrics(gdf_buildings, df_household, df_individual, infra, hazard_
 
     return metrics, df_metrics
 
-
 def dist2vector(d_value, d_number,d_limit,shuffle_or_not):
     # d_value, d_number = vectors of same length (numpy array)
     # d_limit = single integer which indicates the sum of all values
@@ -1224,22 +1223,26 @@ def dist2vector(d_value, d_number,d_limit,shuffle_or_not):
     # shuffle_or_not = 'shuffle' will return a randomly shuffled list otherwise
     #     by default or with 'DoNotShuffle' the list will not be shuffled
     # Output: insert_vector is a list
+
     # get rid of extra dimensions if there is any
     # x: to be repeated array
     x = np.squeeze(d_value)
-    # how many repetations per element
+    # w: how many repetations per element
     w = np.squeeze(d_number)
-    # total number of repetetions
+    # n: total number of repetetions
     n = d_limit
-    # rounding off float repetetations
+    # rounding off repetitions given as floats
     reps = np.round(w).astype('int32')
     # make sure sum of reps is still n after rounding
-    reps[-1] = n - np.sum(reps[:-1])
+    if reps.size>1:
+        reps[-1] = n - np.sum(reps[:-1])
+    else:
+        reps=np.array([n])
     # Repet x[i] reps[i] times for all i
     y = np.repeat(x, reps)
     if shuffle_or_not == 'shuffle':
         random.shuffle(y)
-    return [str(element) for element in y]
+    return [str(element) for element in y]    
 
 def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataFrame, population_calculate=False, seed=42):
     # To re-generate a desired state comment above line and use: rng = int(seed_value_in_result)
@@ -1249,13 +1252,13 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     np.random.seed(seed)
     df_nc, ipdf, df1, df2, df3 = parameter_file.get_sheets()
 
-
     # Convert both to the same target coordinate system
     landuse_shp = land_use_file.set_crs("EPSG:4326",allow_override=True)
-    landuse_shp = landuse_shp.to_crs(f"EPSG:3857")
 
+    school_distr_method = 'population' # 'population' or 'landuse'
+    hospital_distr_method = 'population' # 'population' or 'landuse'
                     
-    # Extract the nomenclature for load resisting system and land use types
+    #%% Extract the nomenclature for load resisting system and land use types
     startmarker = '\['
     startidx = df_nc[df_nc.apply(lambda row: row.astype(str).str.contains(\
                     startmarker,case=False).any(), axis=1)]
@@ -1281,24 +1284,27 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     for key in lut_types:
         lutidx[key] = count
         count+=1    
-            
+        
+    #%% Inputs extracted from the excel input file
+
+    opfile_building = 'building_layer_'+str(uuid.uuid4())+'.xlsx'
+    opfile_household = 'household_layer_'+str(uuid.uuid4())+'.xlsx'
+    opfile_individual = 'individual_layer_'+str(uuid.uuid4())+'.xlsx'
+    opfile_landuse =  'landuse_layer_'+str(uuid.uuid4())+'.xlsx'
+              
     # Income types is hardcoded
     avg_income_types =np.array(['lowIncomeA','lowIncomeB','midIncome','highIncome'])
 
-    #Average dwelling area (sqm) wrt income type (44 for LI, 54 for MI, 
-    #67 for HI in Tomorrovwille)
-    #Range of footprint area fpt_area (sqm) wrt. income type (32-66 for LI,
-    # 32-78 for MI and 70-132 for HI in Tomorrowville)                 
+    # Extract average dwelling area and footprint area             
     average_dwelling_area = np.array([ipdf.iloc[13,2],ipdf.iloc[13,3],\
-                                    ipdf.iloc[13,4],ipdf.iloc[13,5]])
+                                      ipdf.iloc[13,4],ipdf.iloc[13,5]])
 
     fpt_area = {'lowIncomeA':np.fromstring(ipdf.iloc[14,2],dtype=float,sep=','),
                 'lowIncomeB':np.fromstring(ipdf.iloc[14,3],dtype=float,sep=','),
                 'midIncome':np.fromstring(ipdf.iloc[14,4],dtype=float,sep=','),
                 'highIncome':np.fromstring(ipdf.iloc[14,5],dtype=float,sep=',')}
 
-    # Storey definition 1- Low rise (LR) 1-4, 2- Mid rise (MR) 5-8,
-    # 3- High rise (HR) 9-19
+    # Extract storey definition
     storey_range = {0:np.fromstring(ipdf.iloc[17,2],dtype=int,sep=','),
                     1:np.fromstring(ipdf.iloc[17,3],dtype=int,sep=','),
                     2:np.fromstring(ipdf.iloc[17,4],dtype=int,sep=',')}
@@ -1328,25 +1334,44 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     #household_building_match = 'footprint' # 'footprint' or 'number_of_units'
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('2 ------',end=' ')
     #%% Read the landuse shapefile
 
+    # try:
+      # landuse_shp = read_zipshp(ipfile_landuse_shapefile)
+      
+      # if save_landuse2geojson:
+          # landuse_shp.to_file(oppath+"\\landuse.geojson", driver="GeoJSON")
 
+    # except Exception as e:
+      # print('{"error": "Error in reading shape file", "error_message": "%s", "debug_info": %s }'
+            # %(str(e).replace('"','\'').replace("\n"," "),json.dumps(debug_info)))
+      # if not in_notebook():
+          # sys.exit(1)
 
-    #Calculate area of landuse zones using polygons only if area is not already. 
-    # First, convert coordinate system to cartesian
-    if 'area' not in landuse_shp.columns:
-        landuse_shp_cartesian = landuse_shp.copy()
-        landuse_shp_cartesian = landuse_shp_cartesian.to_crs({'init': 'epsg:3857'})
-        landuse_shp_cartesian['area']=landuse_shp_cartesian['geometry'].area # m^2
-        landuse_shp_cartesian['area']=landuse_shp_cartesian['area']/10**4 # Hectares
-        landuse_shp_cartesian = landuse_shp_cartesian.drop(columns=['geometry'])
-        landuse = landuse_shp_cartesian.copy()
-    else:
-        landuse = landuse_shp.copy()
-        landuse = landuse.drop(columns=['geometry'])
+    # Important to use equal-area projection!!!
+    if landuse_shp.crs.is_projected is False:
+        initial_crs = landuse_shp.crs
+        landuse_shp = landuse_shp.to_crs("ESRI:54034") # World Cylindrical Equal Area
+
+    # #Calculate area of landuse zones using polygons only if area is not already. 
+    # # First, convert coordinate system to cartesian
+    # if 'area' not in landuse_shp.columns:
+        # landuse_shp_cartesian = landuse_shp.copy()
+        # landuse_shp_cartesian = landuse_shp_cartesian.to_crs({'init': 'epsg:3857'}) # !! Correct the CRS!! 
+        # landuse_shp_cartesian['area']=landuse_shp_cartesian['geometry'].area # m^2
+        # landuse_shp_cartesian['area']=landuse_shp_cartesian['area']/10**4 # Hectares
+        # landuse_shp_cartesian = landuse_shp_cartesian.drop(columns=['geometry'])
+        # landuse = landuse_shp_cartesian.copy()
+    # else:
+        # landuse = landuse_shp.copy()
+        # landuse = landuse.drop(columns=['geometry'])
+        
+    # Calculate areas even if they are included in the shapefile to avoid using miscalculated values!
+    landuse_shp_cartesian = landuse_shp.copy()
+    landuse_shp_cartesian['area']=landuse_shp_cartesian['geometry'].area # m^2
+    landuse_shp_cartesian['area']=landuse_shp_cartesian['area']/10**4 # Hectares
+    landuse_shp_cartesian = landuse_shp_cartesian.drop(columns=['geometry'])
+    landuse = landuse_shp_cartesian.copy()
         
     # In the landuse shape file, if avgincome = lowIncome, replace it by lowIncomeA
     lowIncome_mask = landuse['avgincome'] == 'lowIncome'
@@ -1357,10 +1382,11 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     landuse['densitycap'] = landuse['densitycap'].astype(float)
     landuse['area'] = landuse['area'].astype(float)
     landuse['zoneid'] = landuse['zoneid'].astype(int)
-    landuse['floorarear'] = landuse['floorarear'].astype(float)
-    landuse['setback'] = landuse['setback'].astype(float)
-
-
+    # Even if floorarear and setback fields are missing, continue!
+    if 'floorarear' in landuse.columns:
+        landuse['floorarear'] = landuse['floorarear'].astype(float)
+    if 'setback' in landuse.columns:
+        landuse['setback'] = landuse['setback'].astype(float)
 
     #%% Read the landuse table (if xlsx file instead of shapefile is available)
     #landuse = pd.read_excel(os.path.join(ippath,ipfile_landuse),sheet_name=0)
@@ -1393,13 +1419,10 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     tables = tables_temp
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('3 ------',end=' ')
     #%% Basic exception handling to check improper inputs in the spreadsheet
     input_error_flag = False
     input_error_flag_shp = False
-
+     
     if numb_com ==0:
         print('The number of commercial buildings cannot be zero.')
         input_error_flag = True
@@ -1410,49 +1433,42 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     if len(lutidx) != len(tables['t7'][0]) or len(lutidx) != len(tables['t8'][0])\
         or len(lutidx) != len(tables['t9'][0]) or len(lutidx) != len(tables['t11'][0]):
             print('The number of rows in Tables 7,8,9 and 11 must be equal to '\
-                'the number of land use types (LUT) in Nomenclature sheet.\n')
+                  'the number of land use types (LUT) in Nomenclature sheet.\n')
             input_error_flag = True
 
     if len(lrsidx)!=len(tables['t7'][0][0]) or len(lrsidx)!=len(tables['t8'][0][0])\
         or len(lrsidx)!=len(tables['t11'][0][0]):
             print('The number of columns in Tables 7,8 and 11 must be equal to '\
-                'the number of load resisting system (LRS) types in '\
-                'Nomenclature sheet. \n')
+                  'the number of load resisting system (LRS) types in '\
+                  'Nomenclature sheet. \n')
             input_error_flag = True
-
+     
     # Check if avgincome values are missing for fields in the nomenclature list
     for val in lut_types:
         avgInc_mask = landuse['luf'] == val
         incomeval4lut = landuse.loc[avgInc_mask,'avgincome']
-        if incomeval4lut.isnull().values.any():
-            print('avgincome field missing for ',val,'\n')
+        if incomeval4lut.isnull().values.any(): 
+            default_avgincome = 'no_avgincome'
+            landuse.loc[avgInc_mask,'avgincome'] = default_avgincome
+            print('avgincome field missing for ',val,', value set to',default_avgincome,'\n')
             input_error_flag_shp = True        
             
     if input_error_flag:
         print('Please correct the faulty inputs in the input spreadsheet.\n')
-        sys.exit(1)
         
     if input_error_flag_shp:
-        print('Please correct the faulty inputs in the input shapefile.\n')
-        sys.exit(1)
+        print('Please provide appropriate values in input shapefile if necessary.\n')
         
-        
-    print(time.time() - tic)
-    tic = time.time()
-    print('3 ------',end=' ')
+    if input_error_flag:
+        sys.exit(1) 
 
     #%% Note on definition of data layers
     # The household layer is initialized as Pandas dataframe in Step 2
     # The individual layer is initialized as Pandas dataframe in Step 5
     # The building layer is initialized as Pandas dataframe in Step 12
     # landuse_res_df (residential zone landuse subdataframe) is defined in step 11
-    # landuse_ic_df (commercial/industrial) is also defined in step 11
+    # landuse_ic_df (commercial/industrial) is also defined in step 11 
 
-    #%% Function definition: dist2vector
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('4 ------',end=' ')
     #%% The data generation process begins here____________________________________
 
     #%% Step 1: Calculate maximum population (nPeople)
@@ -1465,60 +1481,55 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         landuse['population'] = landuse['population'].astype(int)
         nPeople = landuse['population']
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('5 ------',end=' ')
-    #%% Step 2: Calculate the number of households (nhouse), hhid
+    #%% Step 2: Calculate the number of households (nHouse), hhID
     # Assumption 1: Household size distribution is same for different income types
     # Question: How to ensure that there are no NaNs while assigning zone type?
 
     # Convert Table 1 to numpy array
     t1_list = tables['t1'][0]
-    # No. of individuals
+     # No. of individuals
     t1_l1 = np.array(t1_list[0], dtype=int) 
     t1_l2 = np.array(t1_list[1], dtype=float) # Probabilities
 
     # Compute the probability of X number of people living in a household 
     household_prop = t1_l2/sum(t1_l2) 
     # Total number of households for all zones
-    nhouse_all = round(nPeople/(sum(household_prop*t1_l1)))
-    nhouse_all = nhouse_all.astype('int32')
-    nhouse = nhouse_all[nhouse_all>0] # Exclude zones with zero households
-    nhouseidx = nhouse.index
+    nHouse_all = round(nPeople/(sum(household_prop*t1_l1)))
+    nHouse_all = nHouse_all.astype('int32')
+    nHouse = nHouse_all[nHouse_all>0] # Exclude zones with zero households
+    nHouseidx = nHouse.index
     #Preallocate a dataframe with nan to hold the household layer
-    household_df = pd.DataFrame(np.nan, index = range(sum(nhouse)),
-                                columns=['bldid','hhid','income','nind','commfacid',
-                                        'income_numb','zonetype','zoneid',
-                                        'approxFootprint'])
-    #Calculate a list of cumulative sum of nhouse
-    nhouse_cuml = np.cumsum(nhouse)
-
-    #  Assign household id (hhid) 
+    household_df = pd.DataFrame(np.nan, index = range(sum(nHouse)),
+                                columns=['bldID','hhID','income','nIND','CommFacID',
+                                         'income_numb','zoneType','zoneid',
+                                         'approxFootprint'])
+    #Calculate a list of cumulative sum of nHouse
+    nHouse_cuml = np.cumsum(nHouse)
+     
+    #  Assign household id (hhID) 
     a = 0
-    for i in nhouseidx:
-        b =  nhouse_cuml[i]
-        household_df.loc[range(a,b),'hhid'] = range(a+1,b+1) # First hhid index =1
+    for i in nHouseidx:
+        b =  nHouse_cuml[i]
+        household_df.loc[range(a,b),'hhID'] = range(a+1,b+1) # First hhID index =1
         household_df.loc[range(a,b),'zoneid'] = landuse.loc[i,'zoneid']
-        household_df.loc[range(a,b),'zonetype'] = landuse.loc[i,'avgincome']
+        household_df.loc[range(a,b),'zoneType'] = landuse.loc[i,'avgincome']
         a = b
 
     del a,b
-    household_df['hhid'] = household_df['hhid'].astype(int)
+    household_df['hhID'] = household_df['hhID'].astype(int)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('6 ------',end=' ')
+        
     #%% Step 3: Identify the household size and assign "nInd" values to each household
     a_g = 0
-    for i in nhouseidx:
-        b_g = nhouse_cuml[i]
+    for i in nHouseidx:
+        b_g = nHouse_cuml[i]
         # Find Total of every different nInd number for households
-        household_num = nhouse[i] * household_prop
+        household_num = nHouse[i] * household_prop
         # Round the household numbers for various numbers of individuals 
         # without exceeding total household number
         cumsum_household_num = np.round_(np.cumsum(household_num)).astype('int32')
         cumsum_household_num_diff = np.diff(cumsum_household_num)
-        first_val = nhouse[i] - sum(cumsum_household_num_diff)
+        first_val = nHouse[i] - sum(cumsum_household_num_diff)
         household_num_round = np.insert(cumsum_household_num_diff,0,first_val)
         
         #Generate a column vector     
@@ -1537,16 +1548,13 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         del a,b  
         insert_vector = np.random.permutation(insert_vector)
         
-        household_df.loc[range(a_g,b_g), 'nind'] = insert_vector 
+        household_df.loc[range(a_g,b_g), 'nIND'] = insert_vector 
         a_g = b_g
 
     del a_g, b_g, count,insert_vector,subvector
 
-    household_df['nind'] = household_df['nind'].astype(int)
+    household_df['nIND'] = household_df['nIND'].astype(int)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('7 ------',end=' ')
     #%% Step 4: Identify and assign income type of the households
     # Table 2 states the % of various income groups in different income zones
     # Convert Table 2 to numpy array
@@ -1559,7 +1567,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     for inc in avg_income_types:
         #Find indices corresponding to a zone type
-        itidx = household_df['zonetype'] == inc
+        itidx = household_df['zoneType'] == inc
         if sum(itidx) ==0: #i.e. this income zone doesn't exist in the landuse data
             count+=1 
             continue
@@ -1572,28 +1580,23 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle') 
         count+=1    
         household_df.loc[itidx, 'income'] = insert_vector 
-    print(time.time() - tic)
-    tic = time.time()
-    print('8 ------',end=' ')
+
     del count,insert_vector
-        
 
     #%% Step 5: Identify and assign a unique ID for each  individual
 
     #Asumption 2: Gender distribution is same for different income types 
 
     #Preallocate a dataframe with nan to hold the individual layer
-    nindiv = int(sum(household_df['nind'])) # Total number of individuals
+    nindiv = int(sum(household_df['nIND'])) # Total number of individuals
     individual_df = pd.DataFrame(np.nan, index = range(nindiv),
-                            columns=['hhid', 'individ', 'gender', 'age','head',
-                                    'eduattstat','indivfacid_1','indivfacid_2',
-                                    'indivfacid',
-                                    'schoolenrollment','labourForce','employed'])
-    individual_df.loc[range(nindiv),'individ'] = [range(1,nindiv+1)]
-    individual_df['individ'].astype('int')
-    print(time.time() - tic)
-    tic = time.time()
-    print('9 ------',end=' ')
+                            columns=['hhID', 'indivID', 'gender', 'age','head',
+                                     'eduAttStat','indivFacID_1','indivFacID_2',
+                                     'indivfacid',
+                                     'schoolEnrollment','labourForce','employed'])
+    individual_df.loc[range(nindiv),'indivID'] = [range(1,nindiv+1)]
+    individual_df['indivID'].astype('int')
+
     #%% Step 6: Identify and assign gender for each individual
     # Convert the gender distribution table 3 to numpy array
     tables['t3'][0] = np.array(tables['t3'][0][0],dtype=float) 
@@ -1613,7 +1616,9 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     #%% Step 7: Identify and assign age for each individual
     #Assumption 3: Age profile is same for different income types
     #Convert the age profile wrt gender distribution table 4 to numpy array
-    ageprofile_value = np.array([1,2,3,4,5,6,7,8,9,10], dtype=int)
+    #ageprofile_value = np.array([1,2,3,4,5,6,7,8,9,10], dtype=int)  #Revised!
+    ageprofile_value = np.array(range(len(np.array(tables['t4'][0][0], dtype=float))), dtype=int) #Now it is extendible in the distribution file
+    ageprofile_value += 1
     t4_l1_f = np.array(tables['t4'][0][0], dtype=float) #For female
     t4_l2_m = np.array(tables['t4'][0][1], dtype=float) #For male
     t4 = np.array([t4_l1_f, t4_l2_m])
@@ -1627,9 +1632,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         individual_df.loc[gidx,'age'] = insert_vector
 
     individual_df['age'] = individual_df['age'].astype(int) 
-    print(time.time() - tic)
-    tic = time.time()
-    print('10 ------',end=' ')
+
     #%% Step 8: Identify and assign education attainment status for each individual
 
     # Assumption 4: Education Attainment status is same for different income types 
@@ -1651,14 +1654,11 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         d_value = education_value
         d_number = t5[i]*sum(gidx)    
         insert_vector = dist2vector(d_value, d_number,d_limit,'shuffle')
-        individual_df.loc[gidx,'eduattstat'] = insert_vector
+        individual_df.loc[gidx,'eduAttStat'] = insert_vector
 
-    individual_df['eduattstat'] = individual_df['eduattstat'].astype(int)
+    individual_df['eduAttStat'] = individual_df['eduAttStat'].astype(int)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('11 ------',end=' ')
-    #%% Step 9: Identify and assign the head of household to corresponding hhid
+    #%% Step 9: Identify and assign the head of household to corresponding hhID
 
     # Assumption 5: Head of household is dependent on gender
     # Assumption 6: Only (age>20) can be head of households
@@ -1668,9 +1668,9 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     male_hh = 1-female_hh
 
     # Calculate the number of household heads by gender
-    hh_number= np.array([female_hh, male_hh])*sum(nhouse)
+    hh_number= np.array([female_hh, male_hh])*sum(nHouse)
     hh_number= hh_number.astype(int)
-    hh_number[0] = sum(nhouse) - hh_number[1]
+    hh_number[0] = sum(nHouse) - hh_number[1]
 
     for i in range(len(gender_value)): #Assign female and male candidates
         gaidx= (individual_df['gender'] == gender_value[i]) & \
@@ -1684,44 +1684,37 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         
         individual_df.loc[ga_hh_idx,'head'] = 1
         
-
-
     # 1= household head, 2= household members other than the head    
     individual_df.loc[individual_df['head'] != 1,'head'] =0
 
-    #Assign household ID (hhid) randomly
-    hhid_temp = household_df['hhid'].tolist()
+    #Assign household ID (hhID) randomly
+    hhid_temp = household_df['hhID'].tolist()
     random.shuffle(hhid_temp)
-    individual_df.loc[individual_df['head'] == 1,'hhid'] = hhid_temp
-    print(time.time() - tic)
-    tic = time.time()
-    print('12 ------',end=' ')
+    individual_df.loc[individual_df['head'] == 1,'hhID'] = hhid_temp
+
     #%% Step 10: Identify and assign the household that each individual belongs to
     # In relation with Assumption 6, no individuals under 20 years of age can live
     # alone in an household
     individual_df_temp = individual_df[individual_df['head']==0]
     individual_df_temp_idx = list(individual_df_temp.index)
-    #hhidlist = household_df['hhid'].tolist()
+    #hhidlist = household_df['hhID'].tolist()
     for i in range(1,len(t1_l1)): #Loop through household numbers >1
         hh_nind = t1_l1[i] # Number of individuals in households
-        # Find hhid corresponding to household numbers
-        hh_df_idx = household_df['nind']== hh_nind
-        hhidx = household_df.loc[hh_df_idx,'hhid'].tolist()
+        # Find hhID corresponding to household numbers
+        hh_df_idx = household_df['nIND']== hh_nind
+        hhidx = household_df.loc[hh_df_idx,'hhID'].tolist()
         #Random shuffle hhidx here
         amph = hh_nind -1 # additional member per household
         for j in range(amph):
             # Randomly select len(hhidx) number of indices from individual_df_temp_idx
             idtidx = random.sample(individual_df_temp_idx, len(hhidx))
-            individual_df.loc[idtidx,'hhid'] = hhidx
+            individual_df.loc[idtidx,'hhID'] = hhidx
             #Remove idtidx before next iteration
             individual_df_temp = individual_df_temp.drop(index=idtidx)
             individual_df_temp_idx = list(individual_df_temp.index)
             
-    individual_df['hhid'] = individual_df['hhid'].astype(int)
+    individual_df['hhID'] = individual_df['hhID'].astype(int)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('13 ------',end=' ')
     #%% Step 10a: Identify school enrollment for each individual
     # Final output 0 = not enrolled in school, 1 = enrolled in school 
     # Assumption 16: Schooling age limits- AP2 and AP3 ( 5 to 18 years old) 
@@ -1735,86 +1728,54 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # Also find individual Id of students and household Id of students
     agemask = (individual_df['age'] == 2) | (individual_df['age']==3) 
     school_df = pd.DataFrame(np.nan, index = range(sum(agemask)),
-                    columns=['individ','hhid','eduattstath','income','enrollment'])
-    school_df_idx = individual_df.loc[agemask,'individ'].index
+                    columns=['indivID','hhID','eduAttStatH','income','enrollment'])
+    school_df_idx = individual_df.loc[agemask,'indivID'].index
     school_df.set_index(school_df_idx, inplace=True)
-    school_df['individ'] = individual_df.loc[agemask,'individ']
-    school_df['hhid'] = individual_df.loc[agemask,'hhid']
+    school_df['indivID'] = individual_df.loc[agemask,'indivID']
+    school_df['hhID'] = individual_df.loc[agemask,'hhID']
     # Then, pick a slice of individual_df corresponding to the household a student
     # belongs to. From there, Pick eduAtt status of head of household. To expedite
     # computation, dataframe columns have been converted to list
-    school_df_hhid_list = list(school_df['hhid'])
-    temp_df = individual_df[individual_df['hhid'].isin(school_df_hhid_list)]
+    school_df_hhid_list = list(school_df['hhID'])
+    temp_df = individual_df[individual_df['hhID'].isin(school_df_hhid_list)]
     head4school_df = temp_df[temp_df['head'] == 1]
-    head4school_df_hhid_list = list(head4school_df['hhid'])
-    head4school_df_edus_list = list(head4school_df['eduattstat'])
+    head4school_df_hhID_list = list(head4school_df['hhID'])
+    head4school_df_edus_list = list(head4school_df['eduAttStat'])
     school_df_edu_list = np.ones(len(school_df_hhid_list))*np.nan
 
     # Label 'lowIncomeA' and 'lowIncomeB' = 1, 'midIncome' =2, 'highIncome' =3
-    household_df_hhid_list = list(household_df['hhid'])
+    household_df_hhid_list = list(household_df['hhID'])
     #Use .copy() to avoid SettingwithCopyWarning
-    income4school_df=household_df[household_df['hhid'].\
-                                isin(school_df_hhid_list)].copy()
+    income4school_df=household_df[household_df['hhID'].\
+                                  isin(school_df_hhid_list)].copy()
     li_mask = (income4school_df['income'] == avg_income_types[0]) |\
-            (income4school_df['income'] == avg_income_types[1]) 
+              (income4school_df['income'] == avg_income_types[1]) 
     lm_mask = income4school_df['income'] == avg_income_types[2]
     lh_mask = income4school_df['income'] == avg_income_types[3]
     income4school_df.loc[li_mask,'income'] = 1
     income4school_df.loc[lm_mask,'income'] = 2
     income4school_df.loc[lh_mask,'income'] = 3
     income4school_df_income_list = list(income4school_df['income'])
-    income4school_df_hhid_list = list(income4school_df['hhid'])
+    income4school_df_hhID_list = list(income4school_df['hhID'])
     school_df_income_list = np.ones(len(school_df_hhid_list))*np.nan
-
-    # Faster way
-    #school_df
-    #head4school_df
-    school_df_edu_list_df = school_df[['hhid']].merge(head4school_df[['hhid','eduattstat']], how='left', on='hhid')
-    school_df_edu_list= list(school_df_edu_list_df['eduattstat'])
- 
-    school_df_income_list_df = school_df[['hhid']].merge(income4school_df[['hhid','income']], how='left', on='hhid')
+    school_df_edu_list_df = school_df[['hhID']].merge(head4school_df[['hhID','eduAttStat']], how='left', on='hhID')
+    school_df_edu_list= list(school_df_edu_list_df['eduAttStat'])
+    school_df_income_list_df = school_df[['hhID']].merge(income4school_df[['hhID','income']], how='left', on='hhID')
     school_df_income_list= list(school_df_income_list_df['income'])
-
-    #count=0
-    # NOTE: If the operation inside this for loop can be replaced with indexing
-    # operation the computation time for this code can be further reduced.
-    #for hhid in school_df_hhid_list:
-    #    #print('hhid',hhid, count, len(school_df_hhid_list))
-    #    #assign education attained by head of household to school_df
-    #    hhid_temp = [i for i, value in enumerate(head4school_df_hhid_list)\
-    #                if value == hhid ]
-    #    school_df_edu_list[count] = head4school_df_edus_list[hhid_temp[0]]
-    #    #assign income type of household to school_df
-    #    hhid_temp2 = [i for i, value in enumerate(income4school_df_hhid_list)\
-    #                if value == hhid ]
-    #    school_df_income_list[count] = income4school_df_income_list[hhid_temp2[0]]
-    #    count+=1
-
-
-
-    #print('original edu')
-    #print(len(school_df_edu_list), school_df_edu_list[:10],school_df_edu_list[-10:])
-    #print('original income')
-    #print(len(school_df_income_list), school_df_income_list[:10],school_df_income_list[-10:])
-        
-    school_df.loc[school_df.index, 'eduattstath'] = school_df_edu_list 
-    school_df['eduattstath'] = school_df['eduattstath'].astype(int)
+    school_df.loc[school_df.index, 'eduAttStatH'] = school_df_edu_list 
+    school_df['eduAttStatH'] = school_df['eduAttStatH'].astype(int)
     school_df['income'] = school_df_income_list
     school_df['income'] = school_df['income'].astype(int)
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('14 ------',end=' ')
-
+      
     #assign school enrollment (1 = enrolled, 0 = not enrolled)
     for incomeclass in range(1,4): # Income class 1,2,3
-        for head_eduattstat in range(1,6): # Education attainment category 1 to 5
+        for head_eduAttStat in range(1,6): # Education attainment category 1 to 5
             enrmask = (school_df['income'] == incomeclass) &\
-                    (school_df['eduattstath'] == head_eduattstat)
+                      (school_df['eduAttStatH'] == head_eduAttStat)
             no_of_pstudents = sum(enrmask) # Number of potential students
             if no_of_pstudents ==0: #continue if no students exist for given case
                 continue
-            i,j = incomeclass-1, head_eduattstat-1 # indices to access table 5a
+            i,j = incomeclass-1, head_eduAttStat-1 # indices to access table 5a
             d_limit = no_of_pstudents # Size of array to match after rounding off
             d_value = [1,0] #1= enrolled, 0 = not enrolled
             d_number = np.array([t5a[i,j], 1-t5a[i,j]])*no_of_pstudents        
@@ -1823,11 +1784,8 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
             
     school_df['enrollment']= school_df['enrollment'].astype(int)
     # Substitute the enrollment status back to individual_df dataframe
-    individual_df.loc[school_df.index,'schoolenrollment']=  school_df['enrollment']   
+    individual_df.loc[school_df.index,'schoolEnrollment']=  school_df['enrollment']   
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('15 ------',end=' ')
     #%% Step 11: Identify approximate total residential building area needed
     # (approxDwellingAreaNeeded_sqm) 
     # Assumption 7a on Average dwelling area (sqm) for different income types.
@@ -1836,8 +1794,8 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # which represents the total buildable area
 
     #Sub dataframe of landuse type containing only residential areas
-    landuse_res_df = landuse.loc[nhouse.index].copy()
-    landuse_res_df.loc[nhouse.index,'nhousehold'] = nhouse
+    landuse_res_df = landuse.loc[nHouse.index].copy()
+    landuse_res_df.loc[nHouse.index,'nHousehold'] = nHouse
     hh_temp_df = household_df.copy()
 
     for i in range(0,len(avg_income_types)):
@@ -1847,16 +1805,11 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         zoneid = landuse_res_df['zoneid'][index]
         sum_part = hh_temp_df.loc[hh_temp_df['zoneid']==zoneid,'income'].sum()
         landuse_res_df.loc[index, 'approxDwellingAreaNeeded_sqm'] = sum_part
-        
+    hh_temp_df.rename(columns={'income':'dwelling_area'}, inplace=True)   
     # Zones where no households live i.e. potential commercial or industrial zones    
-    noHH = nhouse_all[nhouse_all<=0].index
+    noHH = nHouse_all[nHouse_all<=0].index
     landuse_ic_df = landuse.loc[noHH].copy()
     landuse_ic_df['area'] = landuse_ic_df['area']*10000 # Convert hectare to sq m
-        
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('16 ------',end=' ')
 
     #%% Steps 12,13,14,15: 
     #    Identify number of residential buildings and generate building layer 
@@ -1878,9 +1831,6 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     footprint_base_sum = 0 # footprint at base, not multiplied by storeys
     footprint_base_L,storey_L,lrs_L,zoneid_L,codelevel_L = [],[],[],[],[]
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('17 ------',end=' ')
     for i in landuse_res_df.index: #Loop through zones 
         zoneid = landuse_res_df['zoneid'][i]
         #totalbldarea_res = landuse_res_df['totalbldarea_res'][i]
@@ -1893,7 +1843,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         # lenmax equals maximum possible length of vector of building footprints
         lenmax = int(totalbldarea_res/np.min(fpt_range))
         footprints_temp = np.random.uniform(np.min(fpt_range),\
-                                        np.max(fpt_range), size=(lenmax,1))
+                                         np.max(fpt_range), size=(lenmax,1))
         footprints_temp = footprints_temp.reshape(len(footprints_temp),)
         # Select LRS using multinomial distribution and Table 8
         lrs_number=multinomial(len(footprints_temp), t8[lutidx[lut_zone]],size=1) 
@@ -1933,7 +1883,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         
         #If it is necessary to equalize number of storeys = number of households
         storey_vector_cs = np.cumsum(storey_vector)
-        stmask = storey_vector_cs <= landuse_res_df.loc[i,'nhousehold']
+        stmask = storey_vector_cs <= landuse_res_df.loc[i,'nHousehold']
         if sum(stmask)>0:
             stlimit_idx = np.max(np.where(stmask))+1
             stlimit_idx_range = range(stlimit_idx+1,len(footprints_temp))
@@ -1982,9 +1932,6 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         # Check distribution after deletion (for debugging) by counting LR
         #print(sum(storey_vector_final<5)/len(storey_vector_final))
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('18 ------',end=' ')
     # landuse_res_df['area'] denotes the total buildable area   
     landuse_res_df['area'] *= 10000 # Convert hectares to sq m, 1ha =10^4 sqm
 
@@ -2001,23 +1948,21 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     #Create and populate the building layer, with unassigned values as NaN
     resbld_df = pd.DataFrame(np.nan, index = range(0, no_of_resbldg),
-                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
-                                    'nhouse', 'residents', 'expstr','fptarea',
-                                    'occbld','lrstype','codelevel',
-                                    'nstoreys'])
+                            columns=['zoneid', 'bldID', 'specialFac', 'repValue',
+                                      'nHouse', 'residents', 'expStr','fptarea',
+                                      'OccBld','lrstype','CodeLevel',
+                                      'nstoreys'])
     resbld_range = range(0,no_of_resbldg)
-    #resbld_df.loc[resbld_range,'bldid'] = list(range(1,no_of_resbldg+1))
+    #resbld_df.loc[resbld_range,'bldID'] = list(range(1,no_of_resbldg+1))
     resbld_df.loc[resbld_range,'zoneid'] = zoneid_L
     resbld_df['zoneid'] = resbld_df['zoneid'].astype('int')
-    resbld_df.loc[resbld_range,'occbld'] = 'Res'
-    resbld_df.loc[resbld_range,'specialfac'] = 0
+    resbld_df.loc[resbld_range,'OccBld'] = 'Res'
+    resbld_df.loc[resbld_range,'specialFac'] = 0
     resbld_df.loc[resbld_range,'fptarea'] = footprint_base_L
     resbld_df.loc[resbld_range,'nstoreys'] = storey_L
     resbld_df.loc[resbld_range,'lrstype'] = lrs_L
-    resbld_df.loc[resbld_range,'codelevel'] = codelevel_L
-    print(time.time() - tic)
-    tic = time.time()
-    print('19 ------',end=' ')
+    resbld_df.loc[resbld_range,'CodeLevel'] = codelevel_L
+
     #%% Assign zoneids and building IDs for Res and ResCom
     # Assign 'ResCom' status based on Table 9
     # Assumption: Total residential buildings = Res + ResCom
@@ -2039,7 +1984,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         occtypedist = t9[lutidx[ landuse_res_df['luf'][lutlrdidx]]]
         no_of_resbld = sum(zonemask) # Number of residential buildings in a zone
         # if mixed residential+commercial buildings as well as residential buildings exist
-        if occtypedist[3] !=0 and occtypedist[0] !=0 : 
+        if occtypedist[3] !=0 and occtypedist[0] !=0: 
             # nrc = number of mixed res+com buildings in a zone
             nrc = int(occtypedist[3]/occtypedist[0]*no_of_resbld)
         elif occtypedist[3] !=0 and occtypedist[0] ==0:
@@ -2047,62 +1992,86 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         else: # if only residential buildings exist
             continue
         nrc_idx = sample(zone_idx,nrc)
-        resbld_df.loc[nrc_idx,'occbld'] = 'ResCom'
+        resbld_df.loc[nrc_idx,'OccBld'] = 'ResCom'
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('20 ------',end=' ')
     #Assign building Ids for res and rescom buildings
     lenresbld = len(resbld_df)
-    resbld_df.loc[range(0,lenresbld),'bldid'] = list(range(1,lenresbld+1))
-    resbld_df['bldid'] = resbld_df['bldid'].astype('int')
+    resbld_df.loc[range(0,lenresbld),'bldID'] = list(range(1,lenresbld+1))
+    resbld_df['bldID'] = resbld_df['bldID'].astype('int')
 
     #%% STEP16: Identify and assign number of households and residents for each 
     #residential building
-    #Assign nhouse, residents. All the households and residents must be assigned
+    # This part assigns multiple households to a single storey with adequate space.
+    #Assign nHouse, residents. All the households and residents must be assigned
     #to this layer.
-    print(time.time() - tic)
-    tic = time.time()
-    print('20.2 ------',end=' ')
-    dwellings_str=dist2vector(resbld_df['bldid'],np.array(storey_L),\
+
+    hh_zid = np.unique(household_df['zoneid']).astype(int)
+    household_df['dwelling_area'] = hh_temp_df['dwelling_area']
+
+    # Match the dwellings needed to the dwellings available
+    for zid in hh_zid:#zoneids between households and buildings must be consistent.
+        zidmask_rdf = resbld_df['zoneid']==zid
+        bldid_temp = resbld_df.loc[zidmask_rdf,'bldID'].copy()
+        nstoreys_temp = resbld_df.loc[zidmask_rdf,'nstoreys'].copy()
+        fptarea_temp = resbld_df.loc[zidmask_rdf,'fptarea']
+
+        for ada in average_dwelling_area:
+            if bldid_temp.empty:
+                continue
+            #This method keeps people of same income category in same building.
+     
+            #hh_per_storey = 3 # dwellings_fptarea
+            hh_per_storey = round(fptarea_temp/ada,0)
+            hh_per_storey[hh_per_storey==0]=1
+            
+            dwelling_multiplier = np.ones(len(bldid_temp))*hh_per_storey*nstoreys_temp
+                         #resbld_df.loc[zidmask_rdf,'nstoreys']
+            dwelling_multiplier = dwelling_multiplier.to_numpy(dtype=int)
+            #dwelling_multiplier[dwelling_multiplier==0] = 1
+            dwelling4zid = dist2vector(bldid_temp,dwelling_multiplier,\
+                                       np.sum(dwelling_multiplier),'DoNotShuffle')
+            dwelling4zid = list(map(int,dwelling4zid))
+            
+            #Assign these dwellings to households with ada in zid
+            hhbid_mask = (household_df['zoneid']==zid)&(household_df['dwelling_area']==ada)
+            if sum(hhbid_mask)>len(dwelling4zid):
+                continue
+            household_df.loc[hhbid_mask,'bldID'] = dwelling4zid[0:sum(hhbid_mask)]
+              
+            #Once a set of dwelling (bldid) have been assigned to an income group,
+            #do not assign them again to another income group.
+            dwelling2remove = set(dwelling4zid[0:sum(hhbid_mask)])
+            bldid_temp = bldid_temp[~bldid_temp.isin(dwelling2remove)]
+            nstoreys_temp = nstoreys_temp[bldid_temp.index]
+            fptarea_temp = fptarea_temp[bldid_temp.index]  
+     
+    del household_df['dwelling_area']
+
+    '''
+    # This part assign single storey to each household. Used for debugging only.
+    dwellings_str=dist2vector(resbld_df['bldID'],np.array(storey_L),\
                                         np.sum(np.array(storey_L)),'DoNotShuffle')
-    print(time.time() - tic)
-    tic = time.time()
-    print('20.3 ------',end=' ')
     dwellings = list(map(int,dwellings_str))
     #dwellings.sort()
     dwellings_selected = dwellings[0:len(household_df)]
-    print(time.time() - tic)
-    tic = time.time()
-    print('20.4 ------',end=' ')
     random.shuffle(dwellings_selected)
     #Assign building IDs to all households
-    household_df.loc[:,'bldid'] = dwellings_selected
-
+    household_df.loc[:,'bldID'] = dwellings_selected
+    '''
 
     # Assign number of households and residents to residential buildings resbld_df
-    # This loop must be optimized for speed
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('20.5 ------',end=' ')
-
-    # Alternative
-    # Drop the columns which I'll already generate in a second
-    resbld_df = resbld_df.drop(columns=['nhouse','residents'])
+    resbld_df = resbld_df.drop(columns=['nHouse','residents'])
     # Get nind information from household table
-    resbld_w_household = resbld_df[['bldid']].merge(household_df[['bldid','hhid','nind']], how='inner', on='bldid')
+    resbld_w_household = resbld_df[['bldID']].merge(household_df[['bldID','hhID','nIND']],\
+                                                    how='inner', on='bldID')
     # Aggregate by bldid. nhouse: count of household, residents: number of individuals 
-    resbld_w_household = resbld_w_household.groupby('bldid').agg({'hhid':'count','nind':'sum'}).reset_index().rename(columns={'hhid':'nhouse','nind':'residents'})
+    resbld_w_household = resbld_w_household.groupby('bldID').agg({'hhID':'count',\
+                          'nIND':'sum'}).reset_index().rename(columns={'hhID':'nHouse',\
+                                                                    'nIND':'residents'})
     # Merge nhouse and residents columns back into building table
-    resbld_df = resbld_df.merge(resbld_w_household,how='inner',on='bldid')
+    resbld_df = resbld_df.merge(resbld_w_household,how='inner',on='bldID')
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('21 ------',end=' ')
-    # Remove rows in resbld_df which contains no residents
-    
-  
 
     #%% Step 17,18: Identify and generate commercial and industrial buildings
     # No household or individual lives in com, ind, hosp, sch zones
@@ -2118,10 +2087,10 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     occbld_label = ['Com','Ind']
     nci_cs = np.cumsum(nci)
     indcom_df = pd.DataFrame(np.nan, index = range(0, ncom+nind),
-                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
-                                    'nhouse', 'residents', 'expstr','fptarea',
-                                    'lut_number','occbld','lrstype','codelevel',
-                                    'nstoreys'])
+                            columns=['zoneid', 'bldID', 'specialFac', 'repValue',
+                                      'nHouse', 'residents', 'expStr','fptarea',
+                                      'lut_number','OccBld','lrstype','CodeLevel',
+                                      'nstoreys'])
 
     t10= tables['t10'][0] # Extract Table 10
     a = 0
@@ -2136,31 +2105,28 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         a = nci_cs[i]
         # Generate footprints
         indcom_df.loc[range_ic,'fptarea'] = np.random.uniform(\
-                np.min(fpt_ic),np.max(fpt_ic), size=(nci[i],1)).reshape(nci[i],)
+                 np.min(fpt_ic),np.max(fpt_ic), size=(nci[i],1)).reshape(nci[i],)
         # Generate number of storeys
         indcom_df.loc[range_ic,'nstoreys'] =randint(np.min(nstorey_ic),\
-                np.max(nstorey_ic)+1,size=(nci[i],1)).reshape(nci[i],)
+                  np.max(nstorey_ic)+1,size=(nci[i],1)).reshape(nci[i],)
         # Generate code compliance
         cc_number_ic = multinomial(nci[i],codelevel_ic,size=1)
-        indcom_df.loc[range_ic,'codelevel'] =\
-                        dist2vector(code_level, cc_number_ic,nci[i],'shuffle')
+        indcom_df.loc[range_ic,'CodeLevel'] =\
+                           dist2vector(code_level, cc_number_ic,nci[i],'shuffle')
         # Generate LRS
         lrs_number_ic = multinomial(nci[i],lrs_ic,size=1)
         indcom_df.loc[range_ic,'lrstype'] =\
-                        dist2vector(lrs_types,lrs_number_ic,nci[i],'shuffle')
-        indcom_df.loc[range_ic,'occbld']= occbld_label[i]                     
+                           dist2vector(lrs_types,lrs_number_ic,nci[i],'shuffle')
+        indcom_df.loc[range_ic,'OccBld']= occbld_label[i]                     
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('22 ------',end=' ')
     # Assign number of households, Residents, special facility label
     range_all_ic = range(0,len(indcom_df))
-    indcom_df.loc[range_all_ic,'nhouse'] = 0
+    indcom_df.loc[range_all_ic,'nHouse'] = 0
     indcom_df.loc[range_all_ic,'residents'] = 0
-    indcom_df.loc[range_all_ic,'specialfac'] = 0
+    indcom_df.loc[range_all_ic,'specialFac'] = 0
 
-    ind_df = indcom_df[indcom_df['occbld'] == 'Ind'].copy()
-    com_df = indcom_df[indcom_df['occbld'] == 'Com'].copy()
+    ind_df = indcom_df[indcom_df['OccBld'] == 'Ind'].copy()
+    com_df = indcom_df[indcom_df['OccBld'] == 'Com'].copy()
     ind_df.reset_index(drop=True,inplace=True)
     com_df.reset_index(drop=True,inplace=True)
         
@@ -2173,29 +2139,26 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     if nsch == 0:
         print("WARNING: Total population",nindiv,"is less than the user-specified "\
-            "number of individuals per school",nsch_pi,". So, total school for "\
-            "this population = 1 (by default) \n")
+              "number of individuals per school",nsch_pi,". So, total school for "\
+              "this population = 1 (by default) \n")
         nsch = 1
 
     if nhsp == 0:
         print("WARNING: Total population",nindiv,"is less than the user-specified "\
-            "number of individuals per hospital",nhsp_pi,". So, total hospital for "\
-            "this population = 1 (by default) \n ")
+              "number of individuals per hospital",nhsp_pi,". So, total hospital for "\
+              "this population = 1 (by default) \n ")
         nhsp = 1
 
     nsh = np.array([nsch,nhsp])
     nsh_cs = np.cumsum(nsh)
     occbld_label_sh = ['Edu','Hea']
-    specialfac = [1,2] # Special facility label
+    specialFac = [1,2] # Special facility label
     schhsp_df = pd.DataFrame(np.nan, index = range(0, nsch+nhsp),
-                            columns=['zoneid', 'bldid', 'specialfac', 'repvalue',
-                                    'nhouse', 'residents', 'expstr','fptarea',
-                                    'lut_number','occbld','lrstype','codelevel',
-                                    'nstoreys'])
+                            columns=['zoneid', 'bldID', 'specialFac', 'repValue',
+                                      'nHouse', 'residents', 'expStr','fptarea',
+                                      'lut_number','OccBld','lrstype','CodeLevel',
+                                      'nstoreys'])
     t14= tables['t14'][0] # Extract Table 14
-    print(time.time() - tic)
-    tic = time.time()
-    print('23 ------',end=' ')
     a=0
     for i in range(0,len(t14)): # First school, then hospital
         attr_sh = t14[i]
@@ -2208,32 +2171,29 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         a = nsh_cs[i]
         # Generate footprints
         schhsp_df.loc[range_sh,'fptarea'] = np.random.uniform(\
-                np.min(fpt_sh),np.max(fpt_sh), size=(nsh[i],1)).reshape(nsh[i],)
+                 np.min(fpt_sh),np.max(fpt_sh), size=(nsh[i],1)).reshape(nsh[i],)
         # Generate number of storeys
         schhsp_df.loc[range_sh,'nstoreys'] =randint(np.min(nstorey_sh),\
-                np.max(nstorey_sh)+1,size=(nsh[i],1)).reshape(nsh[i],)
+                  np.max(nstorey_sh)+1,size=(nsh[i],1)).reshape(nsh[i],)
         # Generate code compliance
         cc_number_sh = multinomial(nsh[i],codelevel_sh,size=1)
-        schhsp_df.loc[range_sh,'codelevel'] =\
-                        dist2vector(code_level, cc_number_sh,nsh[i],'shuffle')
+        schhsp_df.loc[range_sh,'CodeLevel'] =\
+                           dist2vector(code_level, cc_number_sh,nsh[i],'shuffle')
         # Generate LRS
         lrs_number_sh = multinomial(nsh[i],lrs_sh,size=1)
         schhsp_df.loc[range_sh,'lrstype'] =\
-                        dist2vector(lrs_types,lrs_number_sh,nsh[i],'shuffle')
-        schhsp_df.loc[range_sh,'occbld']= occbld_label_sh[i] 
+                           dist2vector(lrs_types,lrs_number_sh,nsh[i],'shuffle')
+        schhsp_df.loc[range_sh,'OccBld']= occbld_label_sh[i] 
 
         # Assign special facility label  
-        schhsp_df.loc[range_sh,'specialfac'] = specialfac[i]                 
+        schhsp_df.loc[range_sh,'specialFac'] = specialFac[i]                 
 
     # Assign number of households, Residents, 
     range_all_sh = range(0,len(schhsp_df))
-    schhsp_df.loc[range_all_sh,'nhouse'] = 0
+    schhsp_df.loc[range_all_sh,'nHouse'] = 0
     schhsp_df.loc[range_all_sh,'residents'] = 0
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('24 ------',end=' ')
-    #%% Assign zoneIds for Industrial and Commercial buildings
+    #%% Assign zoneids for Industrial and Commercial buildings
 
     # The number of industrial and commercial buildings are estimated using the
     # following 2 methods:
@@ -2246,7 +2206,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # the actual value of the buildings, and Method 2 is used to ensure that
     # these buildings are distributed in such a way that they follow Table 9.
     # 
-    # The following method of assigning the ZoneIDs treats the mixed used zones
+    # The following method of assigning the zoneids treats the mixed used zones
     # (residential, residential+commercial) and purely industrial or commercial
     # zones as 2 separate cases.
     #
@@ -2271,35 +2231,32 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         if otd[0] == 0 and otd[3]==0:
             Tb = Nrc # If neither residential nor res+com exist
             print('Warning: If population exists, but neither residential nor '\
-                'residential+commercial buildings are allowed, there is '\
-                'inconsistency between population and current row in table 9.'\
-                'Therefore, it is assumed that total number of buildings in '\
-                'zoneid', landuse_res_df.loc[i,'zoneid'],\
-                '= no. of residential buildings in this zone.')
+                  'residential+commercial buildings are allowed, there is '\
+                  'inconsistency between population and current row in table 9.'\
+                  'Therefore, it is assumed that total number of buildings in '\
+                  'zoneid', landuse_res_df.loc[i,'zoneid'],\
+                  '= no. of residential buildings in this zone.')
             print('Also, consider allowing residential and/or res+com building '\
-                'to this zone in Table 9, if it is assigned population.\n')
+                  'to this zone in Table 9, if it is assigned population.\n')
         else:  
             Tb = Nrc/(otd[0]+otd[3]) # If either residential or res+com exist  
 
         #Calculate the number of industrial buildings using Table 9   
         if otd[1]>0:
             landuse_res_df.loc[i,'ind_weightage'] = ceil(Tb * otd[1])
-            #landuse_res_df.loc[i,'no_of_ind_buildings'] = ceil(Tb * otd[1])
+            #landuse_res_df.loc[i,'No_of_ind_buildings'] = ceil(Tb * otd[1])
         else:
-            # landuse_res_df.loc[i,'no_of_ind_buildings'] = 0
-            landuse_res_df.loc[i,'ind_weightage'] = 0
+           # landuse_res_df.loc[i,'No_of_ind_buildings'] = 0
+           landuse_res_df.loc[i,'ind_weightage'] = 0
             
         #Calculate the number of commercial buildings using Table 9     
         if otd[2]>0:
             landuse_res_df.loc[i,'com_weightage'] = ceil(Tb * otd[2])
-            #landuse_res_df.loc[i,'no_of_com_buildings'] = ceil(Tb * otd[2])
+            #landuse_res_df.loc[i,'No_of_com_buildings'] = ceil(Tb * otd[2])
         else:
             landuse_res_df.loc[i,'com_weightage'] = 0
-            #landuse_res_df.loc[i,'no_of_com_buildings'] = 0
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('25 ------',end=' ')
+            #landuse_res_df.loc[i,'No_of_com_buildings'] = 0
+            
     # If number of buildings (industrial/commercial) estimated from Method 2(in the
     # above steps of Case 1) exceeds the number of buildings estimated from 
     # Method 1, treat the value from Method 1 as the upper limit. 
@@ -2319,38 +2276,38 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
 
     com_wt = landuse_res_df['com_weightage'].copy()   
     if com_wt.sum() > ncom:
-        landuse_res_df['no_of_com_buildings'] = np.floor(ncom*com_wt/com_wt.sum())
+        landuse_res_df['No_of_com_buildings'] = np.floor(ncom*com_wt/com_wt.sum())
     else:
-        landuse_res_df['no_of_com_buildings'] = com_wt
+        landuse_res_df['No_of_com_buildings'] = com_wt
 
     ind_wt = landuse_res_df['ind_weightage'].copy()   
     if ind_wt.sum() > nind:
-        landuse_res_df['no_of_ind_buildings'] = np.floor(nind*ind_wt/ind_wt.sum())
+        landuse_res_df['No_of_ind_buildings'] = np.floor(nind*ind_wt/ind_wt.sum())
     else:
-        landuse_res_df['no_of_ind_buildings'] = ind_wt    
+        landuse_res_df['No_of_ind_buildings'] = ind_wt    
 
-        
-    landuse_res_df['no_of_ind_buildings'] =\
-                        landuse_res_df['no_of_ind_buildings'].astype('int')
-    landuse_res_df['no_of_com_buildings'] =\
-                        landuse_res_df['no_of_com_buildings'].astype('int')
+          
+    landuse_res_df['No_of_ind_buildings'] =\
+                        landuse_res_df['No_of_ind_buildings'].astype('int')
+    landuse_res_df['No_of_com_buildings'] =\
+                        landuse_res_df['No_of_com_buildings'].astype('int')
                         
     # Number and area of commercial buildings to be assigned    
-    nCom_asgn = landuse_res_df['no_of_com_buildings'].sum()
+    nCom_asgn = landuse_res_df['No_of_com_buildings'].sum()
     nCom_asgn_area = com_df.loc[range(0, nCom_asgn),'fptarea'].sum() 
     # Number and area of industrial buildings to be assigned
-    nInd_asgn = landuse_res_df['no_of_ind_buildings'].sum()
+    nInd_asgn = landuse_res_df['No_of_ind_buildings'].sum()
     nInd_asgn_area = ind_df.loc[range(0,nInd_asgn),'fptarea'].sum()
 
 
     # Assign zoneid to industrial buildings (if any) in residential areas
     zoneid_r_i = dist2vector(list(landuse_res_df['zoneid']),\
-                list(landuse_res_df['no_of_ind_buildings']),nInd_asgn,'shuffle')
+                list(landuse_res_df['No_of_ind_buildings']),nInd_asgn,'shuffle')
     ind_df.loc[range(0,nInd_asgn),'zoneid'] = list(map(int,zoneid_r_i))
 
     # Assign zoneid to commercial buildings (if any) in residential areas
     zoneid_r_c = dist2vector(list(landuse_res_df['zoneid']),\
-                list(landuse_res_df['no_of_com_buildings']),nCom_asgn,'shuffle')
+                list(landuse_res_df['No_of_com_buildings']),nCom_asgn,'shuffle')
     com_df.loc[range(0,nCom_asgn),'zoneid'] = list(map(int,zoneid_r_c))
 
 
@@ -2364,9 +2321,6 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # Number of commercial buildings that have not been assigned
     nCom_tba = int(len(com_df) - nCom_asgn)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('26 ------',end=' ')
     # Before assigning zones to buildings, find out the area available for buildings
     # in each zones. Since no population is assigned to residential and commercial
     # buildings, the number of buildings in a zone is controlled solely by area.
@@ -2378,58 +2332,45 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
             continue
         
         if otd[1]>0:
-            landuse_ic_df.loc[i,'areaavailableforind']=\
+            landuse_ic_df.loc[i,'AreaAvailableForInd']=\
                                             AC_ind/100*landuse_ic_df.loc[i,'area']
         else:
-            landuse_ic_df.loc[i,'areaavailableforind']=0
-
+            landuse_ic_df.loc[i,'AreaAvailableForInd']=0
+     
         if otd[2]>0:
-            landuse_ic_df.loc[i,'areaavailableforcom']=\
+            landuse_ic_df.loc[i,'AreaAvailableForCom']=\
                                             AC_com/100*landuse_ic_df.loc[i,'area']
         else:
-            landuse_ic_df.loc[i,'areaavailableforcom']=0
+            landuse_ic_df.loc[i,'AreaAvailableForCom']=0
             
-    print(time.time() - tic)
-    tic = time.time()
-    print('27 ------',end=' ')
     # Check how many of the generated com/ind buildings fit into the available area
     ind_fptarea_cs = list(np.cumsum(ind_df['fptarea']))
     com_fptarea_cs = list(np.cumsum(com_df['fptarea']))
 
     # Total areas available for commercial and industrial buildings in all zones
-    At_c= landuse_ic_df['areaavailableforcom'].sum()
-    At_i = landuse_ic_df['areaavailableforind'].sum()
+    At_c= landuse_ic_df['AreaAvailableForCom'].sum()
+    At_i = landuse_ic_df['AreaAvailableForInd'].sum()
     licidx = landuse_ic_df.index
 
     #Assign number of industrial buildings to industrial zones____
     # Unassigned area (c or i) = Total footprint (c or i) - area to be assigned(c or i) 
     unassigned_ind_area = ind_fptarea_cs[-1]-nInd_asgn_area # Total - assigned
-    # if unassigned_ind_area <= At_i:
-    #     landuse_ic_df.loc[licidx,'no_of_ind_buildings'] =\
-    #         landuse_ic_df['areaavailableforind']/At_i*nInd_tba
-    #     landuse_ic_df['no_of_ind_buildings'] =\
-    #         landuse_ic_df['no_of_ind_buildings'].fillna(0)    
-    #     landuse_ic_df['no_of_ind_buildings']=\
-    #         landuse_ic_df['no_of_ind_buildings'].astype('int')
-    # else:
-    #     print('Required industrial buildings do not fit into available land area.')
-    #     sys.exit(1)
 
     if unassigned_ind_area > At_i:
         # Need to truncate excess industrial buildings
         print('WARNING: Required industrial buildings do not fit into available '\
-            'land area. So, excess industrial buildings have been removed.')
+              'land area. So, excess industrial buildings have been removed.')
         ind_df_unassignedArea = np.cumsum(ind_df.loc[range(nInd_asgn,len(ind_df)),\
-                                                    'fptarea'])
+                                                     'fptarea'])
         ind_df_UAmask = ind_df_unassignedArea < At_i 
         nInd_tba = sum(ind_df_UAmask)
 
-    landuse_ic_df.loc[licidx,'no_of_ind_buildings'] =\
-        landuse_ic_df['areaavailableforind']/At_i*nInd_tba
-    landuse_ic_df['no_of_ind_buildings'] =\
-        landuse_ic_df['no_of_ind_buildings'].fillna(0)    
-    landuse_ic_df['no_of_ind_buildings']=\
-        landuse_ic_df['no_of_ind_buildings'].astype('int')
+    landuse_ic_df.loc[licidx,'No_of_ind_buildings'] =\
+        landuse_ic_df['AreaAvailableForInd']/At_i*nInd_tba
+    landuse_ic_df['No_of_ind_buildings'] =\
+        landuse_ic_df['No_of_ind_buildings'].fillna(0)    
+    landuse_ic_df['No_of_ind_buildings']=\
+        landuse_ic_df['No_of_ind_buildings'].astype('int')
 
     #Assign number of commercial buildings to commercial zones____
     unassigned_com_area = com_fptarea_cs[-1]-nCom_asgn_area
@@ -2437,44 +2378,36 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     if unassigned_com_area > At_c:
         # Need to truncate excess commercial buildings
         print('WARNING: Required commercial buildings do not fit into available '\
-            'land area. So, excess commerical buildings have been removed.')
+              'land area. So, excess commerical buildings have been removed.')
         com_df_unassignedArea = np.cumsum(com_df.loc[range(nCom_asgn,len(com_df)),\
-                                                    'fptarea'])
+                                                     'fptarea'])
         com_df_UAmask = com_df_unassignedArea < At_c 
         nCom_tba = sum(com_df_UAmask)
 
-    landuse_ic_df.loc[licidx,'no_of_com_buildings'] =\
-        landuse_ic_df['areaavailableforcom']/At_c*nCom_tba
-    landuse_ic_df['no_of_com_buildings'] =\
-            landuse_ic_df['no_of_com_buildings'].fillna(0)  
-    landuse_ic_df['no_of_com_buildings']=\
-        landuse_ic_df['no_of_com_buildings'].astype('int')
+    landuse_ic_df.loc[licidx,'No_of_com_buildings'] =\
+        landuse_ic_df['AreaAvailableForCom']/At_c*nCom_tba
+    landuse_ic_df['No_of_com_buildings'] =\
+            landuse_ic_df['No_of_com_buildings'].fillna(0)  
+    landuse_ic_df['No_of_com_buildings']=\
+        landuse_ic_df['No_of_com_buildings'].astype('int')
 
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('28 ------',end=' ')
     # Begin assigning buildings to zones 
     # Assign zoneid to industrial buildings (if any) in industrial areas
-    limit_zoneid_ic_i = landuse_ic_df['no_of_ind_buildings'].sum()
+    limit_zoneid_ic_i = landuse_ic_df['No_of_ind_buildings'].sum()
     zoneid_ic_i = dist2vector(list(landuse_ic_df['zoneid']),\
-                list(landuse_ic_df['no_of_ind_buildings']),\
-                limit_zoneid_ic_i,'shuffle')
+                  list(landuse_ic_df['No_of_ind_buildings']),\
+                  limit_zoneid_ic_i,'shuffle')
     ind_df.loc[range(nInd_asgn,nInd_asgn+limit_zoneid_ic_i),'zoneid']=list(map(int,zoneid_ic_i))
     ind_df = ind_df[ind_df['zoneid'].notna()] #Remove unassigned buildings
-
+     
     # Assign zoneid to commercial buildings (if any) in commercial areas
-    limit_zoneid_ic_c = landuse_ic_df['no_of_com_buildings'].sum()
+    limit_zoneid_ic_c = landuse_ic_df['No_of_com_buildings'].sum()
     zoneid_ic_c = dist2vector(list(landuse_ic_df['zoneid']),\
-                list(landuse_ic_df['no_of_com_buildings']),\
-                limit_zoneid_ic_c,'shuffle')
+                  list(landuse_ic_df['No_of_com_buildings']),\
+                  limit_zoneid_ic_c,'shuffle')
     com_df.loc[range(nCom_asgn,nCom_asgn+limit_zoneid_ic_c),'zoneid']=list(map(int,zoneid_ic_c))
     com_df = com_df[com_df['zoneid'].notna()] #Remove unassigned buildings
 
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('29 ------',end=' ')
     #%% Find populations in each zones and assign it back to landuse layer
     for i in landuse.index:
         zidmask = resbld_df['zoneid'] == landuse.loc[i,'zoneid']
@@ -2486,50 +2419,133 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
             landuse.loc[i,'populationAdded'] = int(zone_nInd.sum())
     # population=Existing population, populationAdded=Projected future population
     # populationFinal = existing + future projected population
-    landuse['populationfinal'] = landuse['population']+landuse['populationAdded']
-    landuse['populationfinal'] = landuse['populationfinal'].astype('int')
+    landuse['populationFinal'] = landuse['population']+landuse['populationAdded']
+    landuse['populationFinal'] = landuse['populationFinal'].astype('int')
 
-    #%% Assign zoneIds for schools and hospitals
+    #%% Assign zoneids for schools and hospitals
     # Assign schools and hospitals to zones starting from the highest 
     # population until the number of schools and hospitals are reached
-    landuse_sorted = landuse.sort_values(by=['populationfinal'],\
-                                                    ascending=False).copy()
+    landuse_sorted = landuse.sort_values(by=['populationFinal'],\
+                                                     ascending=False).copy()
     landuse_sorted.reset_index(inplace=True, drop=True)
     #Remove zones without population
-    no_popl_zones = landuse_sorted['populationfinal']==0
+    no_popl_zones = landuse_sorted['populationFinal']==0
     landuse_sorted =landuse_sorted.drop(index=landuse_sorted.index[no_popl_zones])
 
-    sch_df = schhsp_df[schhsp_df['occbld']=='Edu'].copy() #Educational institutions
-    hsp_df = schhsp_df[schhsp_df['occbld']=='Hea'].copy() #Health institutions
+    sch_df = schhsp_df[schhsp_df['OccBld']=='Edu'].copy() #Educational institutions
+    hsp_df = schhsp_df[schhsp_df['OccBld']=='Hea'].copy() #Health institutions
 
     sch_df.reset_index(drop=True,inplace=True)
     hsp_df.reset_index(drop=True,inplace=True)
 
-    # Assign zoneids for schools/educational institutions
-    sch_range = range(0,len(sch_df))
-    if len(sch_df) <= len(landuse_sorted):
-        sch_df.loc[sch_range, 'zoneid'] = landuse_sorted.loc[sch_range,'zoneid']
-    else:
-        iterations_s = ceil(len(sch_df)/len(landuse_sorted))
-        a1_s= list(repeat(landuse_sorted['zoneid'].tolist(),iterations_s))
-        a_s = list(chain(*a1_s))
-        sch_df.loc[sch_range, 'zoneid'] = a_s[0:len(sch_df)]
+    # For schools (Edu)__________
+
+    # METHOD 1: If land use zones have already been defined, populate schools only 
+    #   in the land use polygons designated as 'school'
+    if school_distr_method == 'landuse':
+        schpoly_zoneid, schpoly_area = [],[]
+        sch_count =0
+        for idx in landuse_shp.index: # Identify school polygons first
+            lut_sch = landuse_shp.luf[idx].lower()
+            sch_df_idx = sch_df.index
+            if 'school' in lut_sch or 'education' in lut_sch or 'college' in lut_sch:
+                #Extract area of school polygon (already converted to m^2)
+                schpoly_area.append(landuse_shp.area[idx])
+                schpoly_zoneid.append(landuse_shp.zoneid[idx])
+                sch_count+=1
+                #print(landuse_shp.zoneid[idx], landuse_shp.luf[idx],landuse_shp.area[idx])
             
-    # Assign zoneids for hospitals/health institutions
-    hsp_range= range(0,len(hsp_df))
-    if len(hsp_df) <= len(landuse_sorted):
-        hsp_range = range(0,len(hsp_df))
-        hsp_df.loc[hsp_range, 'zoneid'] = landuse_sorted.loc[hsp_range,'zoneid']
-    else:
-        iterations_h = ceil(len(hsp_df)/len(landuse_sorted))
-        a1_h= list(repeat(landuse_sorted['zoneid'].tolist(),iterations_h))
-        a_h = list(chain(*a1_h))
-        hsp_df.loc[hsp_range, 'zoneid'] = a_h[0:len(hsp_df)]
+        if sch_count >0: # if school land use zone exists        
+            schpoly_area = np.array(schpoly_area) 
+            schpoly_zoneid  = np.array(schpoly_zoneid)  
+            #Distribute buildings in proportion to polygon area
+            no_of_zoneid4school = len(sch_df)*schpoly_area/sum(schpoly_area)
+            no_of_zoneid4school = no_of_zoneid4school.astype(int)
+            no_of_zoneid4school_lv =  len(sch_df)-sum(no_of_zoneid4school[0:-1])
+            no_of_zoneid4school[-1] = no_of_zoneid4school_lv
+            
+            zid4sch = dist2vector(schpoly_zoneid, no_of_zoneid4school, sum(no_of_zoneid4school),'shuffle')
+            sch_df.loc[:, 'zoneid'] = np.array(zid4sch,dtype=int)
+            
+            #If building areas exceed available area in the polygon, the footprints
+            # of excess buildings will not be produced 
+        else: 
+            print('Unable to find school polygons in the land use files. If school '\
+                  'land use polygons exist, make sure that the land use name (luf) '\
+                  'contains the words \'school\' or \'education\' or \'college\'\n')
+            print('The program will now use population based method.')
+            school_distr_method = 'population'
 
+    # METHOD 2: If land use polygon for schools is not defined, assign zoneids for
+    #   schools by distributing schools in proportion to the population in
+    #   each land use polygon. Thus, densly populated areas will have more schools.
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('30 ------',end=' ')
+    if school_distr_method == 'population':
+        sch_ratios = landuse_sorted['populationFinal']/landuse_sorted['populationFinal'].sum()
+        sch_dist = round(sch_ratios * len(sch_df))
+        if sum(sch_dist) != len(sch_df):
+            leap = len(sch_df) - sum(sch_dist)
+            sch_dist[0] += leap
+        sch_dist_updated = sch_dist.loc[(sch_dist!=0)]
+        final_sch_list = []
+        for i in range(len(sch_dist_updated)):
+            temp_a = list(repeat(landuse_sorted['zoneid'].iloc[i], int(sch_dist_updated.iloc[i])))
+            final_sch_list.extend(temp_a)
+        sch_df.loc[:, 'zoneid'] = final_sch_list    
+
+    # For hospitals (Hea)__________
+
+    # METHOD 1: If land use zones have already been defined, populate hospitals only 
+    #   in the land use polygons designated as 'hospital'
+    if hospital_distr_method == 'landuse':
+        hsppoly_zoneid, hsppoly_area = [],[]
+        hsp_count =0
+        for idx in landuse_shp.index: # Identify hospital polygons first
+            lut_hsp = landuse_shp.luf[idx].lower()
+            hsp_df_idx = hsp_df.index
+            if 'hospital' in lut_hsp or 'health' in lut_hsp:
+                #Extract area of hospital polygon (regardless of units)
+                hsppoly_area.append(landuse_shp.area[idx])
+                hsppoly_zoneid.append(landuse_shp.zoneid[idx])
+                hsp_count+=1
+                #print(landuse_shp.zoneid[idx], landuse_shp.luf[idx],landuse_shp.area[idx])
+            
+        if hsp_count >0: # if hospital land use zone exists        
+            hsppoly_area = np.array(hsppoly_area) 
+            hsppoly_zoneid  = np.array(hsppoly_zoneid)  
+            #Distribute buildings in proportion to polygon area
+            no_of_zoneid4hsp = len(hsp_df)*hsppoly_area/sum(hsppoly_area)
+            no_of_zoneid4hsp = no_of_zoneid4hsp.astype(int)
+            no_of_zoneid4hsp_lv =  len(hsp_df)-sum(no_of_zoneid4hsp[0:-1])
+            no_of_zoneid4hsp[-1] = no_of_zoneid4hsp_lv
+            
+            zid4hsp = dist2vector(hsppoly_zoneid, no_of_zoneid4hsp, sum(no_of_zoneid4hsp),'shuffle')
+            hsp_df.loc[:, 'zoneid'] = np.array(zid4hsp,dtype=int)
+            
+            #If building areas exceed available area in the polygon, the footprints
+            # of excess buildings will not be produced 
+        else: 
+            print('Unable to find hospital polygons in the land use files. If hospital '\
+                  'land use polygons exist, make sure that the land use name (luf) '\
+                  'contains the words \'hospital\' or \'health\'\n')
+            print('The program will now use population based method.')
+            hospital_distr_method = 'population'
+    # METHOD 2: If land use polygon for hospitals is not defined, assign zoneids for
+    #  hospitals by distributing hospitals in proportion to the population
+    #  in each land use polygon. Thus, densly populated areas will have more hospitals.
+    if hospital_distr_method == 'population':
+        hsp_ratios = landuse_sorted['populationFinal']/landuse_sorted['populationFinal'].sum()
+        hsp_dist = round(hsp_ratios * len(hsp_df))
+        if sum(hsp_dist) != len(hsp_df):
+            leap = len(hsp_df) - sum(hsp_dist)
+            hsp_dist[0] += leap
+        hsp_dist_updated = hsp_dist.loc[(hsp_dist!=0)]
+        final_hsp_list = []
+        for i in range(len(hsp_dist_updated)):
+            temp_b = list(repeat(landuse_sorted['zoneid'].iloc[i], int(hsp_dist_updated.iloc[i])))
+            final_hsp_list.extend(temp_b)
+        hsp_df.loc[:, 'zoneid'] = final_hsp_list
+
     #%% Concatenate the residential, industrial/commercial and special facilities
     # dataframes to obtain the complete building dataframe
     building_df=pd.concat([resbld_df,ind_df,com_df,sch_df,\
@@ -2538,16 +2554,18 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     building_df['nstoreys'] = building_df['nstoreys'].astype(int)
 
     #Assign exposure string
-    building_df['expstr'] = building_df['lrstype'].astype(str)+'+'+\
-                            building_df['codelevel'].astype(str)+'+'+\
+    building_df['expStr'] = building_df['lrstype'].astype(str)+'+'+\
+                            building_df['CodeLevel'].astype(str)+'+'+\
                             building_df['nstoreys'].astype(str)+'s'+'+'+\
-                            building_df['occbld'].astype(str)
+                            building_df['OccBld'].astype(str)
     # Assign building ids
     # lenbdf = len(building_df)
-    # building_df.loc[range(0,lenbdf),'bldid'] = list(range(1,lenbdf+1))
-    building_df.loc[range(len(resbld_df),len(building_df)),'bldid'] =\
-                        list(range(len(resbld_df)+1,len(building_df)+1))
-    building_df['bldid'] = building_df['bldid'].astype('int')
+    # building_df.loc[range(0,lenbdf),'bldID'] = list(range(1,lenbdf+1))
+    bldid_LL = max(resbld_df['bldID'])+1
+    bldid_UL = bldid_LL + (len(building_df)-len(resbld_df))
+    building_df.loc[range(len(resbld_df),len(building_df)),'bldID'] =\
+                        list(range(bldid_LL,bldid_UL))
+    building_df['bldID'] = building_df['bldID'].astype('int')
 
     #%% Step 21 Employment status of the individuals
     # Assumption 9: Only 20-65 years old individuals can work
@@ -2565,7 +2583,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
                 (individual_df['age']>=5) & (individual_df['age']<=9)
     potential_female_workers = individual_df.index[working_females_mask]
     potential_male_workers = individual_df.index[working_males_mask]
-        
+         
     # But according to Table 12, not all individuals who can work are employed,
     # so the labour force is less than 100%
     labourforce_female = sample(list(potential_female_workers),\
@@ -2577,9 +2595,6 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     individual_df.loc[labourforce_female,'labourForce'] =1
     individual_df.loc[labourforce_male,'labourForce'] =1  
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('31 ------',end=' ')
     # According to Table 13, the employment probability for labourforce differs
     # based on educational attainment status   
     for epd_array in t13: #Employment probability distribution for female and male
@@ -2587,8 +2602,8 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
         ind_employed_idx =[]
         for epd in epd_array: # EPD for various educational attainment status
             # Individuals in labour force that belong to current EPD
-            eamask = (individual_df['eduattstat'] == education_value[count]) & \
-                    (individual_df['labourForce']==1)
+            eamask = (individual_df['eduAttStat'] == education_value[count]) & \
+                     (individual_df['labourForce']==1)
             nInd_in_epd = sum(eamask)
             if nInd_in_epd == 0:
                 continue
@@ -2605,9 +2620,6 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
             
             count+=1
             
-    print(time.time() - tic)
-    tic = time.time()
-    print('32 ------',end=' ')
     #%% Step 22 Assign IndividualFacID
     # bld_ID of the building that the individual regularly visits 
     # (can be workplace, school, etc.)
@@ -2615,206 +2627,145 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # Assumption 17: Each individual (within schooling age limits) goes to 
     #                school within the total study area extent.
 
-    # indivfacid_1 denotes bldid of the schools
-    # students (schoolenrollment=1) go to, whereas, indivfacid_2 denotes bldid of
-    # com, ind and rescom buildings where working people go to (workplace bldid).
+    # indivFacID_1 denotes bldID of the schools
+    # students (schoolEnrollment=1) go to, whereas, indivFacID_2 denotes bldID of
+    # com, ind and rescom buildings where working people go to (workplace bldID).
 
-    # Assign working places to employed people in indivfacid_2_________________
+    # Assign working places to employed people in indivFacID_2_________________
     # Working places are defined as occupancy types 'Ind','Com' and 'ResCom'
 
-    workplacemask=(building_df['occbld']=='Ind') | (building_df['occbld']=='Com')\
-                    | (building_df['occbld'] == 'ResCom')
+    workplacemask=(building_df['OccBld']=='Ind') | (building_df['OccBld']=='Com')\
+                    | (building_df['OccBld'] == 'ResCom')
     workplaceidx = building_df.index[workplacemask]
-    workplace_bldid = building_df['bldid'][workplaceidx].tolist()
+    workplace_bldID = building_df['bldID'][workplaceidx].tolist()
 
     employedmask = individual_df['employed'] ==1
     employedidx = individual_df.index[employedmask]
     if len(employedidx)>len(workplaceidx):
         repetition = ceil(len(employedidx)/len(workplaceidx))
-        workplace_sample_temp = list(repeat(workplace_bldid,repetition))
+        workplace_sample_temp = list(repeat(workplace_bldID,repetition))
         workplace_sample = list(chain(*workplace_sample_temp))
     else:
-        workplace_sample = workplace_bldid
+        workplace_sample = workplace_bldID
     random.shuffle(workplace_sample)
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('33 ------',end=' ')
-
-    individual_df.loc[employedidx,'indivfacid_2'] = \
-                                workplace_sample[0:sum(employedmask)]
+    individual_df.loc[employedidx,'indivFacID_2'] = \
+                                   workplace_sample[0:sum(employedmask)]
 
     individual_df.loc[employedidx,'indivfacid'] = \
-                                workplace_sample[0:sum(employedmask)]                               
+                                   workplace_sample[0:sum(employedmask)]                               
 
-    # Assign school bldids to enrolled students in indivfacid_1________________
-    schoolmask = building_df['occbld']=='Edu'            
+    # Assign school bldIDs to enrolled students in indivFacID_1________________
+    schoolmask = building_df['OccBld']=='Edu'            
     schoolidx = building_df.index[schoolmask]
-    school_bldid = building_df['bldid'][schoolidx].tolist()
+    school_bldID = building_df['bldID'][schoolidx].tolist()
 
-    studentmask = individual_df['schoolenrollment'] ==1
+    studentmask = individual_df['schoolEnrollment'] ==1
     studentidx = individual_df.index[studentmask]
     if len(studentidx)>len(schoolidx):
         repetition = ceil(len(studentidx)/len(schoolidx))
-        school_sample_temp = list(repeat(school_bldid,repetition))
+        school_sample_temp = list(repeat(school_bldID,repetition))
         school_sample = list(chain(*school_sample_temp))
     else:
-        school_sample = school_bldid
+        school_sample = school_bldID
     random.shuffle(school_sample)
 
-    individual_df.loc[studentidx,'indivfacid_1'] = \
-                                school_sample[0:sum(studentmask)]  
+    individual_df.loc[studentidx,'indivFacID_1'] = \
+                                   school_sample[0:sum(studentmask)]  
     individual_df.loc[studentidx,'indivfacid'] = \
-                                school_sample[0:sum(studentmask)]                               
+                                   school_sample[0:sum(studentmask)]                               
 
     # Replace missing values with -1 instead of NaN
-    individual_df['indivfacid_1'] = individual_df['indivfacid_1'].fillna(-1)
-    individual_df['indivfacid_2'] = individual_df['indivfacid_2'].fillna(-1) 
+    individual_df['indivFacID_1'] = individual_df['indivFacID_1'].fillna(-1)
+    individual_df['indivFacID_2'] = individual_df['indivFacID_2'].fillna(-1) 
     individual_df['indivfacid'] = individual_df['indivfacid'].fillna(-1)  
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('34 ------',end=' ')
-    #%% Step 23 Assign community facility ID (commfacid) to household layer
-    # commfacid denotes the bldid of the hospital the households usually go to.
+    #%% Step 23 Assign community facility ID (CommFacID) to household layer
+    # CommFacID denotes the bldID of the hospital the households usually go to.
 
-    # In this case, randomly assign bldid of hospitals to the households, but in 
+    # In this case, randomly assign bldID of hospitals to the households, but in 
     # next version, households must be assigned hospitals closest to their location
-    hospitalmask = building_df['occbld']=='Hea'
+    hospitalmask = building_df['OccBld']=='Hea'
     hospitalidx = building_df.index[hospitalmask]
-    hospital_bldid = building_df['bldid'][hospitalidx].tolist()
+    hospital_bldID = building_df['bldID'][hospitalidx].tolist()
     repetition = ceil(len(household_df)/len(hospitalidx))
-    hospital_sample_temp = list(repeat(hospital_bldid,repetition))
+    hospital_sample_temp = list(repeat(hospital_bldID,repetition))
     hospital_sample = list(chain(*hospital_sample_temp))
     random.shuffle(hospital_sample)
 
-    household_df.loc[household_df.index,'commfacid'] =\
+    household_df.loc[household_df.index,'CommFacID'] =\
                                     hospital_sample[0:len(household_df)]
 
-    print(time.time() - tic)
-    tic = time.time()
-    print('34.5 ------',end=' ')
-    #%% Step 24 Assign repvalue
+    #%% Step 24 Assign repValue
     # Assumption 12: Unit price for replacement wrt occupation type and 
     # special facility status of the building
 
     # Assign unit price
     for occtype in Unit_price:
-        occmask = building_df['occbld'] == occtype
+        occmask = building_df['OccBld'] == occtype
         occidx = building_df.index[occmask]
         building_df.loc[occidx, 'unit_price'] = Unit_price[occtype]
         
-    building_df['repvalue'] = building_df['fptarea'] *\
-                            building_df['nstoreys']* building_df['unit_price']
+    building_df['repValue'] = building_df['fptarea'] *\
+                             building_df['nstoreys']* building_df['unit_price']
 
-
-    print(time.time() - tic)
-    tic = time.time()
-    print('35 ------',end=' ')
     #%% Remove unnecessary columns and save the results 
     # building_df = building_df.drop(columns=\
-    #          ['lut_number','lrstype','codelevel','nstoreys','occbld','unit_price'])
+    #          ['lut_number','lrstype','CodeLevel','nstoreys','OccBld','unit_price'])
     building_df = building_df.drop(columns=['lut_number'])
     household_df = household_df.drop(columns=\
-            ['income_numb','zonetype','zoneid','approxFootprint'])
+             ['income_numb','zoneType','zoneid','approxFootprint'])
     individual_df = individual_df.drop(columns=\
-                        ['schoolenrollment','labourForce','employed'])
+                        ['schoolEnrollment','labourForce','employed'])
         
     # Rename indices to convert all header names to lowercase
     building_df.rename(columns={'zoneid':'zoneid','bldID':'bldid','expStr':'expstr',\
-    'specialFac':'specialfac','repValue':'repvalue','nHouse':'nhouse'},\
-                                                            inplace=True)
+       'specialFac':'specialfac','repValue':'repvalue','nHouse':'nhouse'},\
+                                                               inplace=True)
     household_df.rename(columns={'bldID':'bldid','hhID':'hhid','nIND':'nind',\
-                                'CommFacID':'commfacid'}, inplace=True)
+                                 'CommFacID':'commfacid'}, inplace=True)
     individual_df.rename(columns={'hhID':'hhid','indivID':'individ',\
-    'eduAttStat':'eduattstat','indivFacID_1':'indivfacid_1',\
-    'indivFacID_2':'indivfacid_2'}, inplace=True)
+       'eduAttStat':'eduattstat','indivFacID_1':'indivfacid_1',\
+       'indivFacID_2':'indivfacid_2'}, inplace=True)
 
+    tabular_n_hh = len(household_df)
+    tabular_n_ind = len(individual_df)
 
     #%% Generate building centroid coordinates
-
-    histo = building_df.groupby(['zoneid'])['zoneid'].count()
-    max_val = building_df.groupby(['zoneid'])['fptarea'].max()
-    landuse_layer = landuse_shp
-    building_layer = building_df
     final_list = []
     skipped_buildings_count = 0
-    for i in range(len(histo)):
-        df = landuse_layer[landuse_layer['zoneid'] == histo.index[i]].copy()
-        bui_indx = building_layer['zoneid'] == histo.index[i]
-        bui_attr = building_layer.loc[bui_indx].copy()
-        
-        rot_a = random.randint(10, 40)
-        rot_a_rad = rot_a*math.pi/180
+    landuse_layer = landuse_shp
 
-        separation_val = math.sqrt(max_val.values[i])/abs(math.cos(rot_a_rad))
-        separation_val = round(separation_val, 2)
-        boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
-        boundary_approach = round(boundary_approach, 2)
-        
-        df2 = df.buffer(-boundary_approach)    
-        df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
-        df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
-        
-        #Continue the loop if buffered dataframe df2 is empty -PR
-        if df2.is_empty[df2.index[0]]:
-            print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
-            skipped_buildings_count +=\
-                len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
-            continue
-        
-        xmin, ymin, xmax, ymax = df2.total_bounds    
-        xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
-        ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
-        
-        pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
-        points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
-        grid = gpd.GeoSeries(points, crs=df.crs)
-        grid.name = 'geometry'
-        
-        gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
-        
-        def buff(row):
-            return row.geometry.buffer(row.buff_val, cap_style = 3)
-        
-        if len(gridinside) >= histo.values[i]:
-            gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
-            gridinside['xcoord'] = gridinside.geometry.x
-            gridinside['ycoord'] = gridinside.geometry.y
+    if (school_distr_method == 'landuse' and hospital_distr_method == 'landuse'):
+
+        building_layer = building_df    
+        histo = building_df.groupby(['zoneid'])['zoneid'].count()
+        max_val = building_df.groupby(['zoneid'])['fptarea'].max()
+
+        for i in range(len(histo)):
+            df = landuse_layer[landuse_layer['zoneid'] == histo.index[i]].copy()
+            bui_indx = building_layer['zoneid'] == histo.index[i]
+            bui_attr = building_layer.loc[bui_indx].copy()
             
-            buffer_val = np.sqrt(list(bui_attr.fptarea))/2
-            buffered = gridinside.copy()
-            buffered['buff_val'] = buffer_val[0:len(gridinside)]
+            rot_a = random.randint(10, 40)
+            rot_a_rad = rot_a*math.pi/180
             
-            if buffered.shape[0]==0: #PR
+            separation_val = math.sqrt(max_val.values[i])/abs(math.cos(rot_a_rad))
+            separation_val = round(separation_val, 2)
+                
+            boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+            boundary_approach = round(boundary_approach, 2)
+            
+            df2 = df.buffer(-boundary_approach)    
+            df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+            df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+            
+            #Continue the loop if buffered dataframe df2 is empty -PR
+            if df2.is_empty[df2.index[0]]:
                 print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
                 skipped_buildings_count +=\
                     len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
                 continue
-            
-            buffered['geometry'] = buffered.apply(buff, axis=1)
-            polyinside = buffered.rotate(rot_a, origin='centroid')
-            
-            polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
-            polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
-            polyinside2['fid'] = list(range(1,len(polyinside2)+1))
-            
-            bui_attr['fid'] = list(range(1,len(bui_attr)+1))
-            bui_joined = polyinside2.merge(bui_attr, on='fid')
-            bui_joined = bui_joined.drop(columns=['fid'])
-            
-            bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
-            bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
-            
-        elif len(gridinside) < histo.values[i]:
-            separation_val = math.sqrt(max_val.values[i])
-            separation_val = round(separation_val, 2)
-            boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
-            boundary_approach = round(boundary_approach, 2)
-            
-            df2 = df.buffer(-boundary_approach, 200)
-            df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
-            df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
             
             xmin, ymin, xmax, ymax = df2.total_bounds    
             xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
@@ -2827,45 +2778,247 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
             
             gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
             
-            gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
-            gridinside['xcoord'] = gridinside.geometry.x
-            gridinside['ycoord'] = gridinside.geometry.y
+            def buff(row):
+                return row.geometry.buffer(row.buff_val, cap_style = 3)
             
-            buffer_val = np.sqrt(list(bui_attr.fptarea))/2
-            buffered = gridinside.copy()
-            buffered['buff_val'] = buffer_val[0:len(gridinside)]
-            
-            if buffered.shape[0]==0: #PR
-                print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
-                skipped_buildings_count +=\
-                    len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
-                continue
-            
-            buffered['geometry'] = buffered.apply(buff, axis=1)
-            polyinside = buffered.rotate(0, origin='centroid')
-            
-            polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
-            polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
-            polyinside2['fid'] = list(range(1,len(polyinside2)+1))
-            
-            bui_attr['fid'] = list(range(1,len(bui_attr)+1))
-            bui_joined = polyinside2.merge(bui_attr, on='fid')
-            bui_joined = bui_joined.drop(columns=['fid'])
-            
-            bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
-            bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+            if len(gridinside) >= histo.values[i]:
+                gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
+                gridinside['xcoord'] = gridinside.geometry.x
+                gridinside['ycoord'] = gridinside.geometry.y
+                
+                buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+                buffered = gridinside.copy()
+                buffered['buff_val'] = buffer_val[0:len(gridinside)]
+                
+                if buffered.shape[0]==0: 
+                    print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                    skipped_buildings_count +=\
+                        len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                    continue
+                
+                buffered['geometry'] = buffered.apply(buff, axis=1)
+                polyinside = buffered.rotate(rot_a, origin='centroid')
+                
+                polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+                polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+                
+                bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+                bui_joined = polyinside2.merge(bui_attr, on='fid')
+                bui_joined = bui_joined.drop(columns=['fid'])
+                
+                bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+                bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+                
+            elif len(gridinside) < histo.values[i]:            
+                separation_val = math.sqrt(max_val.values[i])
+                separation_val = round(separation_val, 2)
+                boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+                boundary_approach = round(boundary_approach, 2)
+                
+                df2 = df.buffer(-boundary_approach, 200)
+                df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+                df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                
+                xmin, ymin, xmax, ymax = df2.total_bounds    
+                xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
+                ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
+                
+                pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
+                points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
+                grid = gpd.GeoSeries(points, crs=df.crs)
+                grid.name = 'geometry'
+                
+                gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
+                
+                gridinside = gridinside.sample(min(len(gridinside), histo.values[i]))
+                gridinside['xcoord'] = gridinside.geometry.x
+                gridinside['ycoord'] = gridinside.geometry.y
+                
+                buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+                buffered = gridinside.copy()
+                buffered['buff_val'] = buffer_val[0:len(gridinside)]
+                
+                if buffered.shape[0]==0: 
+                    print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                    skipped_buildings_count +=\
+                        len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                    continue
+                
+                buffered['geometry'] = buffered.apply(buff, axis=1)
+                polyinside = buffered.rotate(0, origin='centroid')
+                
+                polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+                polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+                
+                bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+                bui_joined = polyinside2.merge(bui_attr, on='fid')
+                bui_joined = bui_joined.drop(columns=['fid'])
+                
+                bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+                bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+        
+            final_list.append(bui_joined)
+        
+        final = pd.concat(final_list)
+        
+    else:
 
-        final_list.append(bui_joined)
+        gen_list = np.unique(building_df['OccBld'])
+        #gen_list = np.flip(gen_list)
+        for occ_i in gen_list:
+            histo = building_df.groupby(['zoneid','OccBld'])['zoneid'].count().reset_index(name="count")
+            histo = histo.loc[(histo['OccBld'] == occ_i)]
+            building_group = building_df.loc[(building_df['OccBld'] == occ_i)]
+            max_val = building_group.groupby(['zoneid'])['fptarea'].max().reset_index(name="val")
+            max_val = pd.Series(max_val['val'].values)
+            building_layer = building_group
+            chunk_bui = []
+            
+            for i in range(len(histo)):
+                df = landuse_layer[landuse_layer['zoneid'] == histo.iloc[i]['zoneid']].copy()
+                bui_indx = building_layer['zoneid'] == histo.iloc[i]['zoneid']
+                bui_attr = building_layer.loc[bui_indx].copy()
+                
+                rot_a = random.randint(10, 40)
+                rot_a_rad = rot_a*math.pi/180
+                
+                separation_val = math.sqrt(max_val.values[i])/abs(math.cos(rot_a_rad))
+                separation_val = round(separation_val, 2)
+                    
+                boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+                boundary_approach = round(boundary_approach, 2)
+                
+                df2 = df.buffer(-boundary_approach)    
+                df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+                df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                
+                #Continue the loop if buffered dataframe df2 is empty -PR
+                if df2.is_empty[df2.index[0]]:
+                    print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                    skipped_buildings_count +=\
+                        len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                    continue
+                
+                xmin, ymin, xmax, ymax = df2.total_bounds    
+                xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
+                ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
+                
+                pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
+                points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
+                grid = gpd.GeoSeries(points, crs=df.crs)
+                grid.name = 'geometry'
+                
+                gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
+                
+                def buff(row):
+                    return row.geometry.buffer(row.buff_val, cap_style = 3)
+                
+                if len(gridinside) >= histo.iloc[i]['count']:
+                    gridinside = gridinside.sample(min(len(gridinside), histo.iloc[i]['count']))
+                    gridinside['xcoord'] = gridinside.geometry.x
+                    gridinside['ycoord'] = gridinside.geometry.y
+                    
+                    buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+                    buffered = gridinside.copy()
+                    buffered['buff_val'] = buffer_val[0:len(gridinside)]
+                    
+                    if buffered.shape[0]==0: 
+                        print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                        skipped_buildings_count +=\
+                            len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                        continue
+                    
+                    buffered['geometry'] = buffered.apply(buff, axis=1)
+                    polyinside = buffered.rotate(rot_a, origin='centroid')
+                    
+                    polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+                    polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                    polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+                    
+                    bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+                    bui_joined = polyinside2.merge(bui_attr, on='fid')
+                    bui_joined = bui_joined.drop(columns=['fid'])
+                    
+                    bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+                    bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+                    
+                elif len(gridinside) < histo.iloc[i]['count']:            
+                    separation_val = math.sqrt(max_val.values[i])
+                    separation_val = round(separation_val, 2)
+                    boundary_approach =  (math.sqrt(max_val.values[i])/2)*math.sqrt(2)
+                    boundary_approach = round(boundary_approach, 2)
+                    
+                    df2 = df.buffer(-boundary_approach, 200)
+                    df2 = gpd.GeoDataFrame(gpd.GeoSeries(df2))
+                    df2 = df2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                    
+                    xmin, ymin, xmax, ymax = df2.total_bounds    
+                    xcoords = [ii for ii in np.arange(xmin, xmax, separation_val)]
+                    ycoords = [ii for ii in np.arange(ymin, ymax, separation_val)]
+                    
+                    pointcoords = np.array(np.meshgrid(xcoords, ycoords)).T.reshape(-1, 2)
+                    points = gpd.points_from_xy(x=pointcoords[:,0], y=pointcoords[:,1])
+                    grid = gpd.GeoSeries(points, crs=df.crs)
+                    grid.name = 'geometry'
+                    
+                    gridinside = gpd.sjoin(gpd.GeoDataFrame(grid), df2[['geometry']], how="inner")
+                    
+                    gridinside = gridinside.sample(min(len(gridinside), histo.iloc[i]['count']))
+                    gridinside['xcoord'] = gridinside.geometry.x
+                    gridinside['ycoord'] = gridinside.geometry.y
+                    
+                    buffer_val = np.sqrt(list(bui_attr.fptarea))/2
+                    buffered = gridinside.copy()
+                    buffered['buff_val'] = buffer_val[0:len(gridinside)]
+                    
+                    if buffered.shape[0]==0: 
+                        print('Dataframe index ', df.index[0], 'is empty after buffering.\n')
+                        skipped_buildings_count +=\
+                            len(building_df.loc[building_df['zoneid'] == df.index[0],'zoneid'])
+                        continue
+                    
+                    buffered['geometry'] = buffered.apply(buff, axis=1)
+                    polyinside = buffered.rotate(0, origin='centroid')
+                    
+                    polyinside2 = gpd.GeoDataFrame(gpd.GeoSeries(polyinside))
+                    polyinside2 = polyinside2.rename(columns={0:'geometry'}).set_geometry('geometry')
+                    polyinside2['fid'] = list(range(1,len(polyinside2)+1))
+                    
+                    bui_attr['fid'] = list(range(1,len(bui_attr)+1))
+                    bui_joined = polyinside2.merge(bui_attr, on='fid')
+                    bui_joined = bui_joined.drop(columns=['fid'])
+                    
+                    bui_joined['xcoord'] = list(round(gridinside.geometry.x, 3))
+                    bui_joined['ycoord'] = list(round(gridinside.geometry.y, 3))
+                
+                chunk_bui.append(bui_joined)
+                final_list.append(bui_joined)
+             
+            chunk_bui = pd.concat(chunk_bui)
+            final = pd.concat(final_list)
+            landuse_layer = landuse_layer.overlay(final, how='difference', keep_geom_type=True)
+            
+            # print("Occupation Type: ", occ_i)
+            # print("Generated Buildings: ", len(chunk_bui))
+            # print("Number of Skipped Buildings: ", len(building_group)-len(chunk_bui), "\n")
+        
+            # chunk_bui = chunk_bui.dissolve(aggfunc='first')
+            # landuse_layer = landuse_layer.overlay(chunk_bui, how='difference')
 
-    final = pd.concat(final_list)
-    print(time.time() - tic)
-    tic = time.time()
-    print('36 ------',end=' ')
+    if final.crs.is_projected is True:
+        final = final.to_crs("4326")
+     
+    # if savefile:
+        # #This line saves the output as shapefile
+        # final.to_file(oppath+"\\building.shp") 
+        # #This line saves the output as GeoJSON
+        # final.to_file(oppath+"\\building.geojson", driver="GeoJSON") 
 
-    #print('\nTotal number of buildings generated:', len(building_layer))
-    #print('Total number of coordinate pairs generated:', len(final), '\n')
+    #final = final.drop(columns=['geometry'])
 
-    # Remove fields corresponding to unassigned buildings from all layers
+    #%% Remove fields corresponding to unassigned buildings from all layers
     # The footprint generation part of this program may not be able to assign 
     # building footprint in some cases such as narrow strips or highly irregular
     # but small land areas. In this case, households and individuals 
@@ -2878,17 +3031,23 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # Calculate list of buildings that do not exist in the dataframe with building
     # footprints 
     missing_buildings = np.array(list(set(unique_building_df).difference(unique_final)))
+    print('Total Number of Skipped Buildings:', len(missing_buildings), '\n')
 
     # Extract the list of households corresponding to missing buildings
     hh_missing_idx_list = []
     for mb in missing_buildings:
         hh_missing_mask = household_df['bldid'] == mb
         hh_missing_idx_list.append(household_df.index[hh_missing_mask].tolist())
-
+     
     # Flatten the list of lists to obtain indices and hhid of missing households
     hh_missing_idx =  [single_value for sublist in hh_missing_idx_list \
                                     for single_value in sublist]    
     hh_missing = household_df.loc[hh_missing_idx,'hhid'].tolist() 
+
+    # Add households whose bldid field is empty as well
+    hh_missing_idx = hh_missing_idx + list(household_df.query('bldid != bldid').index)
+    
+    hh_missing = hh_missing + list(household_df.query('bldid != bldid').hhid)
 
     # Extract the list of individuals corresponding to missing buildings
     ind_missing_idx_list =[]
@@ -2905,11 +3064,44 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     # Delete individuals corresponding to missing buildings
     individual_df.drop(labels = ind_missing_idx, axis=0, inplace=True)
 
-    final = final.to_crs("EPSG:4326")
+    #%% Check and Correct Individual and Household Layers
+    # Check-1: Hospitals
+    full_hsp_list = list(pd.unique(household_df['commfacid'])) # select unique hospital records
+    gen_hsp_list = list(final.loc[final['specialfac'] == 2]['bldid']) # select generated hospitals
+    diff = [x for x in full_hsp_list if x not in set(gen_hsp_list)]
+    cond_list = household_df['commfacid'].isin(diff)
+    household_df.loc[cond_list, 'commfacid'] = np.random.choice(gen_hsp_list, size=cond_list.sum())
+
+    # Check-2: Schools
+    full_sch_list = list(pd.unique(individual_df['indivfacid_1'])) # select unique school records
+    gen_sch_list = list(final.loc[final['specialfac'] == 1]['bldid']) # select generated schools
+    gen_sch_list_rec = gen_sch_list.copy() # template for all records including -1
+    gen_sch_list_rec.append(-1) # add neutral buildings (-1s)
+    diff = [x for x in full_sch_list if x not in set(gen_sch_list_rec)]
+    cond_list = individual_df['indivfacid_1'].isin(diff)
+    # iidf = individual_df.copy()
+    # iidf.loc[cond_list, 'indivfacid_1'] = np.random.choice(gen_sch_list, size=cond_list.sum())
+    # iidf.loc[cond_list, 'indivfacid'] = iidf['indivfacid_1']
+    individual_df.loc[cond_list, 'indivfacid_1'] = np.random.choice(gen_sch_list, size=cond_list.sum())
+    individual_df.loc[cond_list, 'indivfacid'] = individual_df['indivfacid_1']
+
+    # Check-3: Commercial & Industrial
+    full_wrk_list = list(pd.unique(individual_df['indivfacid_2'])) # select unique work place records
+    gen_wrk_list = list(final.loc[final['OccBld'].isin(['ResCom', 'Com', 'Ind'])]['bldid']) # select generated work places
+    gen_wrk_list_rec = gen_wrk_list.copy() # template for all records including -1
+    gen_wrk_list_rec.append(-1) # add neutral buildings (-1s)
+    diff = [x for x in full_wrk_list if x not in set(gen_wrk_list_rec)]
+    cond_list = individual_df['indivfacid_2'].isin(diff)
+    # iidf = individual_df.copy()
+    # iidf.loc[cond_list, 'indivfacid_2'] = np.random.choice(gen_wrk_list, size=cond_list.sum())
+    # iidf.loc[cond_list, 'indivfacid'] = iidf['indivfacid_2']
+    individual_df.loc[cond_list, 'indivfacid_2'] = np.random.choice(gen_wrk_list, size=cond_list.sum())
+    individual_df.loc[cond_list, 'indivfacid'] = individual_df['indivfacid_1']
+
+    # final = final.to_crs("EPSG:4326")
     
     print(time.time() - tic)
     tic = time.time()
     print('37 ------',end=' ')
     print(time.time() - tic)
     return final, household_df, individual_df
-
