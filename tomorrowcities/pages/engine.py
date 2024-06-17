@@ -49,7 +49,7 @@ def create_new_app_state():
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'earthquake_intensity_unit': solara.reactive('m/s2'),
-    'cdf_median_decrease_in_percent': solara.reactive(20),
+    'cdf_median_decrease_in_percent': solara.reactive(0.2),
     'flood_depth_reduction': solara.reactive(0.2),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
@@ -1462,10 +1462,10 @@ def ExecutePanel():
     policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
     if 1 in policies:
         with solara.Column(gap="30px"):
-            with solara.Tooltip('Code-level upgrade of residential buildings (percentage increase in median value of the CDF)'):
-                solara.InputInt(label='cdf_median_decrease_in_percent',  value=layers.value['cdf_median_decrease_in_percent'],
+            with solara.Tooltip('Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
+                solara.InputFloat(label='cdf_median_decrease_in_percent',  value=layers.value['cdf_median_decrease_in_percent'],
                                 continuous_update=True)
-            with solara.Tooltip('Before interpolation, water depth assigned to building will be decreased'):
+            with solara.Tooltip('Before interpolation, water depth assigned to building will be decreased default: 20 cm'):
                 solara.InputFloat(label='flood_depth_reduction',  value=layers.value['flood_depth_reduction'],
                                     continuous_update=True)
 
