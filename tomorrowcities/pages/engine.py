@@ -39,7 +39,7 @@ tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
-
+center_default = (41.01,28.98)
 def create_new_app_state():
     return solara.reactive({
     'infra': solara.reactive(["building"]),
@@ -235,7 +235,7 @@ def create_new_app_state():
             'attributes': [set(['vuln_string', 'med_slight', 'med_moderate', 'med_extensive', 'med_complete', 
                          'dispersion'])]}
             },
-    'center': solara.reactive((41.01,28.98)),
+    'center': solara.reactive(center_default),
     'selected_layer' : solara.reactive(None),    
     'render_count': solara.reactive(0),
     'bounds': solara.reactive(None),
@@ -341,7 +341,55 @@ def load_from_state(source_dict):
                     assign_nested_value(layers.value, keys, solara.reactive(src_value))
                 else:
                     assign_nested_value(layers.value, keys, src_value)
-         
+
+def store_info_to_session():
+    store_in_session_storage('population_displacement_consensus', population_displacement_consensus.value)
+    for layer_name in layers.value['layers'].keys():
+        store_in_session_storage(layer_name, {
+            'data':layers.value['layers'][layer_name]['data'].value,
+            'df': layers.value['layers'][layer_name]['df'].value,
+        })
+    for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
+                'bounds','selected_layer','render_count','implementation_capacity_score',
+                'data_import_method','map_info_button','map_info_detail']:
+        store_in_session_storage(attr, layers.value[attr].value)
+
+def reload_info_from_session():
+    session_data = read_from_session_storage('population_displacement_consensus')
+    if session_data is not None:
+        population_displacement_consensus.set(session_data)
+    for layer_name in layers.value['layers'].keys():
+        session_data = read_from_session_storage(layer_name)
+        if session_data is not None:
+            if layers.value['layers'][layer_name]['data'].value is None:
+                layers.value['layers'][layer_name]['data'].set(session_data['data'])
+            if layers.value['layers'][layer_name]['df'].value is None:
+                layers.value['layers'][layer_name]['df'].set(session_data['df'])
+       
+    for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
+                'bounds','selected_layer','render_count','implementation_capacity_score',
+                'data_import_method','map_info_button','map_info_detail']:
+        session_data = read_from_session_storage(attr)
+        if session_data is not None:
+            layers.value[attr].set(session_data)
+
+def reset_session():
+    store_in_session_storage('population_displacement_consensus', None)
+    for layer_name in layers.value['layers'].keys():
+        store_in_session_storage(layer_name, None)
+    for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
+                'bounds','selected_layer','render_count','implementation_capacity_score',
+                'data_import_method','map_info_button','map_info_detail']:
+        store_in_session_storage(attr, None)
+    store_in_session_storage('tally', None)
+    store_in_session_storage('tally_geo', None)
+    store_in_session_storage('tally_minimal', None)  
+    layers.set(create_new_app_state().value)
+    tally_filter.set(None)
+    building_filter.set(None)
+    landuse_filter.set(None)
+    tally_counter.set(0)
+
 def create_metadata(data):
     m = dict()
     m['hazard'] = data['hazard']
@@ -896,13 +944,13 @@ def FilterPanel():
                 # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
 
     building = layers.value['layers']['building']['df'].value
+    building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
     if building is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("BUILDING FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
                 solara.CrossFilterReport(building)
                 solara.CrossFilterSelect(building, "ds", multiple=True)
                 solara.CrossFilterSelect(building, "specialfac", multiple=True)
@@ -913,29 +961,30 @@ def FilterPanel():
                 solara.CrossFilterSelect(building, "code_level", multiple=True)
                 solara.CrossFilterSelect(building, "material", multiple=True)
                 solara.CrossFilterSelect(building, "zoneid", multiple=True)
-
+    
     landuse = layers.value['layers']['landuse']['df'].value
+    landuse_filter.value, _ = solara.use_cross_filter(id(landuse), "landuse_filter")
     if landuse is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("LANDUSE FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                landuse_filter.value, _ = solara.use_cross_filter(id(landuse), "landuse_filter")
                 solara.CrossFilterReport(landuse)
                 solara.CrossFilterSelect(landuse, "luf", multiple=True)
                 solara.CrossFilterSelect(landuse, "avgincome", multiple=True)      
 
+
     tc = tally_counter.value
     print('tally_counter', tc)
     tally_minimal = read_from_session_storage('tally_minimal')
+    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
     if tally_minimal is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
                 solara.CrossFilterReport(tally_minimal)
                 for col in layers.value['tally_filter_cols']:
                     solara.CrossFilterSelect(tally_minimal, col, multiple=True)
@@ -989,14 +1038,15 @@ def generate_metrics_local():
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
     tally_geo = read_from_session_storage('tally_geo')
+    hazard = read_from_session_storage('hazard')
+    population_displacement_consensus = read_from_session_storage('population_displacement_consensus')
     if tally_geo is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
         tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
         if tally_filter.value is not None:
             tally_filtered = tally_filtered[tally_filter.value]
-        hazard_type = layers.value['hazard'].value
         print('Triggering generate_metrics')
-        metrics = generate_metrics(tally_filtered, tally_geo, hazard_type, population_displacement_consensus.value)
+        metrics = generate_metrics(tally_filtered, tally_geo, hazard, population_displacement_consensus)
         print('metrics', metrics)
     metric_update_pending.set(False)
     return metrics
@@ -1104,6 +1154,10 @@ def ExecutePanel():
     def on_click():
         set_execute_counter(execute_counter + 1)
         execute_error.set("")
+
+    def on_reset():
+        reset_session()
+
 
     def is_ready_to_run(infra, hazard):
         existing_layers = set([name for name, l in layers.value['layers'].items() if l['data'].value is not None])
@@ -1356,20 +1410,10 @@ def ExecutePanel():
             return buildings
 
         def execute_metric():
-            hazard_type = layers.value['hazard'].value
             landuse = layers.value['layers']['landuse']['data'].value
             buildings = layers.value['layers']['building']['data'].value
             household = layers.value['layers']['household']['data'].value
             individual = layers.value['layers']['individual']['data'].value
-            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
-
-            # implementation_capacity_score = layers.value['implementation_capacity_score'].value
-            # if implementation_capacity_score == 'medium':
-                # capacity = 1.25
-            # elif implementation_capacity_score == 'low':
-                # capacity = 1.50
-            # else:
-                # capacity = 1
             
             tally, tally_geo = create_tally(landuse, buildings, household, individual)
             return tally, tally_geo
@@ -1415,6 +1459,7 @@ def ExecutePanel():
                 store_in_session_storage('tally', tally)
                 store_in_session_storage('tally_geo', tally_geo)
                 store_in_session_storage('tally_minimal', tally[layers.value['tally_filter_cols']])
+                store_info_to_session()
                 layers.value['tally_is_available'].value = True
                 tally_counter.value += 1
             set_progress_message('')
@@ -1450,8 +1495,13 @@ def ExecutePanel():
                                 # )
     
     solara.ProgressLinear(value=False)
-    solara.Button("Calculate", on_click=on_click, outlined=True,
+    with solara.Columns([70,30]):
+        with solara.Column():
+            solara.Button("Calculate", on_click=on_click, outlined=True,
                 disabled=execute_btn_disabled)
+        with solara.Column():
+            solara.Button("Reset", on_click=on_reset, outlined=True,
+                disabled=False)
     if storage.value is not None:        
         if layers.value['tally_is_available'].value and user.value is not None:
             solara.Button("Save Session",on_click=save_app_state, disabled=False)
@@ -1487,7 +1537,7 @@ def ExecutePanel():
         solara.Text("Spacer", style={"visibility": "hidden"})
         set_execute_btn_disabled(False)
         solara.ProgressLinear(value=False)
-
+        
 @solara.component
 def PolicyPanel():
     all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
@@ -1737,6 +1787,7 @@ def ImportDataZone():
 @solara.component
 def WebApp():
     solara.Title(" ")
+    reload_info_from_session()
     with solara.Sidebar():
         with solara.lab.Tabs():
             with solara.lab.Tab("DATA IMPORT"):
