@@ -1816,7 +1816,13 @@ def WebApp():
     MapViewer()
     with solara.Row(justify="center"):
         MetricPanel()
-    LayerDisplayer()                         
+    #LayerDisplayer()
+    solara.Details(
+        summary="Layer Details",
+        children=[LayerDisplayer()],
+        expand=False
+    )    
+    solara.Text("Spacer", style={"visibility": "hidden"})    
 
     with ConfirmationDialog(
         layers.value['dialog_message_to_be_shown'].value is not None,
