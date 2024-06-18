@@ -50,7 +50,9 @@ def create_new_app_state():
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'earthquake_intensity_unit': solara.reactive('m/s2'),
-    'cdf_median_decrease_in_percent': solara.reactive(0.2),
+    'cdf_median_increase_in_percent': solara.reactive(0.2),
+    'threshold_increase_culvert_water_height': solara.reactive(0.2),
+    'threshold_increase_road_water_height': solara.reactive(0.2),
     'flood_depth_reduction': solara.reactive(0.2),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
@@ -1291,6 +1293,10 @@ def ExecutePanel():
                 trigger_level= layers.value['landslide_trigger_level'].value
                 fragility = fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'})
             hazard = layers.value['hazard'].value
+            cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
+            threshold_increase_culvert_water_height = layers.value['threshold_increase_culvert_water_height'].value
+            threshold_increase_road_water_height = layers.value['threshold_increase_road_water_height'].value
+            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
 
             edges['ds'] = 0
             edges['is_damaged'] = False
@@ -1305,6 +1311,10 @@ def ExecutePanel():
                 fragility, hazard, threshold_road_water_height.value, threshold_culvert_water_height.value,
                 threshold_flood_distance.value, preserve_edge_directions.value,
                 earthquake_intensity_unit=earthquake_intensity_unit,
+                policies=policies,
+                cdf_median_increase_in_percent=cdf_median_increase_in_percent,
+                threshold_increase_culvert_water_height=threshold_increase_culvert_water_height,
+                threshold_increase_road_water_height=threshold_increase_road_water_height,
                 )
             
             edges['ds'] = list(ds)
@@ -1370,7 +1380,7 @@ def ExecutePanel():
             vulnerability = layers.value['layers']['vulnerability']['data'].value
             earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
             flood_depth_reduction = layers.value['flood_depth_reduction'].value
-            cdf_median_decrease_in_percent = layers.value['cdf_median_decrease_in_percent'].value
+            cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
 
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
@@ -1398,7 +1408,7 @@ def ExecutePanel():
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value,
                     earthquake_intensity_unit=earthquake_intensity_unit,
-                    cdf_median_decrease_in_percent=cdf_median_decrease_in_percent,
+                    cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
                     )
             else:
@@ -1415,7 +1425,7 @@ def ExecutePanel():
                     threshold_flood = threshold_flood.value,
                     threshold_flood_distance = threshold_flood_distance.value,
                     earthquake_intensity_unit=earthquake_intensity_unit,
-                    cdf_median_decrease_in_percent=cdf_median_decrease_in_percent,
+                    cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
@@ -1527,15 +1537,22 @@ def ExecutePanel():
     if len(policies) > 0:
         with solara.Column(gap="30px"):
             # if at least one of the policies is selected
-            if bool(set({1,2}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2. Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
-                    solara.InputFloat(label='cdf_median_decrease_in_percent',  value=layers.value['cdf_median_decrease_in_percent'],
+            if bool(set({1,2,4}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 1,2.4 Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
+                    solara.InputFloat(label='cdf_median_increase_in_percent',  value=layers.value['cdf_median_increase_in_percent'],
                                     continuous_update=True)
             if bool(set({1,2,3}).intersection(set(policies))):
                 with solara.Tooltip('Effects policies 1,2,3. Before interpolation, water depth assigned to building will be decreased default: 20 cm'):
                     solara.InputFloat(label='flood_depth_reduction',  value=layers.value['flood_depth_reduction'],
                                     continuous_update=True)
-
+            if bool(set({4}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for culverts'):
+                    solara.InputFloat(label='threshold_increase_culvert_water_height',  value=layers.value['threshold_increase_culvert_water_height'],
+                                    continuous_update=True)
+            if bool(set({4}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for roads'):
+                    solara.InputFloat(label='threshold_increase_road_water_height',  value=layers.value['threshold_increase_road_water_height'],
+                                    continuous_update=True)
 
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
