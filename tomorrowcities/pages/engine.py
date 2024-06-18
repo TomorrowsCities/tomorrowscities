@@ -1537,12 +1537,12 @@ def ExecutePanel():
     if len(policies) > 0:
         with solara.Column(gap="30px"):
             # if at least one of the policies is selected
-            if bool(set({1,2,4}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2.4 Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
+            if bool(set({1,2,4,6}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 1,2,4,6. Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
                     solara.InputFloat(label='cdf_median_increase_in_percent',  value=layers.value['cdf_median_increase_in_percent'],
                                     continuous_update=True)
-            if bool(set({1,2,3}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2,3. Before interpolation, water depth assigned to building will be decreased default: 20 cm'):
+            if bool(set({1,2,3,6}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 1,2,3,6. Before interpolation, water depth assigned to building will be decreased default: 20 cm'):
                     solara.InputFloat(label='flood_depth_reduction',  value=layers.value['flood_depth_reduction'],
                                     continuous_update=True)
             if bool(set({4}).intersection(set(policies))):
