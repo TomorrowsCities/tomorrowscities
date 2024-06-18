@@ -1602,7 +1602,7 @@ def MapInfo():
                         solara.Text(f'{value}')
 
 @solara.component
-def ImportDataZone():
+def ImportDataZone1():
     def s3_file_open(p):
         #print(p)
         storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
@@ -1716,7 +1716,7 @@ def ImportDataZone():
     #                            on_value=layers.value['data_import_method'].set, 
     #                            values=["drag&drop","s3"], 
     #                            style={"align-items": "center"})
-    with solara.Card(title="Upload Data"):
+    with solara.Card(title="Upload Data", style={"width":"35vh", "align":"stretch"}):
     #with solara.Card(title="Upload", subtitle="Drag & Drop from your local drive"):
         solara.Markdown('''<div style="text-align: justify">
                         Drag & drop your local files to 
@@ -1729,20 +1729,27 @@ def ImportDataZone():
                 lazy=False,
                 label='Drop files here')
 
-        with solara.Column():       
+        #with solara.Column():
+        def sample_data():
             if storage.value is None:
-                solara.Markdown('''<div style="text-align: justify">
+                return solara.Markdown('''<div style="text-align: justify">
                                 You can download and extract our
                                 <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
                                 </div">
                                 ''')
             else:
-                solara.Markdown('''You can choose sample data from our AWS S3 repository. 
+                return solara.Markdown('''You can choose sample data from our AWS S3 repository. 
                                 Double click to load data into the platform.
                             ''')   
                 print("..............",storage.value)
                 S3FileBrowser(storage.value, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
 
+        solara.Details(
+        summary="Use Existing Data",
+        children=[sample_data()],
+        expand=False
+        )
+        
     if total_progress > -1 and total_progress < 100:
         solara.Text(f"Uploading {total_progress}%")
         solara.ProgressLinear(value=total_progress)
@@ -1761,17 +1768,160 @@ def ImportDataZone():
             solara.ProgressLinear(value=False)
         else:
             solara.Text("Processing")
-            solara.ProgressLinear(value=True)                                                   
+            solara.ProgressLinear(value=True)
+
+@solara.component
+def ImportDataZone2():
+    def s3_file_open(p):
+        #print(p)
+        storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
+
+        with open(f'/tmp/aws.tmp', 'rb') as fileObj:
+            fileContent = fileObj.read()
+            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
+                                                             size=len(fileContent),
+                                                             data=fileContent)
+            set_fileinfo([file_info])
+
+    def local_file_open(p):
+        with open(p, 'rb') as fileObj:
+            fileContent = fileObj.read()
+            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
+                                                             size=len(fileContent),
+                                                             data=fileContent)
+            set_fileinfo([file_info])
+
+    total_progress, set_total_progress = solara.use_state(-1)
+    fileinfo, set_fileinfo = solara.use_state(None)
+    result, set_result = solara.use_state(solara.Result(True))
+
+    generate_message, set_generate_message = solara.use_state("")
+    generate_counter, set_generate_counter = solara.use_state(0)
+    generate_btn_disabled, set_generate_btn_disabled = solara.use_state(False)
+    generate_error = solara.reactive("")
+
+    def on_generate():
+        set_generate_counter(generate_counter + 1)
+        generate_error.set("")
+
+    def load():
+        if fileinfo is not None:
+            unrecognized_file_exists = False
+            # try not to trigger render inside loop
+            updated_center = None
+            for f in fileinfo:
+                print(f'processing file {f["name"]}')
+                name, data = import_data(f)
+                if name is not None and data is not None:
+                    if isinstance(data, gpd.GeoDataFrame):
+                        data = data.set_crs("epsg:4326",allow_override=True)
+                        layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
+                        layers.value['layers'][name]['data'].set(data)
+                        # centroids in geometric coordinates (3857: Pseuod-Mercator in meters)
+                        # Geographic --> geometric --> calculate centroid --> geographic
+                        centroids = data.to_crs('epsg:3857').centroid.to_crs('epsg:4326')
+                        #centroids = data.centroid
+                        center_y = centroids.y.mean()
+                        center_x = centroids.x.mean()
+                        updated_center = (center_y, center_x)
+                    elif isinstance(data, pd.DataFrame):
+                        layers.value['layers'][name]['df'].set(data)
+                        layers.value['layers'][name]['data'].set(data)
+                    elif isinstance(data, ParameterFile):
+                        layers.value['layers'][name]['data'].set(data)
+                    elif isinstance(data, dict):
+                        layers.value['layers'][name]['data'].set(data)
+                else:
+                    unrecognized_file_exists = True
+            if updated_center:
+                layers.value['center'].set(updated_center)
+            layers.value['render_count'].set(layers.value['render_count'].value + 1)
+
+            if unrecognized_file_exists:
+                return False
+        return True
+    
+    def is_ready_to_generate():
+        if layers.value['layers']['parameter']['data'].value is not None and \
+           layers.value['layers']['landuse']['data'].value is not None:
+            return True
+        return False
+
+    def generate():
+        if generate_counter > 0 :
+            set_generate_message('Generating exposure...')
+            print('Generating exposure...')
+            parameter_file = layers.value['layers']['parameter']['data'].value 
+            land_use_file = layers.value['layers']['landuse']['data'].value 
+            seed = layers.value['seed'].value
+            building, household, individual = generate_exposure(parameter_file, land_use_file,
+                                                                population_calculate=False, seed=seed)
+
+            for name, data in zip(['building','household','individual'],[building, household, individual]):
+                data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
+                print('hkaya',name)
+                #print(data)
+                layers.value['layers'][name]['data'].set(data)
+                if  "geometry" in list(data.columns):
+                    center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
+                    layers.value['center'].set(center)
+
+            layers.value['render_count'].value += 1
+
+    def progress(x):
+        set_total_progress(x)
+
+    def on_file_deneme(f):
+        set_fileinfo(f)
         
-    with solara.Card(title="Data Generation", subtitle="Exposure generation"):
+    def open_file_dialog():
+        print('entered open file dialog...')    
+    
+    result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
+    generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
+
+    #with solara.Row(justify="center"):
+    #    solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
+    #                            on_value=layers.value['data_import_method'].set, 
+    #                            values=["drag&drop","s3"], 
+    #                            style={"align-items": "center"})                                           
+        
+    with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"35vh", "align":"stretch"}):          
         solara.Markdown('''<div style="text-align: justify">
-                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=" target="_blank">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.<br/><br/>
+                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.
                         </div">
                         ''')
+                        
+        FileDropMultiple(on_total_progress=progress,
+            on_file=on_file_deneme, 
+            lazy=False,
+            label='Drop files here')
+        solara.Text("Spacer", style={"visibility": "hidden"})
+            
         with solara.Row():
             solara.InputInt(label='Random seed',value=layers.value['seed'])
             solara.Button("Generate", on_click=on_generate, outlined=True,
                 disabled=generate_btn_disabled)
+
+    if total_progress > -1 and total_progress < 100:
+        solara.Text(f"Uploading {total_progress}%")
+        solara.ProgressLinear(value=total_progress)
+    else:
+        if result.state == solara.ResultState.FINISHED:
+            if result.value:
+                pass#solara.Text("Spacer", style={'visibility':'hidden'})
+            else:
+                solara.Text("Unrecognized file")
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.INITIAL:
+            pass#solara.Text("Spacer", style={'visibility':'hidden'})
+            solara.ProgressLinear(value=False)
+        elif result.state == solara.ResultState.ERROR:
+            solara.Text(f'{result.error}')
+            solara.ProgressLinear(value=False)
+        else:
+            solara.Text("Processing")
+            solara.ProgressLinear(value=True)
 
     if generate_result.error is not None:
         generate_error.set(generate_error.value + str(generate_result.error))
@@ -1779,24 +1929,16 @@ def ImportDataZone():
     if generate_error.value != "":
         solara.Text(f'{generate_error}', style={"color":"red"})
     else:
-        solara.Text("Spacer", style={"visibility": "hidden"})
+        solara.Text("Spacer", style={"visibility": "hidden", "height": "0.5px"})
 
     if generate_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
         set_generate_btn_disabled(True)
         solara.Text(generate_message)
         solara.ProgressLinear(value=True)
     else:
-        solara.Text("Spacer", style={"visibility": "hidden"})
+        #solara.Text("Spacer", style={"visibility": "hidden"})
         set_generate_btn_disabled(not is_ready_to_generate())
         solara.ProgressLinear(value=False)
-
-
-    #with solara.Card(title="Browse", subtitle="Import from your local drive"):
-    #    solara.Markdown('''Locate the input files in your drive, and double click
-    #                    the file that you want to upload.
-    #                    ''')    
-    #    solara.FileBrowser(can_select=True, on_file_open=local_file_open,
-    #        filter=lambda p: True if p.is_dir() or p.suffix in extension_list_w_dots else False)
 
 @solara.component
 def WebApp():
@@ -1805,7 +1947,15 @@ def WebApp():
     with solara.Sidebar():
         with solara.lab.Tabs():
             with solara.lab.Tab("DATA IMPORT"):
-                ImportDataZone()
+                #ImportDataZone()
+                solara.Details(
+                summary="Upload Data",
+                children=[ImportDataZone1()],
+                expand=False)
+                solara.Details(
+                summary="Generate Data",
+                children=[ImportDataZone2()],
+                expand=False)
             with solara.lab.Tab("SETTINGS"):
                 ExecutePanel()
                 FilterPanel()
@@ -1816,7 +1966,13 @@ def WebApp():
     MapViewer()
     with solara.Row(justify="center"):
         MetricPanel()
-    LayerDisplayer()                         
+    #LayerDisplayer()
+    solara.Details(
+        summary="Layer Details",
+        children=[LayerDisplayer()],
+        expand=False
+    )    
+    solara.Text("Spacer", style={"visibility": "hidden"})
 
     with ConfirmationDialog(
         layers.value['dialog_message_to_be_shown'].value is not None,
