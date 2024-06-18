@@ -26,6 +26,8 @@ module.exports = {
 
     this.$refs.dropzone.addEventListener('drop', async event => {
       event.preventDefault();
+      // Clear file information before processing new files
+      this.jupyter_clear();
       const items = await Promise.all([...event.dataTransfer.items]);
       const files = items.map(i => i.webkitGetAsEntry())
       const fileHolders = files.filter(f => f.isFile)
