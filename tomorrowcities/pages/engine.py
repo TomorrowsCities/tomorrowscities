@@ -1604,15 +1604,18 @@ def MapInfo():
 @solara.component
 def ImportDataZone1():
     def s3_file_open(p):
-        #print(p)
-        storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
+        filename='aws.tmp'
+        with tempfile.TemporaryDirectory() as temp_dir:
+            filepath = os.path.join(temp_dir,filename)
+            storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], filepath)
+            with open(filepath, 'rb') as fileObj:
+                fileContent = fileObj.read()
+                file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p),
+                                                                size=len(fileContent),
+                                                                data=fileContent)
+                set_fileinfo([file_info])
+            os.unlink(os.path.join(temp_dir, filename))
 
-        with open(f'/tmp/aws.tmp', 'rb') as fileObj:
-            fileContent = fileObj.read()
-            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
-                                                             size=len(fileContent),
-                                                             data=fileContent)
-            set_fileinfo([file_info])
 
     def local_file_open(p):
         with open(p, 'rb') as fileObj:
