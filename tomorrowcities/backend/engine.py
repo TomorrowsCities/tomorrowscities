@@ -533,12 +533,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
-    if 3 in policies:
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            gdf_building_intensity.loc[:, 'height'] = gdf_building_intensity['height'].apply(lambda h: min(max_height, h+6))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
-
     if 4 in policies:
         if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
             max_height = gdf_building_intensity['height'].max()
@@ -760,12 +754,14 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
 
         # reduce flood depth *flood_depth_reduction* cm
+        # Effect of policies are stacked
         if 1 in policies:
             bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
         if 2 in policies:
             applied_to = (bld_flood['occupancy'] == 'Res') & ((bld_flood['freqincome'] == 'lowIncomeA') | (bld_flood['freqincome'] == 'lowIncomeB'))
             bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
-
+        if 3 in policies:
+            bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
         bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
 
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
