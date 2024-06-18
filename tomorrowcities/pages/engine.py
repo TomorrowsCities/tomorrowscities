@@ -1524,7 +1524,7 @@ def ExecutePanel():
         solara.ProgressLinear(save_app_state.pending)
     PolicyPanel()
     policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
-    if 1 in policies:
+    if set({1,2}).issubset(set(policies)):
         with solara.Column(gap="30px"):
             with solara.Tooltip('Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
                 solara.InputFloat(label='cdf_median_decrease_in_percent',  value=layers.value['cdf_median_decrease_in_percent'],

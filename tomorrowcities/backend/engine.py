@@ -533,17 +533,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
-    if 2 in policies:
-        # First, mid-code -> high-code
-        # then, low-code -> mid-code
-        gdf_building_intensity.loc[((gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')) & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
-        gdf_building_intensity.loc[((gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')) & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            idx = (gdf_building_intensity['avgincome'] == 'lowIncomeA') | (gdf_building_intensity['avgincome'] == 'lowIncomeA')
-            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
-
     if 3 in policies:
         if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
             max_height = gdf_building_intensity['height'].max()
@@ -674,17 +663,23 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
      
     if hazard_type == HAZARD_EARTHQUAKE:
         if not gem_fragility:
+            med_cols = ['muds1_g','muds2_g','muds3_g','muds4_g']
             bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
             nulls = bld_eq['muds1_g'].isna()
             print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
-            bld_eq.loc[nulls, ['muds1_g','muds2_g','muds3_g','muds4_g']] = [0.048,0.203,0.313,0.314]
+            bld_eq.loc[nulls, med_cols] = [0.048,0.203,0.313,0.314]
             bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
+            bld_eq[med_cols] = bld_eq[med_cols].astype(float)
             if 1 in policies:
                 # Decrease medians *cdf_median_decrease_in_percent* percent for residential buildings
-                bld_eq[['muds1_g','muds2_g','muds3_g','muds4_g']] = bld_eq[['muds1_g','muds2_g','muds3_g','muds4_g']].astype(float)
-                bld_eq.loc['occupancy'=='Res', ['muds1_g','muds2_g','muds3_g','muds4_g']] = \
-                    bld_eq.loc['occupancy'=='Res', ['muds1_g','muds2_g','muds3_g','muds4_g']] * \
+                applied_to = bld_eq['occupancy']=='Res'
+                bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
                         ( 1 - cdf_median_decrease_in_percent )
+            if 2 in policies:
+                # Decrease medians *cdf_median_decrease_in_percent* percent for residential buildings
+                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
+                bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
+                        ( 1 - cdf_median_decrease_in_percent )          
 
             # Intensity measure calculation
             sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
@@ -726,9 +721,15 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             gem_df['imt_2'] = gem_df['imt'].str.replace('(', ' ').str.replace(')','').str.lower()
             gem_df['imt_2'] = gem_df['imt_2'].apply(lambda x: f'sa {float(x.split()[-1]):.2f}' if x.startswith('sa ') else x)    
             bld_eq = gdf_building_intensity.merge(gem_df, how='left',left_on='expstr', right_on='id', validate="many_to_one")
+            imt_cols = pd.unique(bld_eq['imt_2']).tolist()
+
             if 1 in policies:
-                imt_cols = pd.unique(bld_eq['imt_2']).tolist()
-                bld_eq.loc[bld_eq['occupancy'] == 'Res', imt_cols] = bld_eq.loc[bld_eq['occupancy'] == 'Res', imt_cols] * \
+                applied_to = bld_eq['occupancy'] == 'Res'
+                bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
+                        ( 1 - cdf_median_decrease_in_percent )
+            if 2 in policies:
+                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
+                bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
                         ( 1 - cdf_median_decrease_in_percent )
 
             def computer_damage_state(row):
@@ -757,10 +758,16 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     elif hazard_type == HAZARD_FLOOD:
         bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
+
         # reduce flood depth *flood_depth_reduction* cm
         if 1 in policies:
             bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
-            bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
+        if 2 in policies:
+            applied_to = (bld_flood['occupancy'] == 'Res') & ((bld_flood['freqincome'] == 'lowIncomeA') | (bld_flood['freqincome'] == 'lowIncomeB'))
+            bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
+
+        bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
+
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
         y = bld_flood[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
         xnew = bld_flood['im'].to_numpy(dtype=np.float64)
