@@ -496,3 +496,72 @@ def PowerFragilityDisplayer(data, items_per_page=5):
                                 on_value=set_vuln_string)
 
 
+lbl_2_str = {
+    'landuse': {
+        'luf': {'name': 'Land Use Type',
+                'mapping': {}},
+        'avgincome': {'name': 'Average Income',
+                'mapping': {}},
+        },
+    'building': {
+        'ds': {'name': 'Damage State',
+                'mapping': {0: 'No',1: 'Slight', 2:'Moderate',3:'Extensive',4:'Complete'}},
+        'specialfac': {'name': 'Special Facility',
+                'mapping': {0: 'Residential', 1: 'Educational', 2:'Health'}},
+        'nhouse': {'name': 'Number of Households',
+                'mapping': {}},
+        'residents': {'name': 'Number of Residents',
+                'mapping': {}},
+        'occupancy': {'name': 'Occupancy',
+                'mapping': {'Com': 'Commercial','Res': 'Residential'}},
+        'storeys': {'name': 'Storeys',
+                'mapping': {}},
+        'code_level': {'name': 'Code Level',
+                'mapping': {}},
+        'material': {'name': 'Material',
+                'mapping': {}},
+        'zoneid': {'name': 'Zone ID',
+                'mapping': {}},
+        },
+    'tally_minimal': {
+        'ds': {'name': 'Damage State',
+                'mapping': {0: 'No',1: 'Slight', 2:'Moderate',3:'Extensive',4:'Complete'}},
+        'income': {'name': 'Income Level',
+                   'mapping': {'highIncome': 'High Income', 'lowIncomeA': 'Low Income A'}},
+        'material': {'name': 'Material',
+                   'mapping': {}},
+        'gender': {'name': 'Gender',
+                   'mapping': {}},
+        'age': {'name': 'Age',
+                   'mapping': {}},
+        'head': {'name': 'Head',
+                   'mapping': {}},
+        'eduattstat': {'name': 'Education Status',
+                   'mapping': {}},
+        'luf': {'name': 'Land Use',
+                   'mapping': {}},
+        'occupancy': {'name': 'Occupancy',
+                'mapping': {'Com': 'Commercial','Res': 'Residential'}},
+        },
+    }
+
+
+def convert_data_for_filter_view(data, layer_name):
+    if data is None:
+        return None
+    
+    if layer_name not in lbl_2_str.keys():
+        return data
+    
+    # Take the columns
+    df = data[lbl_2_str[layer_name].keys()]
+
+    for col, colinfo in lbl_2_str[layer_name].items():
+        if len(colinfo['mapping']) > 0:
+            df.replace({col: colinfo['mapping']}, inplace=True)
+
+    renaming = {col: colinfo['name'] for col, colinfo in lbl_2_str[layer_name].items()}
+    df.rename(columns=renaming, inplace=True)
+
+
+    return df

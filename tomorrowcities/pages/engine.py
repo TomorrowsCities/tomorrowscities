@@ -28,7 +28,8 @@ from .settings import threshold_flood, threshold_flood_distance, threshold_road_
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
-from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer
+from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer, \
+                        convert_data_for_filter_view, lbl_2_str
 from ..components.file_drop import FileDropMultiple
 from .docs import data_import_help
 import ipywidgets
@@ -942,52 +943,65 @@ def FilterPanel():
                 # for filter_col in ['zoneid']:
                     # solara.CrossFilterSelect(df, filter_col, multiple=True)
                 # filters[layer_name], _ = solara.use_cross_filter(id(df), "dataframe")
+    building_filter_view, set_building_filter_view = solara.use_state(None)
+    landuse_filter_view, set_landuse_filter_view = solara.use_state(None)
+    tally_minimal_filter_view, set_tally_minimal_filter_view = solara.use_state(None)
 
-    building = layers.value['layers']['building']['df'].value
-    building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
-    if building is not None:
+    def create_building_filter_view():
+        data = layers.value['layers']['building']['df'].value
+        df = convert_data_for_filter_view(data, 'building')
+        set_building_filter_view(df)
+
+    def create_landuse_filter_view():
+        data = layers.value['layers']['landuse']['df'].value
+        df = convert_data_for_filter_view(data, 'landuse')
+        set_landuse_filter_view(df)
+
+    def create_tally_minimal_filter_view():
+        print('create_tally_minimal_filter_view triggered')
+        data = read_from_session_storage('tally_minimal')
+        df = convert_data_for_filter_view(data, 'tally_minimal')
+        print(df)
+        set_tally_minimal_filter_view(df)
+
+    # Building
+    solara.use_memo(create_building_filter_view, [layers.value['layers']['building']['df'].value])
+    building_filter.value, _ = solara.use_cross_filter(id(building_filter_view), "building_filter")
+    if building_filter_view is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("BUILDING FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                solara.CrossFilterReport(building)
-                solara.CrossFilterSelect(building, "ds", multiple=True)
-                solara.CrossFilterSelect(building, "specialfac", multiple=True)
-                solara.CrossFilterSelect(building, "nhouse", multiple=True)
-                solara.CrossFilterSelect(building, "residents", multiple=True)
-                solara.CrossFilterSelect(building, "occupancy", multiple=True)
-                solara.CrossFilterSelect(building, "storeys", multiple=True)
-                solara.CrossFilterSelect(building, "code_level", multiple=True)
-                solara.CrossFilterSelect(building, "material", multiple=True)
-                solara.CrossFilterSelect(building, "zoneid", multiple=True)
+                solara.CrossFilterReport(building_filter_view)
+                for col, colinfo in lbl_2_str['building'].items():
+                    solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True)
     
-    landuse = layers.value['layers']['landuse']['df'].value
-    landuse_filter.value, _ = solara.use_cross_filter(id(landuse), "landuse_filter")
-    if landuse is not None:
+    # Landuse
+    solara.use_memo(create_landuse_filter_view, [layers.value['layers']['landuse']['df'].value])
+    landuse_filter.value, _ = solara.use_cross_filter(id(landuse_filter_view), "landuse_filter")
+    if landuse_filter_view is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("LANDUSE FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                solara.CrossFilterReport(landuse)
-                solara.CrossFilterSelect(landuse, "luf", multiple=True)
-                solara.CrossFilterSelect(landuse, "avgincome", multiple=True)      
-
-
-    tc = tally_counter.value
-    print('tally_counter', tc)
-    tally_minimal = read_from_session_storage('tally_minimal')
-    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
-    if tally_minimal is not None:
+                solara.CrossFilterReport(landuse_filter_view)
+                for col, colinfo in lbl_2_str['landuse'].items():
+                    solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True)
+    
+    # Tally minimal
+    solara.use_memo(create_tally_minimal_filter_view, [tally_counter.value])
+    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal_filter_view), "tally_filter")
+    if tally_minimal_filter_view is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                solara.CrossFilterReport(tally_minimal)
-                for col in layers.value['tally_filter_cols']:
-                    solara.CrossFilterSelect(tally_minimal, col, multiple=True)
+                solara.CrossFilterReport(tally_minimal_filter_view)
+                for col, colinfo in lbl_2_str['tally_minimal'].items():
+                    solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True)
 
 @solara.component
 def LayerDisplayer():
@@ -1458,7 +1472,7 @@ def ExecutePanel():
 
                 store_in_session_storage('tally', tally)
                 store_in_session_storage('tally_geo', tally_geo)
-                store_in_session_storage('tally_minimal', tally[layers.value['tally_filter_cols']])
+                store_in_session_storage('tally_minimal', tally[lbl_2_str['tally_minimal'].keys()])
                 store_info_to_session()
                 layers.value['tally_is_available'].value = True
                 tally_counter.value += 1
