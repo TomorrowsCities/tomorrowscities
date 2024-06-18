@@ -1727,34 +1727,32 @@ def ImportDataZone1():
         solara.Markdown('''<div style="text-align: justify">
                         Drag & drop your local files to 
                         the below area. Supported formats are Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
-                        For more information, please refer to <a href="docs/data" target="_blank">Data Formats</a>.
+                        For more information, please refer to <a href="https://github.com/TomorrowsCities/tomorrowscities/wiki" target="_blank">Data Formats</a>.</br>
+                        You can download and extract our <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" 
+                        target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
                         </div">
                         ''')
         FileDropMultiple(on_total_progress=progress,
                 on_file=on_file_deneme, 
                 lazy=False,
                 label='Drop files here')
-
+                
         #with solara.Column():
         def sample_data():
-            if storage.value is None:
-                return solara.Markdown('''<div style="text-align: justify">
-                                You can download and extract our
-                                <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
-                                </div">
-                                ''')
-            else:
-                return solara.Markdown('''You can choose sample data from our AWS S3 repository. 
+            with solara.Column() as main:
+                solara.Markdown('''You can also choose sample data from our AWS S3 repository. 
                                 Double click to load data into the platform.
                             ''')   
                 print("..............",storage.value)
                 S3FileBrowser(storage.value, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
-
-        solara.Details(
-        summary="Use Existing Data",
-        children=[sample_data()],
-        expand=False
-        )
+            return main
+        
+        if storage.value is not None:        
+            solara.Details(
+            summary="Upload Data from Cloud",
+            children=[sample_data()],
+            expand=False
+            )
         
     if total_progress > -1 and total_progress < 100:
         solara.Text(f"Uploading {total_progress}%")
@@ -1778,17 +1776,6 @@ def ImportDataZone1():
 
 @solara.component
 def ImportDataZone2():
-    def s3_file_open(p):
-        #print(p)
-        storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], f'/tmp/aws.tmp')
-
-        with open(f'/tmp/aws.tmp', 'rb') as fileObj:
-            fileContent = fileObj.read()
-            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
-                                                             size=len(fileContent),
-                                                             data=fileContent)
-            set_fileinfo([file_info])
-
     def local_file_open(p):
         with open(p, 'rb') as fileObj:
             fileContent = fileObj.read()
@@ -1894,7 +1881,7 @@ def ImportDataZone2():
         
     with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"35vh", "align":"stretch"}):          
         solara.Markdown('''<div style="text-align: justify">
-                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download an <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">sample exposure dataset</a> to your local drive and upload to the platform via drag & drop.
+                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download and extract our <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">Sample Exposure Dataset</a> to your local drive and upload to the platform via drag & drop.
                         </div">
                         ''')
                         
