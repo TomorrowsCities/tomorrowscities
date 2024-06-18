@@ -26,7 +26,17 @@ def compute_road_infra(buildings, household, individual,
                         threshold_flood_distance,
                         preserve_edge_directions,
                         earthquake_intensity_unit = 'm/s2',
+                        policies = [],
+                        cdf_median_increase_in_percent = 0.2,
+                        threshold_increase_culvert_water_height = 0.2,
+                        threshold_increase_road_water_height = 0.2,
                         ):
+
+    if 4 in policies:
+        road_water_height_threshold += threshold_increase_road_water_height
+        culvert_water_height_threshold += threshold_increase_culvert_water_height
+        print(f'road_water_height_threshold is increased to {road_water_height_threshold} by {threshold_increase_road_water_height} by policy 4')
+        print(f'culvert_water_height_threshold is increased to {culvert_water_height_threshold} by {threshold_increase_culvert_water_height} by policy 4')
 
     earthquake_intensity_normalization_factor = 1
     if earthquake_intensity_unit == 'm/s2':
@@ -125,8 +135,14 @@ def compute_road_infra(buildings, household, individual,
         gdf_edges = gdf_edges.merge(fragility, how='left',left_on='bridge_type',right_on='vuln_string')
 
         nulls = gdf_edges['med_ds1'].isna()
+        notnulls = gdf_edges['med_ds1'].notna()
         gdf_edges.loc[nulls, ['med_ds1','med_ds2','med_ds3','med_ds4']] = [99999,99999,99999,99999]
         gdf_edges.loc[nulls, ['dispersion']] = [1]
+
+        med_cols = ['med_ds1','med_ds2','med_ds3','med_ds4']
+        if 4 in policies:
+            # Decrease medians *cdf_median_increase_in_percent*
+            gdf_edges.loc[notnulls, med_cols] = gdf_edges.loc[notnulls, med_cols] * ( 1 + cdf_median_increase_in_percent )
 
         #gdf_edges['log_im'] = np.log(gdf_edges['im'])
         if 'im' in gdf_edges.columns:
@@ -425,11 +441,11 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[],
             threshold_flood = 0.2, threshold_flood_distance = 10,
             earthquake_intensity_unit = 'm/s2',
-            cdf_median_decrease_in_percent = 0.20,
+            cdf_median_increase_in_percent = 0.20,
             flood_depth_reduction = 0.20,
             ):
 
-    print('cdf_median_decrease_in_percent',cdf_median_decrease_in_percent)
+    print('cdf_median_increase_in_percent',cdf_median_increase_in_percent)
     print('flood_depth_reduction', flood_depth_reduction)
     print('policies', policies)
     earthquake_intensity_normalization_factor = 1
@@ -532,13 +548,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         print('maximum water depth on buildings ',gdf_building_intensity['im'].max())
 
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
-
-    if 4 in policies:
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            idx = gdf_building_intensity['specialfac'] != 0
-            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
 
     if 5 in policies:
         # First, mid-code -> high-code
@@ -665,15 +674,15 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_eq.loc[nulls, ['sigmads1','sigmads2','sigmads3','sigmads4']] = [0.301,0.276,0.252,0.253]
             bld_eq[med_cols] = bld_eq[med_cols].astype(float)
             if 1 in policies:
-                # Decrease medians *cdf_median_decrease_in_percent* percent for residential buildings
+                # Decrease medians *cdf_median_increase_in_percent* percent for residential buildings
                 applied_to = bld_eq['occupancy']=='Res'
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
-                        ( 1 - cdf_median_decrease_in_percent )
+                        ( 1 + cdf_median_increase_in_percent )
             if 2 in policies:
-                # Decrease medians *cdf_median_decrease_in_percent* percent for residential buildings
+                # Decrease medians *cdf_median_increase_in_percent* percent for residential buildings
                 applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
-                        ( 1 - cdf_median_decrease_in_percent )          
+                        ( 1 + cdf_median_increase_in_percent )
 
             # Intensity measure calculation
             sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
@@ -720,11 +729,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             if 1 in policies:
                 applied_to = bld_eq['occupancy'] == 'Res'
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
-                        ( 1 - cdf_median_decrease_in_percent )
+                        ( 1 - cdf_median_increase_in_percent )
             if 2 in policies:
                 applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
-                        ( 1 - cdf_median_decrease_in_percent )
+                        ( 1 - cdf_median_increase_in_percent )
 
             def computer_damage_state(row):
                 intensity_in_g = row[row['imt_2']] / earthquake_intensity_normalization_factor
