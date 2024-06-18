@@ -1724,7 +1724,7 @@ def ImportDataZone1():
         solara.Markdown('''<div style="text-align: justify">
                         Drag & drop your local files to 
                         the below area. Supported formats are Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
-                        For more information, please refer to <a href="docs/data" target="_blank">Data Formats</a>.</br>
+                        For more information, please refer to <a href="https://github.com/TomorrowsCities/tomorrowscities/wiki" target="_blank">Data Formats</a>.</br>
                         You can download and extract our <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" 
                         target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
                         </div">
