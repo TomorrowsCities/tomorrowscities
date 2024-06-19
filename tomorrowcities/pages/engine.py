@@ -245,16 +245,16 @@ def create_new_app_state():
     'bounds': solara.reactive(None),
     'selected_policies': solara.reactive([]),
     'policies': {
-        '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
-        '2': {'id':2, 'label': 'P2', 'description': 'Housing retrofitting', 'applied': solara.reactive(False)},
-        '3': {'id':3, 'label': 'P3', 'description': 'Investment in water and sanitation', 'applied': solara.reactive(False)},
-        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks', 'applied': solara.reactive(False)},
-        '5': {'id':5, 'label': 'P5', 'description': 'Access to more shelters', 'applied': solara.reactive(False)},
-        '6': {'id':6, 'label': 'P6', 'description': 'Funding community networks', 'applied': solara.reactive(False)},
-        '7': {'id':7, 'label': 'P7', 'description': 'Support for local livelihoods', 'applied': solara.reactive(False)},
-        '8': {'id':8, 'label': 'P8', 'description': 'Cash transfers to vulnerable groups', 'applied': solara.reactive(False)},
-        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and river cleaning program', 'applied': solara.reactive(False)},
-        '10': {'id':10, 'label': 'P10', 'description': 'Environmental protection zones', 'applied': solara.reactive(False)},
+        '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program'},
+        '2': {'id':2, 'label': 'P2', 'description': 'Housing retrofitting'},
+        '3': {'id':3, 'label': 'P3', 'description': 'Investment in water and sanitation'},
+        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks'},
+        '5': {'id':5, 'label': 'P5', 'description': 'Access to more shelters'},
+        '6': {'id':6, 'label': 'P6', 'description': 'Funding community networks'},
+        #'7': {'id':7, 'label': 'P7', 'description': 'Support for local livelihoods'},
+        '8': {'id':8, 'label': 'P8', 'description': 'Cash transfers to vulnerable groups'},
+        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and river cleaning program'},
+        #'10': {'id':10, 'label': 'P10', 'description': 'Environmental protection zones'},
         #'11': {'id':11, 'label': 'I1', 'description': 'DRR-oriented zoning and urban transformation', 'applied': solara.reactive(False)},
         #'12': {'id':12, 'label': 'I2', 'description': 'Increased monitoring and supervision on new constructions in terms of disaster-resilience', 'applied': solara.reactive(False)},
         #'13': {'id':13, 'label': 'I3', 'description': 'Taking social equality into consideration in the making of urbanisation and DRR policies', 'applied': solara.reactive(False)},
@@ -356,9 +356,11 @@ def store_info_to_session():
     for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
                 'bounds','selected_layer','render_count','implementation_capacity_score',
                 'data_import_method','map_info_button','map_info_detail']:
+        print('saving',attr, layers.value[attr].value)
         store_in_session_storage(attr, layers.value[attr].value)
 
 def reload_info_from_session():
+    print('reloading info from session')
     session_data = read_from_session_storage('population_displacement_consensus')
     if session_data is not None:
         population_displacement_consensus.set(session_data)
@@ -375,6 +377,7 @@ def reload_info_from_session():
                 'data_import_method','map_info_button','map_info_detail']:
         session_data = read_from_session_storage(attr)
         if session_data is not None:
+            print('reloading',attr, session_data)
             layers.value[attr].set(session_data)
 
 def reset_session():
@@ -1057,6 +1060,9 @@ def generate_metrics_local():
     tally_geo = read_from_session_storage('tally_geo')
     hazard = read_from_session_storage('hazard')
     population_displacement_consensus = read_from_session_storage('population_displacement_consensus')
+    print('is tally_geo none', tally_geo is None)
+    print('is hazard none', hazard is None)
+    print('is population_displacement_consensus none', population_displacement_consensus is None)
     if tally_geo is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
         tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
@@ -1297,7 +1303,7 @@ def ExecutePanel():
             cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
             threshold_increase_culvert_water_height = layers.value['threshold_increase_culvert_water_height'].value
             threshold_increase_road_water_height = layers.value['threshold_increase_road_water_height'].value
-            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
+            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
 
             edges['ds'] = 0
             edges['is_damaged'] = False
@@ -1385,7 +1391,7 @@ def ExecutePanel():
             damage_curve_suppress_factor = layers.value['damage_curve_suppress_factor'].value
 
 
-            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
+            policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
 
             # Find most frequent income in a building
             freqincome = household.groupby('bldid')['income'].value_counts().reset_index(name='v')
@@ -1537,7 +1543,7 @@ def ExecutePanel():
             solara.Button("Save Session", disabled=True)
         solara.ProgressLinear(save_app_state.pending)
     PolicyPanel()
-    policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
+    policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
     if len(policies) > 0:
         with solara.Column(gap="30px"):
             # if at least one of the policies is selected
@@ -1581,7 +1587,7 @@ def ExecutePanel():
         
 @solara.component
 def PolicyPanel():
-    all_policies = [f"{p['label']}/{p['description']}" for _, p in layers.value['policies'].items()]
+    all_policies = [f"{p['description']} ({p['label']})" for _, p in layers.value['policies'].items()]
     with solara.Row():
         solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False, style={"width": "35vh", "height": "auto"})
 
