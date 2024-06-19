@@ -550,19 +550,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     gdf_building_intensity['height'] = gdf_building_intensity['storeys'].str.extract(r'([0-9]+)s').astype('int')
 
-    if 5 in policies:
-        # First, mid-code -> high-code
-        # then, low-code -> mid-code
-        idx = ((gdf_building_intensity['avgincome'] == 'lowIncomeA') |\
-                (gdf_building_intensity['avgincome'] == 'lowIncomeA') &\
-                (gdf_building_intensity['specialfac'] == 0))
-        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
-        gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+1))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
-
     if 7 in policies:
         if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
             idx = (gdf_building_intensity['rnd'] < 0.70) & (gdf_building_intensity['occupancy'] == 'Res')
@@ -664,6 +651,10 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
                         ( 1 + cdf_median_increase_in_percent ) 
+            if 5 in policies:
+                # Special building are set to immune damage
+                applied_to = bld_eq['occupancy'] != 'Res'
+                bld_eq.loc[applied_to, med_cols] = [99999,99999,99999,99999]
             if 6 in policies:
                 # Increase medians *cdf_median_increase_in_percent* percent for residential buildings
                 applied_to = bld_eq['occupancy']=='Res'
@@ -716,7 +707,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_eq = gdf_building_intensity.merge(gem_df, how='left',left_on='expstr', right_on='id', validate="many_to_one")
             imt_cols = pd.unique(bld_eq['imt_2']).tolist()
 
-            # In GEM data we use, we have a discretized CDF so we decrease along x-axis
+            # In GEM data we use, we have a discretized CDF so less means more robust to damage
             if 1 in policies:
                 applied_to = bld_eq['occupancy'] == 'Res'
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
@@ -725,6 +716,10 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
                         ( 1 - cdf_median_increase_in_percent )
+            if 5 in policies:
+                # Special buildings are immune to damage
+                applied_to = bld_eq['occupancy'] != 'Res'
+                bld_eq.loc[applied_to, imt_cols] = 0
             if 6 in policies:
                 applied_to = bld_eq['occupancy'] == 'Res'
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
@@ -770,6 +765,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
         if 3 in policies:
             bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
+        if 5 in policies:
+            applied_to = bld_flood['occupancy'] != 'Res'
+            bld_flood.loc[applied_to, 'im'] = 0
         if 6 in policies:
             applied_to = bld_flood['occupancy'] == 'Res'
             bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
