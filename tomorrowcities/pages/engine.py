@@ -1557,8 +1557,8 @@ def ExecutePanel():
                 with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for roads'):
                     solara.InputFloat(label='threshold_increase_road_water_height',  value=layers.value['threshold_increase_road_water_height'],
                                     continuous_update=True)
-            if bool(set({8}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 8. Suppress damage curves via multiplying this factor'):
+            if bool(set({8,9}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 8, 9. Suppress damage curves via multiplying this factor'):
                     solara.InputFloat(label='damage_curve_suppress_factor',  value=layers.value['damage_curve_suppress_factor'],
                                     continuous_update=True)
     # The statements in this block are passed several times during thread execution

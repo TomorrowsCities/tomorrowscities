@@ -776,6 +776,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         if 8 in policies:
             applied_to = bld_flood['occupancy'] == 'Res'
             bld_flood.loc[applied_to, damage_curve_cols] = bld_flood.loc[applied_to, damage_curve_cols] * damage_curve_suppress_factor
+        if 9 in policies:
+            bld_flood[damage_curve_cols] = bld_flood[damage_curve_cols] * damage_curve_suppress_factor
         bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
 
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
