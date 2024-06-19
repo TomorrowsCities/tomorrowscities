@@ -10,7 +10,7 @@ import geopandas as gpd
 from typing import Callable, List, Optional, Union, cast, Tuple
 from pathlib import Path
 import ipyleaflet
-from ipyleaflet import AwesomeIcon, CircleMarker, Marker
+from ipyleaflet import AwesomeIcon, CircleMarker, Marker, Icon
 import numpy as np
 import rasterio 
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -558,15 +558,18 @@ def create_map_layer(df, name):
         for index, node in df.iterrows():
             x = node.geometry.x
             y = node.geometry.y
-            marker_color = ds_to_color_approx[node['ds']]
-            icon_name = 'fa-industry' if node['pwr_plant'] == 1 else 'bolt'
-            icon_color = 'black'
-            marker = Marker(icon=AwesomeIcon(
-                        name=icon_name,
-                        marker_color=marker_color,
-                        icon_color=icon_color,
-                        spin=False
-                    ),location=(y,x),title=f'{node["node_id"]}',draggable=False)
+            # marker_color = ds_to_color_approx[node['ds']]
+            # icon_name = 'fa-industry' if node['pwr_plant'] == 1 else 'bolt'
+            # icon_color = 'black'
+            # marker = Marker(icon=AwesomeIcon(
+                        # name=icon_name,
+                        # marker_color=marker_color,
+                        # icon_color=icon_color,
+                        # spin=False
+                    # ),location=(y,x),title=f'{node["node_id"]}',draggable=False)
+            icon_urls = '/static/public/icons/power_plant.png' if node['pwr_plant'] == 1 else '/static/public/icons/pole.png'
+            icons = Icon(icon_url=icon_urls, icon_size=[35,35]) if node['pwr_plant'] == 1 else Icon(icon_url=icon_urls, icon_size=[15,20])
+            marker = Marker(icon=icons, location=(y,x), title=f'{node["node_id"]}', draggable=False)
 
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
