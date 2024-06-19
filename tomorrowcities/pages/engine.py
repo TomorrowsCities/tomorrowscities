@@ -53,6 +53,7 @@ def create_new_app_state():
     'cdf_median_increase_in_percent': solara.reactive(0.2),
     'threshold_increase_culvert_water_height': solara.reactive(0.2),
     'threshold_increase_road_water_height': solara.reactive(0.2),
+    'damage_curve_suppress_factor': solara.reactive(0.9),
     'flood_depth_reduction': solara.reactive(0.2),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
@@ -245,15 +246,15 @@ def create_new_app_state():
     'selected_policies': solara.reactive([]),
     'policies': {
         '1': {'id':1, 'label': 'P1', 'description': 'Land and tenure security program', 'applied': solara.reactive(False)},
-        '2': {'id':2, 'label': 'P2', 'description': 'State-led upgrading/retrofitting of low-income/informal housing', 'applied': solara.reactive(False)},
-        '3': {'id':3, 'label': 'P3', 'description': 'Robust investment in WASH (water, sanitation and hygiene) and flood-control infrastructure', 'applied': solara.reactive(False)},
-        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks and public spaces through conventional paving', 'applied': solara.reactive(False)},
-        '5': {'id':5, 'label': 'P5', 'description': 'Shelter Law - All low-income and informal settlements should have physical and free access to community centres and shelters', 'applied': solara.reactive(False)},
-        '6': {'id':6, 'label': 'P6', 'description': 'Funding community-based networks in low-income areas (holistic approaches)', 'applied': solara.reactive(False)},
-        '7': {'id':7, 'label': 'P7', 'description': 'Urban farming programs', 'applied': solara.reactive(False)},
-        '8': {'id':8, 'label': 'P8', 'description': 'Emergency cash transfers to vulnerable households', 'applied': solara.reactive(False)},
-        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and rivers cleaning program ', 'applied': solara.reactive(False)},
-        '10': {'id':10, 'label': 'P10', 'description': 'Enforcement of environmental protection zones', 'applied': solara.reactive(False)},
+        '2': {'id':2, 'label': 'P2', 'description': 'Housing retrofitting', 'applied': solara.reactive(False)},
+        '3': {'id':3, 'label': 'P3', 'description': 'Investment in water and sanitation', 'applied': solara.reactive(False)},
+        '4': {'id':4, 'label': 'P4', 'description': 'Investments in road networks', 'applied': solara.reactive(False)},
+        '5': {'id':5, 'label': 'P5', 'description': 'Access to more shelters', 'applied': solara.reactive(False)},
+        '6': {'id':6, 'label': 'P6', 'description': 'Funding community networks', 'applied': solara.reactive(False)},
+        '7': {'id':7, 'label': 'P7', 'description': 'Support for local livelihoods', 'applied': solara.reactive(False)},
+        '8': {'id':8, 'label': 'P8', 'description': 'Cash transfers to vulnerable groups', 'applied': solara.reactive(False)},
+        '9': {'id':9, 'label': 'P9', 'description': 'Waste collection and river cleaning program', 'applied': solara.reactive(False)},
+        '10': {'id':10, 'label': 'P10', 'description': 'Environmental protection zones', 'applied': solara.reactive(False)},
         #'11': {'id':11, 'label': 'I1', 'description': 'DRR-oriented zoning and urban transformation', 'applied': solara.reactive(False)},
         #'12': {'id':12, 'label': 'I2', 'description': 'Increased monitoring and supervision on new constructions in terms of disaster-resilience', 'applied': solara.reactive(False)},
         #'13': {'id':13, 'label': 'I3', 'description': 'Taking social equality into consideration in the making of urbanisation and DRR policies', 'applied': solara.reactive(False)},
@@ -1381,6 +1382,7 @@ def ExecutePanel():
             earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
             flood_depth_reduction = layers.value['flood_depth_reduction'].value
             cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
+            damage_curve_suppress_factor = layers.value['damage_curve_suppress_factor'].value
 
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['label']}/{p['description']}" in layers.value['selected_policies'].value]
@@ -1410,6 +1412,7 @@ def ExecutePanel():
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
+                    damage_curve_suppress_factor=damage_curve_suppress_factor
                     )
             else:
                 if fragility is None:
@@ -1427,6 +1430,7 @@ def ExecutePanel():
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
+                    damage_curve_suppress_factor=damage_curve_suppress_factor,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
@@ -1537,8 +1541,8 @@ def ExecutePanel():
     if len(policies) > 0:
         with solara.Column(gap="30px"):
             # if at least one of the policies is selected
-            if bool(set({1,2,4,6}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2,4,6. Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
+            if bool(set({1,2,4,6,8}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 1,2,4,6,8. Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
                     solara.InputFloat(label='cdf_median_increase_in_percent',  value=layers.value['cdf_median_increase_in_percent'],
                                     continuous_update=True)
             if bool(set({1,2,3,6}).intersection(set(policies))):
@@ -1553,7 +1557,10 @@ def ExecutePanel():
                 with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for roads'):
                     solara.InputFloat(label='threshold_increase_road_water_height',  value=layers.value['threshold_increase_road_water_height'],
                                     continuous_update=True)
-
+            if bool(set({8}).intersection(set(policies))):
+                with solara.Tooltip('Effects policies 8. Suppress damage curves via multiplying this factor'):
+                    solara.InputFloat(label='damage_curve_suppress_factor',  value=layers.value['damage_curve_suppress_factor'],
+                                    continuous_update=True)
     # The statements in this block are passed several times during thread execution
     if result.error is not None:
         execute_error.set(execute_error.value + str(result.error))

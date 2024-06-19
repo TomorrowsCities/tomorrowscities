@@ -443,6 +443,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             earthquake_intensity_unit = 'm/s2',
             cdf_median_increase_in_percent = 0.20,
             flood_depth_reduction = 0.20,
+            damage_curve_suppress_factor = 0.9,
             ):
 
     print('cdf_median_increase_in_percent',cdf_median_increase_in_percent)
@@ -567,13 +568,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             idx = (gdf_building_intensity['rnd'] < 0.70) & (gdf_building_intensity['occupancy'] == 'Res')
             gdf_building_intensity.loc[idx,'occupancy'] = 'Agri'
 
-    if 8 in policies:
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            idx = gdf_building_intensity['specialfac'] == 0
-            gdf_building_intensity.loc[idx, 'height'] = gdf_building_intensity[idx]['height'].apply(lambda h: min(max_height, h+4))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
-
     if 9 in policies:
         if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
             max_height = gdf_building_intensity['height'].max()
@@ -669,12 +663,16 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 # Increase medians *cdf_median_increase_in_percent* percent for residential buildings
                 applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
-                        ( 1 + cdf_median_increase_in_percent )
+                        ( 1 + cdf_median_increase_in_percent ) 
             if 6 in policies:
                 # Increase medians *cdf_median_increase_in_percent* percent for residential buildings
                 applied_to = bld_eq['occupancy']=='Res'
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
                         ( 1 + cdf_median_increase_in_percent )
+            if 8 in policies:
+                applied_to = bld_eq['occupancy'] == 'Res'
+                bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
+                         ( 1 + cdf_median_increase_in_percent )
                 
             # Intensity measure calculation
             sa_list = np.array([float(x.split()[-1]) for x in bld_eq.columns if x.startswith('sa ')])
@@ -731,7 +729,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 applied_to = bld_eq['occupancy'] == 'Res'
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
                         ( 1 - cdf_median_increase_in_percent )
-                
+            if 8 in policies:
+                applied_to = bld_eq['occupancy'] == 'Res'
+                bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
+                        ( 1 - cdf_median_increase_in_percent )
+                                
             def computer_damage_state(row):
                 intensity_in_g = row[row['imt_2']] / earthquake_intensity_normalization_factor
                 prob_ds1 = np.interp(intensity_in_g, row['imls'], row['slight'])
@@ -758,7 +760,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     elif hazard_type == HAZARD_FLOOD:
         bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
-
+        damage_curve_cols = ['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']
         # reduce flood depth *flood_depth_reduction* cm
         # Effect of policies are stacked
         if 1 in policies:
@@ -771,6 +773,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         if 6 in policies:
             applied_to = bld_flood['occupancy'] == 'Res'
             bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
+        if 8 in policies:
+            applied_to = bld_flood['occupancy'] == 'Res'
+            bld_flood.loc[applied_to, damage_curve_cols] = bld_flood.loc[applied_to, damage_curve_cols] * damage_curve_suppress_factor
         bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
 
         x = np.array([0,0.5,1,1.5,2,3,4,5,6])
