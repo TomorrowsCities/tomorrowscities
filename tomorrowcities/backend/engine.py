@@ -555,12 +555,6 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             idx = (gdf_building_intensity['rnd'] < 0.70) & (gdf_building_intensity['occupancy'] == 'Res')
             gdf_building_intensity.loc[idx,'occupancy'] = 'Agri'
 
-    if 9 in policies:
-        if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
-            max_height = gdf_building_intensity['height'].max()
-            gdf_building_intensity.loc[:, 'height'] = gdf_building_intensity['height'].apply(lambda h: min(max_height, h+1))
-            gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
-
     if 10 in policies:
         if hazard_type == HAZARD_FLOOD or hazard_type == HAZARD_DEBRIS:
             idx = gdf_building_intensity['rnd'] < 0.80
