@@ -570,10 +570,18 @@ def create_map_layer(df, name):
                         # icon_color=icon_color,
                         # spin=False
                     # ),location=(y,x),title=f'{node["node_id"]}',draggable=False)
-            icon_urls = '/static/public/icons/power_plant.png' if node['pwr_plant'] == 1 else '/static/public/icons/pole.png'
-            icons = Icon(icon_url=icon_urls, icon_size=[35,35]) if node['pwr_plant'] == 1 else Icon(icon_url=icon_urls, icon_size=[15,20])
-            marker = Marker(icon=icons, location=(y,x), title=f'{node["node_id"]}', draggable=False)
-
+            # icon_urls = '/static/public/icons/power_plant.png' if node['pwr_plant'] == 1 else '/static/public/icons/pole.png'
+            # icons = Icon(icon_url=icon_urls, icon_size=[35,35]) if node['pwr_plant'] == 1 else Icon(icon_url=icon_urls, icon_size=[15,20])
+            # marker = Marker(icon=icons, location=(y,x), title=f'{node["node_id"]}', draggable=False)
+            if node['is_operational'] == True:        
+                icon_urls = '/static/public/icons/power_plant0.png' if node['pwr_plant'] == 1 else '/static/public/icons/pole0.png'
+                icons = Icon(icon_url=icon_urls, icon_size=[30,30]) if node['pwr_plant'] == 1 else Icon(icon_url=icon_urls, icon_size=[15,20])
+                marker = Marker(icon=icons, location=(y,x), title=f'{node["node_id"]}', draggable=False)
+            else:
+                icon_urls = '/static/public/icons/power_plant4.png' if node['pwr_plant'] == 1 else '/static/public/icons/pole4.png'
+                icons = Icon(icon_url=icon_urls, icon_size=[30,30]) if node['pwr_plant'] == 1 else Icon(icon_url=icon_urls, icon_size=[15,20])
+                marker = Marker(icon=icons, location=(y,x), title=f'{node["node_id"]}', draggable=False)
+                
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
                                                    disable_clustering_at_zoom=5)
