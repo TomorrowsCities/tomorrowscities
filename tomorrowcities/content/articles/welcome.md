@@ -11,13 +11,71 @@ category:
   - general
 ---
 
-## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.5
+## Tomorrow's Cities Decision Support Environment (TCDSE) Webapp v0.6
 TCDSE is a web application designed to conduct computational tasks to generate information needed for decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for short, contains a computational engine capable of executing several hazard scenarios on different exposure datasets and infrastructures. 
 
 ## Documentation
 Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/TomorrowsCities/tomorrowcities/wiki) 
 
 ## What is New?
+
+**Changelog: v0.6**
+
+   * **Backend**
+       * feature: multiple damage class for flood by @hkayabilisim in [113](https://github.com/TomorrowsCities/tomorrowscities/pull/113)
+       * fix: typos in damage state static variables by @hkayabilisim in [116](https://github.com/TomorrowsCities/tomorrowscities/pull/116)
+   * **Performance**
+      * fix: performance issues on too large tally files by @hkayabilisim in [83](https://github.com/TomorrowsCities/tomorrowscities/pull/83)
+      * fix: refactor explore for large tally files by @hkayabilisim in [85](https://github.com/TomorrowsCities/tomorrowscities/pull/85)
+   * **Data Generation**
+      * fix: update exposure data generation by @o-z-e-r-e-r in [87](https://github.com/TomorrowsCities/tomorrowscities/pull/87)
+      * fix: update backend/engine.py by @o-z-e-r-e-r in [91](https://github.com/TomorrowsCities/tomorrowscities/pull/91)
+      * fix: rerender map after data generation by @hkayabilisim in [92](https://github.com/TomorrowsCities/tomorrowscities/pull/92)
+      * ui: data generation sample inputs by @o-z-e-r-e-r in [88](https://github.com/TomorrowsCities/tomorrowscities/pull/88)
+      * ui: update data generation sample link by @o-z-e-r-e-r in [89](https://github.com/TomorrowsCities/tomorrowscities/pull/89)
+   * **Authentication**
+      * feature: get rid of local user authentication by @hkayabilisim in [71](https://github.com/TomorrowsCities/tomorrowscities/pull/71)
+      * feature: enabling test login for local environments by @hkayabilisim in [76](https://github.com/TomorrowsCities/tomorrowscities/pull/76)
+      * fix: enable_test_logon env check is corrected by @hkayabilisim in [80](https://github.com/TomorrowsCities/tomorrowscities/pull/80)
+      * fix: prevent logging out after page reloads by @hkayabilisim in [74](https://github.com/TomorrowsCities/tomorrowscities/pull/74)
+   * **Color Schemes**
+      * ui: color standardization (urban atlas) by @hkayabilisim in [79](https://github.com/TomorrowsCities/tomorrowscities/pull/79)
+      * fix: revered color order (red -> high damage) by @hkayabilisim in [82](https://github.com/TomorrowsCities/tomorrowscities/pull/82)
+      * fix: apply custom colours to power network after calculation by @o-z-e-r-e-r in [112](https://github.com/TomorrowsCities/tomorrowscities/pull/112)
+      * ui: revise power node icons by @o-z-e-r-e-r in [108](https://github.com/TomorrowsCities/tomorrowscities/pull/108)
+      * Revert "ui: revise power node icons" by @hkayabilisim in [110](https://github.com/TomorrowsCities/tomorrowscities/pull/110)
+      * Apply again "ui: revise power node icons" by @hkayabilisim in [111](https://github.com/TomorrowsCities/tomorrowscities/pull/111)
+   * **Policies**
+      * feature: reimplement policy 1 by @hkayabilisim in [84](https://github.com/TomorrowsCities/tomorrowscities/pull/84)
+      * feature: reimplement policy 2 by @hkayabilisim in [97](https://github.com/TomorrowsCities/tomorrowscities/pull/97)
+      * feature: reimplement policy 3 by @hkayabilisim in [100](https://github.com/TomorrowsCities/tomorrowscities/pull/100)
+      * feature/fix: policy 4 and cdf_median_increase by @hkayabilisim in [101](https://github.com/TomorrowsCities/tomorrowscities/pull/101)
+      * features: implemented policy 5 by @hkayabilisim in [106](https://github.com/TomorrowsCities/tomorrowscities/pull/106)
+      * feature: implemented policy 6 by @hkayabilisim in [103](https://github.com/TomorrowsCities/tomorrowscities/pull/103)
+      * feature: implemented policy 8 by @hkayabilisim in [104](https://github.com/TomorrowsCities/tomorrowscities/pull/104)
+      * feature: implemented policy 9 by @hkayabilisim in [105](https://github.com/TomorrowsCities/tomorrowscities/pull/105)
+      * fix: disable policies 7 and 10 temporarly by @hkayabilisim in [109](https://github.com/TomorrowsCities/tomorrowscities/pull/109)
+      * fix: cdf_median_decrease_in_percent to [0,1] by @hkayabilisim in [86](https://github.com/TomorrowsCities/tomorrowscities/pull/86)
+      * fix: remove obsolete code for policy 9 by @hkayabilisim in [107](https://github.com/TomorrowsCities/tomorrowscities/pull/107)
+   * **UI**
+      * feature: persist engine results to browser refresh by @hkayabilisim in [93](https://github.com/TomorrowsCities/tomorrowscities/pull/93)
+      * ui: update header & feat: provide collapsible layer displayer and data import by @o-z-e-r-e-r in [96](https://github.com/TomorrowsCities/tomorrowscities/pull/96)
+      * ui: making labels more human-friendly by @hkayabilisim in [94](https://github.com/TomorrowsCities/tomorrowscities/pull/94)
+      * ui: almost all attributes are now human-friendly by @hkayabilisim in [102](https://github.com/TomorrowsCities/tomorrowscities/pull/102)
+      * ui: saving is limited to logged on users by @hkayabilisim in [72](https://github.com/TomorrowsCities/tomorrowscities/pull/72)
+      * ui: arrange sample dataset by @o-z-e-r-e-r in [99](https://github.com/TomorrowsCities/tomorrowscities/pull/99)
+      * ui: reorganized refactor filters by @hkayabilisim in [77](https://github.com/TomorrowsCities/tomorrowscities/pull/77)
+      * fix: can't drop same file again by @hkayabilisim in [95](https://github.com/TomorrowsCities/tomorrowscities/pull/95)
+   * **Others**
+      * fix: use tempfiles on s3 operations by @hkayabilisim in [73](https://github.com/TomorrowsCities/tomorrowscities/pull/73)
+      * fix: clear session button is fixed by @hkayabilisim in [75](https://github.com/TomorrowsCities/tomorrowscities/pull/75)
+      * fix: wrong use of temp folder on s3 download by @hkayabilisim in [98](https://github.com/TomorrowsCities/tomorrowscities/pull/98)
+      * ui: added landuse and tally to explore filters by @hkayabilisim in [78](https://github.com/TomorrowsCities/tomorrowscities/pull/78)
+      * ui: added devcontainer support by @hkayabilisim in [81](https://github.com/TomorrowsCities/tomorrowscities/pull/81)
+      * cleanup: remove unused debris option from backend by @hkayabilisim in [114](https://github.com/TomorrowsCities/tomorrowscities/pull/114)
+      * cleanup: remove obsolete backend.calculate_metrics by @hkayabilisim in [115](https://github.com/TomorrowsCities/tomorrowscities/pull/115)
+
+**Full Changelog**: [v0.5...v0.6](https://github.com/TomorrowsCities/tomorrowscities/compare/v0.5...v0.6)
 
 
 **Changelog: v0.5**
