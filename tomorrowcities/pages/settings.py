@@ -6,7 +6,10 @@ import os
 from . import user, config
 
 landslide_max_trials = solara.reactive(5)
-threshold_flood = solara.reactive(0.2) 
+threshold_flood_ds2 = solara.reactive(0.05)
+threshold_flood_ds3 = solara.reactive(0.20)
+threshold_flood_ds4 = solara.reactive(0.50)
+
 threshold_flood_distance = solara.reactive(10)
 threshold_road_water_height = solara.reactive(0.3) 
 threshold_culvert_water_height = solara.reactive(1.5)
@@ -31,7 +34,9 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
                         If the relative damage obtained from the vulnerability curve is beyond 
                         the flood threshold, the structure is assumed to flooded.
                         After resetting the value, please execute the simulation again to see its effect.''')
-        solara.SliderFloat(label='Flood Threshold (relative damage)', value=threshold_flood, min=0,max=1, step=0.1)
+        solara.SliderFloat(label='Flood Threshold for DS2', value=threshold_flood_ds2, min=0.05,max=1, step=0.05)
+        solara.SliderFloat(label='Flood Threshold for DS3', value=threshold_flood_ds3, min=0.05,max=1, step=0.05)
+        solara.SliderFloat(label='Flood Threshold for DS4', value=threshold_flood_ds4, min=0.05,max=1, step=0.05)
         solara.Markdown(md_text='''
                         If the distance from a structure to the nearest flood intensity measure
                         is greater than Flood Distance, then the structure is assumed to be

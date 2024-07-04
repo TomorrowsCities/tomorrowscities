@@ -117,10 +117,10 @@ def compute_road_infra(buildings, household, individual,
             flooded_roads = (non_bridges) & (gdf_edges['im'] > road_water_height_threshold)
             flooded_culverts = (culverts) & (gdf_edges['im'] > culvert_water_height_threshold)
 
-            gdf_edges.loc[flooded_roads, 'ds'] = 1
+            gdf_edges.loc[flooded_roads, 'ds'] = DS_COMPLETE
             gdf_edges.loc[flooded_roads, 'is_damaged'] = True
 
-            gdf_edges.loc[flooded_culverts, 'ds'] = 1
+            gdf_edges.loc[flooded_culverts, 'ds'] = DS_COMPLETE
             gdf_edges.loc[flooded_culverts, 'is_damaged'] = True
     elif hazard == 'earthquake':
         fragility = fragility.rename(columns={"med_slight": "med_ds1", 
@@ -242,6 +242,7 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
                         threshold_flood, threshold_flood_distance, preserve_edge_directions,
                         earthquake_intensity_unit = 'm/s2',
                         ):
+    print('threshold_flood', threshold_flood)
     earthquake_intensity_normalization_factor = 1
     if earthquake_intensity_unit == 'm/s2':
         earthquake_intensity_normalization_factor = 9.81
@@ -355,8 +356,8 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
         flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
         # TODO: find another way for vectorized interpolate
         gdf_nodes['fl_prob'] = np.diag(flood_mapping(xnew))
-        gdf_nodes['ds'] = 0
-        gdf_nodes.loc[gdf_nodes['fl_prob'] > threshold_flood,'ds'] = 1
+        ds2_threshold, ds3_threshold, ds4_threshold = threshold_flood
+        gdf_nodes['ds'] = gdf_nodes['fl_prob'].map(lambda x: DS_COMPLETE if x > ds4_threshold else DS_EXTENSIVE if x > ds3_threshold else DS_MODERATE if x > ds2_threshold else DS_SLIGHT if x > 0 else DS_NO )
         
     # All Nodes
     all_nodes = set(gdf_nodes['node_id'])
@@ -439,13 +440,13 @@ def compute_power_infra(buildings, household, nodes,edges,intensity,fragility,ha
            gdf_buildings['has_power'], household_w_node_id['has_power'],hospitals['has_power'] 
 
 def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensity, df_hazard, hazard_type, policies=[],
-            threshold_flood = 0.2, threshold_flood_distance = 10,
+            threshold_flood = [0.05, 0.2, 0.5], threshold_flood_distance = 10,
             earthquake_intensity_unit = 'm/s2',
             cdf_median_increase_in_percent = 0.20,
             flood_depth_reduction = 0.20,
             damage_curve_suppress_factor = 0.9,
             ):
-
+    print('threshold_flood', threshold_flood)
     print('cdf_median_increase_in_percent',cdf_median_increase_in_percent)
     print('flood_depth_reduction', flood_depth_reduction)
     print('policies', policies)
@@ -778,9 +779,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
         # TODO: find another way for vectorized interpolate
         bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
-        bld_flood['fl_ds'] = 0
-        flooded_buildings = bld_flood['fl_prob'] > threshold_flood
-        bld_flood.loc[flooded_buildings, 'fl_ds'] = 1
+        ds2_threshold, ds3_threshold, ds4_threshold = threshold_flood
+        bld_flood['fl_ds'] = bld_flood['fl_prob'].map(lambda x: DS_COLLAPSED if x > ds4_threshold else DS_EXTENSIZE if x > ds3_threshold else DS_MODERATE if x > ds2_threshold else DS_SLIGHT if x > 0 else DS_NO )
+        flooded_buildings = bld_flood['fl_ds'] > DS_SLIGHT
 
         casualty_rates = np.array([[0,0,0,0.000976715,0.0105355,0.052184493,0.160744982,0.373769339,0.743830881]])
         y_casualty = np.repeat(casualty_rates, len(bld_flood),axis=0)
@@ -844,13 +845,12 @@ def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
     HAZARD_FLOOD = "flood"
     HAZARD_DEBRIS = "debris"
 
-    if hazard_type == HAZARD_EARTHQUAKE:
+    if hazard_type == HAZARD_EARTHQUAKE or hazard_type == HAZARD_FLOOD:
     # Effect of policies on thresholds
     # First get the global threshold
         thresholds = {f'metric{id}': DS_SLIGHT for id in range(8)}
     else:
-        # Default thresholds for flood and debris
-        # For flood, there are only two states: 0 or 1.
+        # For debris, there are only two states: 0 or 1.
         # So threshold is set to 0.
         thresholds = {f'metric{id}': DS_NO for id in range(8)}
 
