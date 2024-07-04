@@ -23,7 +23,7 @@ import pickle
 import datetime
 from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage
 from .settings import landslide_max_trials
-from .settings import threshold_flood, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
+from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
     create_tally, generate_metrics
@@ -1357,6 +1357,7 @@ def ExecutePanel():
             fragility = layers.value['layers']['power fragility']['data'].value
             hazard = layers.value['hazard'].value
             earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
+            threshold_flood = [threshold_flood_ds2.value, threshold_flood_ds3.value, threshold_flood_ds4.value]
 
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
@@ -1373,7 +1374,7 @@ def ExecutePanel():
                                     edges,
                                     intensity,
                                     fragility,
-                                    hazard, threshold_flood.value, threshold_flood_distance.value,
+                                    hazard, threshold_flood, threshold_flood_distance.value,
                                     preserve_edge_directions.value,
                                     earthquake_intensity_unit=earthquake_intensity_unit,
                                     )
@@ -1400,7 +1401,7 @@ def ExecutePanel():
             flood_depth_reduction = layers.value['flood_depth_reduction'].value
             cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
             damage_curve_suppress_factor = layers.value['damage_curve_suppress_factor'].value
-
+            threshold_flood = [threshold_flood_ds2.value, threshold_flood_ds3.value, threshold_flood_ds4.value]
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
 
@@ -1424,7 +1425,7 @@ def ExecutePanel():
                     fragility[['expstr','susceptibility',trigger_level]].rename(columns={trigger_level:'collapse_probability'}),
                     layers.value['hazard'].value,
                     policies=policies,
-                    threshold_flood = threshold_flood.value,
+                    threshold_flood = threshold_flood,
                     threshold_flood_distance = threshold_flood_distance.value,
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
@@ -1442,7 +1443,7 @@ def ExecutePanel():
                     intensity,
                     fragility if layers.value['hazard'].value == "earthquake" else vulnerability,
                     layers.value['hazard'].value, policies=policies,
-                    threshold_flood = threshold_flood.value,
+                    threshold_flood = threshold_flood,
                     threshold_flood_distance = threshold_flood_distance.value,
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
