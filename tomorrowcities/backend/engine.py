@@ -476,8 +476,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     DS_NO = 0
     DS_SLIGHT = 1
     DS_MODERATE = 2
-    DS_EXTENSIZE = 3
-    DS_COLLAPSED = 4
+    DS_EXTENSIVE = 3
+    DS_COMPLETE = 4
 
     # Hazard Types 
     HAZARD_EARTHQUAKE = "earthquake"
@@ -535,7 +535,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         gdf_building_collapse_prob['ds'] = DS_NO
         gdf_building_collapse_prob['casualty'] = gdf_building_collapse_prob['residents']
         collapsed_idx = (gdf_building_collapse_prob['rnd'] < gdf_building_collapse_prob['collapse_probability']) 
-        gdf_building_collapse_prob.loc[collapsed_idx, 'ds'] = DS_COLLAPSED
+        gdf_building_collapse_prob.loc[collapsed_idx, 'ds'] = DS_COMPLETE
         gdf_building_collapse_prob.loc[~collapsed_idx, 'casualty'] = 0
         bld_hazard = gdf_building_collapse_prob[['bldid','ds','casualty']]
         return bld_hazard
@@ -769,7 +769,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         # TODO: find another way for vectorized interpolate
         bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
         ds2_threshold, ds3_threshold, ds4_threshold = threshold_flood
-        bld_flood['fl_ds'] = bld_flood['fl_prob'].map(lambda x: DS_COLLAPSED if x > ds4_threshold else DS_EXTENSIZE if x > ds3_threshold else DS_MODERATE if x > ds2_threshold else DS_SLIGHT if x > 0 else DS_NO )
+        bld_flood['fl_ds'] = bld_flood['fl_prob'].map(lambda x: DS_COMPLETE if x > ds4_threshold else DS_EXTENSIVE if x > ds3_threshold else DS_MODERATE if x > ds2_threshold else DS_SLIGHT if x > 0 else DS_NO )
         flooded_buildings = bld_flood['fl_ds'] > DS_SLIGHT
 
         casualty_rates = np.array([[0,0,0,0.000976715,0.0105355,0.052184493,0.160744982,0.373769339,0.743830881]])
@@ -826,8 +826,8 @@ def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
     DS_NO = 0
     DS_SLIGHT = 1
     DS_MODERATE = 2
-    DS_EXTENSIZE = 3
-    DS_COLLAPSED = 4
+    DS_EXTENSIVE = 3
+    DS_COMPLETE = 4
 
     # Hazard Types
     HAZARD_EARTHQUAKE = "earthquake"
