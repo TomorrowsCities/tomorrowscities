@@ -17,7 +17,7 @@ import numpy as np
 import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
-from ..backend.engine import compute, compute_power_infra, calculate_metrics
+from ..backend.engine import compute, compute_power_infra
 
 app_data = solara.reactive({'df': solara.reactive(None), 
                             'gdf': solara.reactive(None),
