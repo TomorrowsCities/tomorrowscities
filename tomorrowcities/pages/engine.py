@@ -25,7 +25,7 @@ from . import storage, user, session_storage, store_in_session_storage, read_fro
 from .settings import landslide_max_trials
 from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
-from ..backend.engine import compute, compute_power_infra, compute_road_infra, calculate_metrics, generate_exposure, \
+from ..backend.engine import compute, compute_power_infra, compute_road_infra, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer, \
