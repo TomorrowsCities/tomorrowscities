@@ -57,7 +57,7 @@ def create_new_app_state():
     'flood_depth_reduction': solara.reactive(0.2),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
-    'version': '0.5',
+    'version': '0.6',
     'layers' : {
         'parameter': {
             'render_order': 0,
