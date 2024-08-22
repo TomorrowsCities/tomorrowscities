@@ -50,6 +50,9 @@ def create_new_app_state():
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'earthquake_intensity_unit': solara.reactive('m/s2'),
+    'earthquake_simulation_methods': ["legacy","monte carlo"],
+    'earthquake_simulation_method_selected': solara.reactive('legacy'),
+    'earthquake_simulation_trial_count': solara.reactive(5),
     'cdf_median_increase_in_percent': solara.reactive(0.2),
     'threshold_increase_culvert_water_height': solara.reactive(0.2),
     'threshold_increase_road_water_height': solara.reactive(0.2),
@@ -1525,7 +1528,11 @@ def ExecutePanel():
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
         if layers.value['hazard'].value == 'earthquake':
-            solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
+            with solara.Column(gap='40px'):
+                solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
+                solara.Select(label='earthquake simulation method', values=layers.value['earthquake_simulation_methods'], value=layers.value['earthquake_simulation_method_selected'])
+                if layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
+                    solara.InputInt(label='Number of trials',value=layers.value['earthquake_simulation_trial_count'])
         if layers.value['hazard'].value == 'landslide':
             solara.Markdown("#### Landslide trigger level")
             with solara.Row(justify="left"):
