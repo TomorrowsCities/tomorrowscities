@@ -1474,7 +1474,16 @@ def ExecutePanel():
             is_ready, message = pre_compute_checks()
             if not is_ready:
                 raise Exception(message)
-            max_trials = landslide_max_trials.value  if layers.value['hazard'].value == "landslide" else 1
+
+            if layers.value['hazard'].value == "earthquake" and layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
+                    max_trials = layers.value['earthquake_simulation_trial_count'].value
+            elif layers.value['hazard'].value == "landslide":
+                max_trials = landslide_max_trials.value
+            elif layers.value['hazard'].value == "flood":
+                max_trials = 1
+            else:
+                max_trials = 1
+
             for trial in range(1,max_trials+1):
                 if trial == 1:
                     set_progress_message('Running...')
