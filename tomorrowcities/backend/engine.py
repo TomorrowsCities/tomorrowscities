@@ -445,6 +445,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             cdf_median_increase_in_percent = 0.20,
             flood_depth_reduction = 0.20,
             damage_curve_suppress_factor = 0.9,
+            earthquake_simulation_method = 'legacy'
             ):
     print('threshold_flood', threshold_flood)
     print('cdf_median_increase_in_percent',cdf_median_increase_in_percent)
@@ -456,7 +457,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     gem_fragility = True if isinstance(df_hazard, dict) else False
     print('gem_fragility mode', gem_fragility)
-    if hazard_type != "landslide":
+    if hazard_type == 'landslide' or \
+          (hazard_type == 'earthquake' and earthquake_simulation_method == 'monte carlo'):
+        # do not assign a fixed seed, we are in a simulation zone
+        pass
+    else:
         np.random.seed(seed=0)
 
     column_names = {'zoneID':'zoneid','bldID':'bldid','nHouse':'nhouse',
@@ -722,11 +727,16 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 return prob_ds1, prob_ds2, prob_ds3, prob_ds4
             bld_eq[['prob_ds1','prob_ds2','prob_ds3','prob_ds4']] = bld_eq.apply(computer_damage_state, axis=1,result_type='expand')
 
-        bld_eq[['prob_ds0','prob_ds5']] = [1,0]
-        for i in [1,2,3,4,5]:
-            bld_eq[f'ds_{i}'] = np.abs(bld_eq[f'prob_ds{i-1}'] - bld_eq[f'prob_ds{i}'])
-        df_ds = bld_eq[['ds_1','ds_2','ds_3','ds_4','ds_5']]
-        bld_eq['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+        # legacy (most common approach)
+        if earthquake_simulation_method == 'legacy':
+            bld_eq[['prob_ds0','prob_ds5']] = [1,0]
+            for i in [1,2,3,4,5]:
+                bld_eq[f'ds_{i}'] = np.abs(bld_eq[f'prob_ds{i-1}'] - bld_eq[f'prob_ds{i}'])
+            df_ds = bld_eq[['ds_1','ds_2','ds_3','ds_4','ds_5']]
+            bld_eq['eq_ds'] = df_ds.idxmax(axis='columns').str.extract(r'ds_([0-9]+)').astype('int') - 1
+        elif earthquake_simulation_method == 'monte carlo':
+            bld_eq['eq_ds'] = pd.concat([(bld_eq['rnd'] < bld_eq[f'prob_ds{i}']).astype(int) for i in [1,2,3,4]], axis=1).sum(axis=1)
+
         casualty_rates = np.array([0, 0.05, 0.28, 1.152, 74.41]) # percent
         bld_eq['casualy'] = 0
         bld_eq = bld_eq.assign(casualty=lambda x: casualty_rates[x['eq_ds']] * x['residents'] / 100)

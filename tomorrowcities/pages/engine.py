@@ -1404,6 +1404,7 @@ def ExecutePanel():
             flood_depth_reduction = layers.value['flood_depth_reduction'].value
             cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
             damage_curve_suppress_factor = layers.value['damage_curve_suppress_factor'].value
+            earthquake_simulation_method = layers.value['earthquake_simulation_method_selected'].value
             threshold_flood = [threshold_flood_ds2.value, threshold_flood_ds3.value, threshold_flood_ds4.value]
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
@@ -1433,7 +1434,8 @@ def ExecutePanel():
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
-                    damage_curve_suppress_factor=damage_curve_suppress_factor
+                    damage_curve_suppress_factor=damage_curve_suppress_factor,
+                    earthquake_simulation_method=earthquake_simulation_method,
                     )
             else:
                 if fragility is None:
@@ -1452,6 +1454,7 @@ def ExecutePanel():
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
                     damage_curve_suppress_factor=damage_curve_suppress_factor,
+                    earthquake_simulation_method=earthquake_simulation_method,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
