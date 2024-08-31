@@ -275,6 +275,7 @@ def create_new_app_state():
     'map_info_detail': solara.reactive({}),
     'tally_filter_cols': ['ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
     'tally_is_available': solara.reactive(False),
+    'metrics_realized': solara.reactive(None),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -1114,7 +1115,68 @@ def MetricPanel():
                         metric['max_value'],
                         layers.value['render_count'].value)      
 
-                    
+@solara.component
+def MetricStatistics():
+    if layers.value['metrics_realized'].value is None:
+        solara.Text('There is no metrics statistics data yet!')
+        return
+
+    # list of metrics measurements
+    metrics = layers.value['metrics_realized'].value
+    
+    # get the metric names from the first measurement
+    metric_names = metrics[0].keys()
+
+    metric_dict = {}
+    for metric_name in metric_names:
+        metric_values = [m[metric_name]['value'] for m in metrics]
+        metric_dict[metric_name] = metric_values
+    df = pd.DataFrame.from_dict(metric_dict)
+    summary = df.describe()
+
+    data = []
+    for metric_name in metric_names:
+        value = [float(summary[metric_name][k]) for k in ['min','25%','50%','75%','max']]
+        data.append({"name":metric_name, "value": value})
+
+    options = { 
+        "title": [{"text": 'Impact Metrics of Different Realizations', "left": 'center' },],
+        "tooltip": {
+            "trigger": 'item',
+            "axisPointer": {
+            "type": 'shadow'
+            }
+        },
+        "xAxis": {
+            "type": 'category',
+            "data": ['metric1', 'metric2', 'metric3', 'metric4','metric5', 'metric6', 'metric7', 'metric8'],
+        },
+        "yAxis": {
+            "type": 'value',
+            "splitArea": {
+            "show": True
+            }
+        },
+        "series": [
+            {
+            "name": 'boxplot',
+            "type": 'boxplot',
+            "itemStyle": {
+                "color": '#b8c5f2'
+            },
+            "data": data
+            },
+        ]
+    }
+    with solara.lab.Tabs():
+        with solara.lab.Tab("Boxplot"):
+            with solara.GridFixed(columns=1):
+                solara.FigureEcharts(option=options, attributes={"style": "height:400%; width:100%"})
+        with solara.lab.Tab("Data"): 
+            solara.DataFrame(df)
+        with solara.lab.Tab("Stats"): 
+            solara.DataFrame(summary.reset_index())
+
 @solara.component
 def MapViewer():
     print('rendering mapviewer')
@@ -1487,6 +1549,7 @@ def ExecutePanel():
             else:
                 max_trials = 1
 
+            metrics_results = []
             for trial in range(1,max_trials+1):
                 if trial == 1:
                     set_progress_message('Running...')
@@ -1523,6 +1586,13 @@ def ExecutePanel():
                 store_info_to_session()
                 layers.value['tally_is_available'].value = True
                 tally_counter.value += 1
+
+                metrics_result = generate_metrics(tally_geo, tally_geo, 
+                                           layers.value['hazard'].value, 
+                                           population_displacement_consensus.value)
+                metrics_results.append(metrics_result)
+
+            layers.value['metrics_realized'].set(metrics_results)
             set_progress_message('')
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
@@ -2021,6 +2091,11 @@ def WebApp():
     with solara.Row(justify="center"):
         MetricPanel()
     #LayerDisplayer()
+    solara.Details(
+        summary="Metric Statistics",
+        children=[MetricStatistics()],
+        expand=False
+    )
     solara.Details(
         summary="Layer Details",
         children=[LayerDisplayer()],
