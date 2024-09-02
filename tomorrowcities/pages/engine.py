@@ -50,6 +50,9 @@ def create_new_app_state():
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
     'earthquake_intensity_unit': solara.reactive('m/s2'),
+    'earthquake_simulation_methods': ["legacy","monte carlo"],
+    'earthquake_simulation_method_selected': solara.reactive('legacy'),
+    'earthquake_simulation_trial_count': solara.reactive(5),
     'cdf_median_increase_in_percent': solara.reactive(0.2),
     'threshold_increase_culvert_water_height': solara.reactive(0.2),
     'threshold_increase_road_water_height': solara.reactive(0.2),
@@ -272,6 +275,7 @@ def create_new_app_state():
     'map_info_detail': solara.reactive({}),
     'tally_filter_cols': ['ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
     'tally_is_available': solara.reactive(False),
+    'metrics_realized': solara.reactive(None),
     'metrics': {
         "metric1": {"desc": "Number of workers unemployed", "value": 0, "max_value": 100},
         "metric2": {"desc": "Number of children with no access to education", "value": 0, "max_value": 100},
@@ -1111,7 +1115,68 @@ def MetricPanel():
                         metric['max_value'],
                         layers.value['render_count'].value)      
 
-                    
+@solara.component
+def MetricStatistics():
+    if layers.value['metrics_realized'].value is None:
+        solara.Text('There is no metrics statistics data yet!')
+        return
+
+    # list of metrics measurements
+    metrics = layers.value['metrics_realized'].value
+    
+    # get the metric names from the first measurement
+    metric_names = metrics[0].keys()
+
+    metric_dict = {}
+    for metric_name in metric_names:
+        metric_values = [m[metric_name]['value'] for m in metrics]
+        metric_dict[metric_name] = metric_values
+    df = pd.DataFrame.from_dict(metric_dict)
+    summary = df.describe()
+
+    data = []
+    for metric_name in metric_names:
+        value = [float(summary[metric_name][k]) for k in ['min','25%','50%','75%','max']]
+        data.append({"name":metric_name, "value": value})
+
+    options = { 
+        "title": [{"text": 'Impact Metrics of Different Realizations', "left": 'center' },],
+        "tooltip": {
+            "trigger": 'item',
+            "axisPointer": {
+            "type": 'shadow'
+            }
+        },
+        "xAxis": {
+            "type": 'category',
+            "data": ['metric1', 'metric2', 'metric3', 'metric4','metric5', 'metric6', 'metric7', 'metric8'],
+        },
+        "yAxis": {
+            "type": 'value',
+            "splitArea": {
+            "show": True
+            }
+        },
+        "series": [
+            {
+            "name": 'boxplot',
+            "type": 'boxplot',
+            "itemStyle": {
+                "color": '#b8c5f2'
+            },
+            "data": data
+            },
+        ]
+    }
+    with solara.lab.Tabs():
+        with solara.lab.Tab("Boxplot"):
+            with solara.GridFixed(columns=1):
+                solara.FigureEcharts(option=options, attributes={"style": "height:400%; width:100%"})
+        with solara.lab.Tab("Data"): 
+            solara.DataFrame(df)
+        with solara.lab.Tab("Stats"): 
+            solara.DataFrame(summary.reset_index())
+
 @solara.component
 def MapViewer():
     print('rendering mapviewer')
@@ -1401,6 +1466,7 @@ def ExecutePanel():
             flood_depth_reduction = layers.value['flood_depth_reduction'].value
             cdf_median_increase_in_percent = layers.value['cdf_median_increase_in_percent'].value
             damage_curve_suppress_factor = layers.value['damage_curve_suppress_factor'].value
+            earthquake_simulation_method = layers.value['earthquake_simulation_method_selected'].value
             threshold_flood = [threshold_flood_ds2.value, threshold_flood_ds3.value, threshold_flood_ds4.value]
 
             policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
@@ -1430,7 +1496,8 @@ def ExecutePanel():
                     earthquake_intensity_unit=earthquake_intensity_unit,
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
-                    damage_curve_suppress_factor=damage_curve_suppress_factor
+                    damage_curve_suppress_factor=damage_curve_suppress_factor,
+                    earthquake_simulation_method=earthquake_simulation_method,
                     )
             else:
                 if fragility is None:
@@ -1449,6 +1516,7 @@ def ExecutePanel():
                     cdf_median_increase_in_percent=cdf_median_increase_in_percent,
                     flood_depth_reduction=flood_depth_reduction,
                     damage_curve_suppress_factor=damage_curve_suppress_factor,
+                    earthquake_simulation_method=earthquake_simulation_method,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
@@ -1471,7 +1539,17 @@ def ExecutePanel():
             is_ready, message = pre_compute_checks()
             if not is_ready:
                 raise Exception(message)
-            max_trials = landslide_max_trials.value  if layers.value['hazard'].value == "landslide" else 1
+
+            if layers.value['hazard'].value == "earthquake" and layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
+                    max_trials = layers.value['earthquake_simulation_trial_count'].value
+            elif layers.value['hazard'].value == "landslide":
+                max_trials = landslide_max_trials.value
+            elif layers.value['hazard'].value == "flood":
+                max_trials = 1
+            else:
+                max_trials = 1
+
+            metrics_results = []
             for trial in range(1,max_trials+1):
                 if trial == 1:
                     set_progress_message('Running...')
@@ -1508,6 +1586,13 @@ def ExecutePanel():
                 store_info_to_session()
                 layers.value['tally_is_available'].value = True
                 tally_counter.value += 1
+
+                metrics_result = generate_metrics(tally_geo, tally_geo, 
+                                           layers.value['hazard'].value, 
+                                           population_displacement_consensus.value)
+                metrics_results.append(metrics_result)
+
+            layers.value['metrics_realized'].set(metrics_results)
             set_progress_message('')
             # trigger render event
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
@@ -1525,7 +1610,11 @@ def ExecutePanel():
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
         if layers.value['hazard'].value == 'earthquake':
-            solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
+            with solara.Column(gap='40px'):
+                solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
+                solara.Select(label='earthquake simulation method', values=layers.value['earthquake_simulation_methods'], value=layers.value['earthquake_simulation_method_selected'])
+                if layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
+                    solara.InputInt(label='Number of trials',value=layers.value['earthquake_simulation_trial_count'])
         if layers.value['hazard'].value == 'landslide':
             solara.Markdown("#### Landslide trigger level")
             with solara.Row(justify="left"):
@@ -2002,6 +2091,11 @@ def WebApp():
     with solara.Row(justify="center"):
         MetricPanel()
     #LayerDisplayer()
+    solara.Details(
+        summary="Metric Statistics",
+        children=[MetricStatistics()],
+        expand=False
+    )
     solara.Details(
         summary="Layer Details",
         children=[LayerDisplayer()],
