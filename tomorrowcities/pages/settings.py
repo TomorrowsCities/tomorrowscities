@@ -13,14 +13,9 @@ threshold_flood_ds4 = solara.reactive(0.50)
 threshold_flood_distance = solara.reactive(10)
 threshold_road_water_height = solara.reactive(0.3) 
 threshold_culvert_water_height = solara.reactive(1.5)
-population_displacement_consensus = solara.reactive(2)
 
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
-
-    with solara.Card(title='Metric-related Parameters',
-                     subtitle='Minimum number of direct damage, inaccessibility or power lost should be observed to claim a population displacement.'):
-        solara.Select(label='population displacement consensus', values=[1,2,3,4], value=population_displacement_consensus)
 
     with solara.Card(title='Landslide Parameters',subtitle='Choose the parameters for the landslide simulation'):
         solara.SliderInt(label='Number of Monte-Carlo Trials', value=landslide_max_trials, min=1,max=100)

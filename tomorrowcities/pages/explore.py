@@ -32,7 +32,6 @@ from .engine import landuse_colors, generic_layer_colors, building_colors, road_
                     power_edge_colors, ds_to_color, ds_to_color_approx, create_tally
 from .engine import MetricWidget, create_new_app_state
 from ..backend.engine import generate_metrics
-from .settings import population_displacement_consensus
 
 def get_session_list():
     if storage.value is not None:
@@ -49,6 +48,7 @@ tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
+population_displacement_consensus = solara.reactive(2)
 
 layers = create_new_app_state()
 
@@ -185,7 +185,12 @@ def assign_nested_value(dictionary, keys, value):
 def get_nested_value(dictionary, keys):
     for key in keys[:-1]:
         dictionary = dictionary[key]
-    return dictionary[keys[-1]]
+    if keys[-1] in dictionary.keys():
+        is_available = True
+        return (dictionary[keys[-1]], is_available)
+    else:
+        is_available = False
+        return (None, is_available)
 
 def load_from_state(source_dict):
     stack = [((), layers.value)]
@@ -196,11 +201,12 @@ def load_from_state(source_dict):
                 stack.append((path + (key,), value))
             else:
                 keys = list(path + (key,))
-                src_value = get_nested_value(source_dict, keys)
-                if isinstance(value,solara.toestand.Reactive):
-                    assign_nested_value(layers.value, keys, solara.reactive(src_value))
-                else:
-                    assign_nested_value(layers.value, keys, src_value)
+                src_value, is_available = get_nested_value(source_dict, keys)
+                if is_available:
+                    if isinstance(value,solara.toestand.Reactive):
+                        assign_nested_value(layers.value, keys, solara.reactive(src_value))
+                    else:
+                        assign_nested_value(layers.value, keys, src_value)
 
 
 
@@ -369,6 +375,7 @@ def generate_metrics_local():
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
     tally_geo = read_from_session_storage('explore_tally_geo')
+    print('population_displacement_consensus explore', population_displacement_consensus.value)
     if tally_geo is not None and layers.value['bounds'].value is not None:
         ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
         tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
@@ -395,6 +402,7 @@ def MetricPanel():
     solara.use_memo(generate_metrics_local, 
                     [tally_counter.value,
                      layers.value['bounds'].value,
+                     population_displacement_consensus.value,
                      tally_filter.value], debug_name="generate_metrics_loca")
     if generate_metrics_local.finished:
         filtered_metrics = generate_metrics_local.value
@@ -510,6 +518,12 @@ def FilterPanel():
                 for col in layers.value['tally_filter_cols']:
                     solara.CrossFilterSelect(tally_minimal, col, multiple=True)    
     print(f"fiter panel render count {render_count.value}")
+
+    # preserve_edge_directions is only used for graph-based inputs (power and road)
+    with solara.Row(justify="left", style="min-height: 0px"):
+        solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
+        with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
+            solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
 
 
 @solara.component

@@ -23,8 +23,7 @@ import pickle
 import datetime
 from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
 from .settings import landslide_max_trials
-from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height,\
-                      population_displacement_consensus
+from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
@@ -41,6 +40,7 @@ tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
 center_default = (41.01,28.98)
+population_displacement_consensus = solara.reactive(2)
 def create_new_app_state():
     return solara.reactive({
     'infra': solara.reactive(["building"]),
@@ -1637,7 +1637,13 @@ def ExecutePanel():
                                 # values=['low','medium','high'],
                                 # on_value=layers.value['implementation_capacity_score'].set,
                                 # )
-    
+        solara.Markdown("#### Metric Parameters")
+        # preserve_edge_directions is only used for graph-based inputs (power and road)
+        with solara.Row(justify="left", style="min-height: 0px"):
+            solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
+            with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
+                solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
+
     solara.ProgressLinear(value=False)
     with solara.Columns([70,30]):
         with solara.Column():
