@@ -21,7 +21,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
-from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage
+from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
 from .settings import landslide_max_trials
 from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
                       population_displacement_consensus
@@ -1989,7 +1989,8 @@ def ImportDataZone2():
                 if  "geometry" in list(data.columns):
                     center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
                     layers.value['center'].set(center)
-
+            set_generate_message(config.get('data_generation_complete_message',
+                                            'Building/household/individual layers are ready! You can now upload hazard and vulnerability data.'))
             layers.value['render_count'].value += 1
 
     def progress(x):
@@ -2059,6 +2060,10 @@ def ImportDataZone2():
         set_generate_btn_disabled(True)
         solara.Text(generate_message)
         solara.ProgressLinear(value=True)
+    elif generate_result.state == solara.ResultState.FINISHED and generate_message != "":
+        solara.Success(generate_message)
+        set_generate_btn_disabled(not is_ready_to_generate())
+        solara.ProgressLinear(value=False)
     else:
         #solara.Text("Spacer", style={"visibility": "hidden"})
         set_generate_btn_disabled(not is_ready_to_generate())
