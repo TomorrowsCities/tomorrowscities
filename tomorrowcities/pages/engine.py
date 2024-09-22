@@ -23,8 +23,7 @@ import pickle
 import datetime
 from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
 from .settings import landslide_max_trials
-from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height, preserve_edge_directions,\
-                      population_displacement_consensus
+from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
@@ -41,6 +40,7 @@ tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
 center_default = (41.01,28.98)
+population_displacement_consensus = solara.reactive(2)
 def create_new_app_state():
     return solara.reactive({
     'infra': solara.reactive(["building"]),
@@ -49,6 +49,7 @@ def create_new_app_state():
     'datetime_analysis': datetime.datetime.utcnow(),
     'landslide_trigger_level': solara.reactive('moderate'),
     'landslide_trigger_level_list': ['minor','moderate','severe'],
+    'preserve_edge_directions': solara.reactive(False),
     'earthquake_intensity_unit': solara.reactive('m/s2'),
     'earthquake_simulation_methods': ["legacy","monte carlo"],
     'earthquake_simulation_method_selected': solara.reactive('legacy'),
@@ -1371,6 +1372,7 @@ def ExecutePanel():
             intensity = layers.value['layers']['intensity']['data'].value
             fragility = layers.value['layers']['road fragility']['data'].value
             earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
+            preserve_edge_directions = layers.value['preserve_edge_directions'].value
             if layers.value['hazard'].value == 'landslide':
                 fragility = layers.value['layers']['landslide fragility']['data'].value
                 trigger_level= layers.value['landslide_trigger_level'].value
@@ -1392,7 +1394,7 @@ def ExecutePanel():
                     household_hospital_access, individual_facility_access  = \
                 compute_road_infra(buildings, household, individual, nodes, edges, intensity, 
                 fragility, hazard, threshold_road_water_height.value, threshold_culvert_water_height.value,
-                threshold_flood_distance.value, preserve_edge_directions.value,
+                threshold_flood_distance.value, preserve_edge_directions,
                 earthquake_intensity_unit=earthquake_intensity_unit,
                 policies=policies,
                 cdf_median_increase_in_percent=cdf_median_increase_in_percent,
@@ -1422,6 +1424,7 @@ def ExecutePanel():
             fragility = layers.value['layers']['power fragility']['data'].value
             hazard = layers.value['hazard'].value
             earthquake_intensity_unit = layers.value['earthquake_intensity_unit'].value
+            preserve_edge_directions = layers.value['preserve_edge_directions'].value
             threshold_flood = [threshold_flood_ds2.value, threshold_flood_ds3.value, threshold_flood_ds4.value]
 
             if layers.value['hazard'].value == 'landslide':
@@ -1440,7 +1443,7 @@ def ExecutePanel():
                                     intensity,
                                     fragility,
                                     hazard, threshold_flood, threshold_flood_distance.value,
-                                    preserve_edge_directions.value,
+                                    preserve_edge_directions,
                                     earthquake_intensity_unit=earthquake_intensity_unit,
                                     )
             
@@ -1606,6 +1609,12 @@ def ExecutePanel():
         solara.Markdown("#### Infrastructure")
         with solara.Row(justify="left"):
             solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
+        # preserve_edge_directions is only used for graph-based inputs (power and road)
+        if set(layers.value['infra'].value) & set(['power','road']):
+            with solara.Row(justify="left", style="min-height: 0px"):
+                with solara.Tooltip('Obey the edge directions in road/power networks (default: False)'):
+                    solara.Checkbox(label='Preserve directions', value=layers.value['preserve_edge_directions'])
+                solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
         solara.Markdown("#### Hazard")
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
@@ -1628,7 +1637,13 @@ def ExecutePanel():
                                 # values=['low','medium','high'],
                                 # on_value=layers.value['implementation_capacity_score'].set,
                                 # )
-    
+        solara.Markdown("#### Metric Parameters")
+        # preserve_edge_directions is only used for graph-based inputs (power and road)
+        with solara.Row(justify="left", style="min-height: 0px"):
+            solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
+            with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
+                solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
+
     solara.ProgressLinear(value=False)
     with solara.Columns([70,30]):
         with solara.Column():
