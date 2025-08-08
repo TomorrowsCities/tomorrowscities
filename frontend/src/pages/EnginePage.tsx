@@ -5,6 +5,7 @@ import ExecutePanel from '../components/ExecutePanel';
 import MetricPanel from '../components/MetricPanel';
 import ImportDataZone from '../components/ImportDataZone';
 import FilterPanel from '../components/FilterPanel';
+import MapInfoPanel from '../components/MapInfoPanel';
 
 const EnginePage: React.FC = () => {
   const [selectedTab, setSelectedTab] = React.useState(0);
@@ -42,9 +43,7 @@ const EnginePage: React.FC = () => {
             </>
           )}
           {selectedTab === 2 && (
-            <Box>
-              <div>Map Info Component - Layer details and statistics will be displayed here</div>
-            </Box>
+            <MapInfoPanel />
           )}
         </Box>
       </Drawer>
