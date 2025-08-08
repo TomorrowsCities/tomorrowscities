@@ -14,3 +14,10 @@ networkx
 openpyxl
 ipywidgets
 ipydatagrid
+fastapi
+uvicorn[standard]
+python-multipart
+pydantic
+python-jose[cryptography]
+passlib[bcrypt]
+aiofiles
