@@ -507,13 +507,13 @@ def FilterPanel():
     tc = tally_counter.value
     print('tally_counter', tc)
     tally_minimal = read_from_session_storage('explore_tally_minimal')
+    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
     if tally_minimal is not None:
         with solara.Row(): #spacer
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
-                tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
                 solara.CrossFilterReport(tally_minimal)
                 for col in layers.value['tally_filter_cols']:
                     solara.CrossFilterSelect(tally_minimal, col, multiple=True)    

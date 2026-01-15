@@ -494,6 +494,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     if not gem_fragility:
         print('deneme',df_hazard.columns)
         df_hazard['expstr'] = df_hazard['expstr'].str.replace('Type[0-9]+','RCi',regex=True)
+        # Drop duplicates to prevent merge explosion if multiple original types map to the same RCi
+        df_hazard = df_hazard.drop_duplicates(subset=['expstr'])
 
     number_of_unique_buildings = len(pd.unique(gdf_buildings['bldid']))
     print('number of unique building', number_of_unique_buildings)
@@ -624,7 +626,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     if hazard_type == HAZARD_EARTHQUAKE:
         if not gem_fragility:
             med_cols = ['muds1_g','muds2_g','muds3_g','muds4_g']
-            bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left')
+            bld_eq = gdf_building_intensity.merge(df_hazard, left_on='vulnstreq',right_on='expstr', how='left', validate='many_to_one')
             nulls = bld_eq['muds1_g'].isna()
             print('no correspnding record in exposure', pd.unique(bld_eq.loc[nulls, 'vulnstreq']))
             bld_eq.loc[nulls, med_cols] = [0.048,0.203,0.313,0.314]
@@ -821,7 +823,8 @@ def create_tally(l, b, h, i):
     building_level_casualties = tally[tally['casualty_in_building'] > 0][['bldid','casualty_in_building']].drop_duplicates()
     for (row, bldid, casualty_in_building) in building_level_casualties.itertuples(name=None):
         individuals_in_building = tally[tally['bldid'] == bldid]['individ']
-        selected_individuals = individuals_in_building.sample(casualty_in_building)
+        n_sample = min(casualty_in_building, len(individuals_in_building))
+        selected_individuals = individuals_in_building.sample(n_sample)
         tally.loc[selected_individuals.index, 'casualty'] = 1
 
     tally['has_facility'] = tally['indivfacid'].apply(lambda x: x > -1)

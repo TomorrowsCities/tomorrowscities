@@ -28,7 +28,7 @@ google_client = OAuth2Session(config['google_client_id'],
                     scope=[config['google_scope']], 
                     redirect_uri=config['google_redirect_uri'])
 
-route_order = ["/", "engine","explore","settings","account"]
+route_order = ["/", "engine","explore","settings", "docs", "utilities","account"]
 
 def store_in_session_storage(key, value):
     sesssion_id = solara.get_session_id()
@@ -80,7 +80,7 @@ class User:
         return unique_id
 
 
-user = solara.reactive(cast(Optional[User], read_from_session_storage('user')))
+user = solara.reactive(cast(Optional[User], None))
 
 def test_logon():
     test_user = User(username="test", admin=False)
