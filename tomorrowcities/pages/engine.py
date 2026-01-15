@@ -1684,11 +1684,14 @@ def ExecutePanel():
                     solara.InputFloat(label='damage_curve_suppress_factor',  value=layers.value['damage_curve_suppress_factor'],
                                     continuous_update=True)
     # The statements in this block are passed several times during thread execution
-    if result.error is not None:
-        execute_error.set(execute_error.value + str(result.error))
+    # The statements in this block are passed several times during thread execution
+    # if result.error is not None:
+    #     execute_error.set(execute_error.value + str(result.error))
 
     if execute_error.value != "":
         solara.Text(f'{execute_error}', style={"color":"red"})
+    elif result.error:
+        solara.Text(f'{result.error}', style={"color":"red"})
     else:
         solara.Text("Spacer", style={"visibility": "hidden"})
 
@@ -1911,13 +1914,15 @@ def ImportDataZone1():
                 solara.Text("Unrecognized file")
             solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.INITIAL:
-            solara.Text("Spacer", style={'visibility':'hidden'})
-            solara.ProgressLinear(value=False)
+            #solara.Text("Spacer", style={'visibility':'hidden'})
+            #pass
+            solara.Text("Please wait")
+            solara.ProgressLinear(value=True)
         elif result.state == solara.ResultState.ERROR:
             solara.Text(f'{result.error}')
             solara.ProgressLinear(value=False)
         else:
-            solara.Text("Processing")
+            solara.Text("Preprocessing")
             solara.ProgressLinear(value=True)
 
 @solara.component
@@ -2020,11 +2025,11 @@ def ImportDataZone2():
     result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
     generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
 
-    #with solara.Row(justify="center"):
-    #    solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
-    #                            on_value=layers.value['data_import_method'].set, 
-    #                            values=["drag&drop","s3"], 
-    #                            style={"align-items": "center"})                                           
+    # with solara.Row(justify="center"):
+       # solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
+                               # on_value=layers.value['data_import_method'].set, 
+                               # values=["drag&drop","s3"], 
+                               # style={"align-items": "center"})                                           
         
     with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"35vh", "align":"stretch"}):          
         solara.Markdown('''<div style="text-align: justify">
@@ -2054,13 +2059,13 @@ def ImportDataZone2():
                 solara.Text("Unrecognized file")
             solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.INITIAL:
-            pass#solara.Text("Spacer", style={'visibility':'hidden'})
+            solara.Text("Spacer", style={'visibility':'hidden'})
             solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.ERROR:
             solara.Text(f'{result.error}')
             solara.ProgressLinear(value=False)
         else:
-            solara.Text("Processing")
+            solara.Text("Pre-processing")
             solara.ProgressLinear(value=True)
 
     if generate_result.error is not None:
@@ -2096,10 +2101,10 @@ def WebApp():
                 summary="Upload Data",
                 children=[ImportDataZone1()],
                 expand=False)
-                solara.Details(
-                summary="Generate Data",
-                children=[ImportDataZone2()],
-                expand=False)
+                # solara.Details(
+                # summary="Generate Data",
+                # children=[ImportDataZone2()],
+                # expand=False)
             with solara.lab.Tab("SETTINGS"):
                 ExecutePanel()
                 FilterPanel()
