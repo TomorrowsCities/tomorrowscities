@@ -63,7 +63,7 @@ attributes are shown below.
 **vuln_string** of the fragility curves should match **eq_vuln** field of the power nodes. Median and beta values of four fragility curves (slight, moderate, extensive and complete) are defined
 in the same row. It is optional to add a description message.
 
-### Additional Auxillary Attributes
+### Additional Auxillary Attributes
 As soon as the power network analysis is conducted, 
 the engine creates internal attributes tagged to building and household layers
 which will be visible in LayerDisplayer. The name of the additional attribute is

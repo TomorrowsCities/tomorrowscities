@@ -63,9 +63,13 @@ It is derived from metric 5.
 An individual is assumed to be displaced when any of the following condition holds:
 
 * the associated household is damaged
-* the individual's workplace, school, or associated hospital is damaged
+* the individual's workplace, school, or associated hospital is damageds
 * the individual can not reach to workplace, school, or associated hospital via transportation network
 * the individual's workplace, school, or associated hospital has no electricity
+
+### Metric 8: Casualty
+
+This metric is calculated on building-level context meaning that it is directly related to the damage state of each building and the number of residents in that building.
 
 ## Average Impact Metrics in Monte-Carlo Simulations
 When the hazard scenario is run with different random realizations such as landslide calculations,

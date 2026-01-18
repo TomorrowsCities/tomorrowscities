@@ -28,7 +28,7 @@ google_client = OAuth2Session(config['google_client_id'],
                     scope=[config['google_scope']], 
                     redirect_uri=config['google_redirect_uri'])
 
-route_order = ["/", "engine","explore","settings", "docs", "utilities","account"]
+route_order = ["/", "engine","explore","settings", "docs", "utilities", "account"] # "policies"
 
 def store_in_session_storage(key, value):
     sesssion_id = solara.get_session_id()
@@ -50,7 +50,7 @@ def check_auth(route, children):
 
     # routes that are public or only for admin
     # the rest only requires login
-    public_paths = ["/","docs","engine","explore","utilities","policies","settings","account"]
+    public_paths = ["/", "engine", "explore", "settings", "docs", "utilities", "account"] # "policies"
     admin_paths = [""]
 
     if route.path in public_paths:
@@ -122,6 +122,9 @@ def logout():
     store_in_session_storage('user', None)
     user.set(None)
 
+
+mobile_menu_open = solara.reactive(False)
+
 @solara.component
 def Layout(children=[]):
     user.value = read_from_session_storage('user')
@@ -135,21 +138,94 @@ def Layout(children=[]):
     children = check_auth(route, children)
 
 
-    with solara.AppLayout(children=children, title="TomorrowCities Decision Support Environment", navigation=True) as main:
+
+    with solara.AppLayout(children=children, title="", navigation=False) as main:
         with solara.AppBar():
-            with solara.lab.Tabs(align="center"):
-                for route in routes:
-                    name = route.path if route.path != "/" else "Welcome"
-                    # in this case we disable the tab
-                    solara.lab.Tab(name, path_or_route=route, disabled=False)
-            if user.value:
-                solara.Text(f"Logged in as {user.value.username} as {'admin' if user.value.admin else 'user'}")
-                with solara.Tooltip("Logout"):
-                    with solara.Link(f"/account"):
-                        solara.Button(icon_name="mdi-logout", icon=True, on_click=logout)
-            else:
-                with solara.Link(f"/account"):
-                    solara.Button(icon_name="mdi-login",label='login', icon=True)
+            # Mobile Menu Dialog (Moved inside AppBar to prevent layout split)
+            with rv.Dialog(v_model=mobile_menu_open.value, 
+                           on_v_model=mobile_menu_open.set, 
+                           fullscreen=True, 
+                           transition="dialog-bottom-transition",
+                           overlay_opacity=0.9,
+                           style_="z-index: 2000;"): 
+                
+                with rv.Card(style_="padding: 20px;"):
+                    with rv.Toolbar(dark=True, color="#1c4220", dense=False, flat=True): 
+                        rv.ToolbarTitle(children=["Menu"])
+                        rv.Spacer()
+                        solara.Button(icon_name="mdi-close", icon=True, on_click=lambda: mobile_menu_open.set(False), style={"color": "white"})
+                    
+                    # Use standard Buttons in a Column for reliable clicking
+                    with solara.Column(style={"margin-top": "20px", "gap": "10px"}):
+                        for route_entry in routes:
+                            if route_entry.path == "account":
+                                continue
+                            name = route_entry.path if route_entry.path != "/" else "Welcome"
+                            
+                            is_active = (route_entry.path == route.path) if route else False
+                            
+                            def on_click_nav(r=route_entry):
+                                router.push(r.path)
+                                mobile_menu_open.set(False)
+                            
+                            # Styled button to look like a menu item
+                            solara.Button(label=name, 
+                                          on_click=on_click_nav, 
+                                          text=True, 
+                                          style={"justify-content": "flex-start", "height": "50px", "font-size": "1.2rem", "width": "100%", "background-color": "rgba(0,0,0,0.05)" if is_active else "transparent"})
+                                          
+                        solara.Markdown("---") # Divider substitute
+                        
+                        if user.value:
+                            solara.Text(f"Logged in as {user.value.username}", style={"padding": "10px", "font-weight": "bold"})
+                            def on_click_logout():
+                                logout()
+                                mobile_menu_open.set(False)
+                            solara.Button(label="Logout", icon_name="mdi-logout", on_click=on_click_logout, 
+                                          text=True, style={"justify-content": "flex-start", "height": "50px", "color": "red", "width": "100%"})
+                        else:
+                            def on_click_login():
+                                router.push("/account")
+                                mobile_menu_open.set(False)
+                            solara.Button(label="Login", icon_name="mdi-login", on_click=on_click_login, 
+                                          text=True, style={"justify-content": "flex-start", "height": "50px", "color": "green", "width": "100%"})
+
+            with solara.Row(style="width: 100%; align-items: center"):
+                # Left Column: Logo + Text
+                with solara.Row(style="display: flex; align-items: center"):
+                     rv.Img(src="/static/public/tomorrows-cities-logo-header.png", height="50", contain=True, style_="max-width: 150px")
+                     #solara.Text("TCDSE WebApp", style={"width": "180px", "font-weight": "bold", "font-size": "1.5em"})
+                
+                rv.Spacer()
+
+                # Center Column: Tabs (Desktop Only)
+                with solara.Div(classes=["mobile-hide"]):
+                    with solara.lab.Tabs(align="center"):
+                        for route in routes:
+                            if route.path == "account":
+                                continue
+                            name = route.path if route.path != "/" else "Welcome"
+                            # in this case we disable the tab
+                            solara.lab.Tab(name, path_or_route=route, disabled=False)
+                
+                rv.Spacer()
+
+                # Right Column: Login/User Info (Desktop Only)
+                with solara.Div(classes=["mobile-hide"], style="display: flex; align-items: center"):
+                    if user.value:
+                        solara.Text(f"Logged in as {user.value.username} as {'admin' if user.value.admin else 'user'}")
+                        with solara.Tooltip("Logout"):
+                            with solara.Link(f"/account"):
+                                solara.Button(icon_name="mdi-logout", icon=True, on_click=logout)
+                    else:
+                        with solara.Link(f"/account"):
+                            solara.Button(icon_name="mdi-login",label='LOGIN', icon=True, style={"margin-right": "10px"})
+                
+                # Hamburger Button (Mobile Only)
+                # Using Div with mobile-show class to hide on desktop using !important
+                # Inline style ensures flex behavior when visible on mobile
+                with solara.Div(classes=["mobile-show"], style="display: flex"):
+                    solara.Button(icon_name="mdi-menu", icon=True, on_click=lambda: mobile_menu_open.set(not mobile_menu_open.value))
 
     
     return main

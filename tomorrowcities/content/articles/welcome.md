@@ -177,7 +177,7 @@ Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/Tomorro
 * All seven impact metrics are updated to reflect damage in road network.
 * Documentation in the engine is extended.
 * New version of the engine is redeployed to [HuggingFace](https://huggingface.co/spaces/hkayabilisim/app-engine).
-* Reorganized the folders in the [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing).
+* Reorganized the folders in the [Sample Dataset](https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view).
 * Building layer can now be exported as CSV also.
 
 **Changelog: v0.2.1**
@@ -200,7 +200,7 @@ Documentation is moved to [TomorrowsCities Wiki Page](https://github.com/Tomorro
 * Backend.utils package is added
 * Nearest transportation node is determined
 * Started documentation for road network analysis
-* Added dummy data to [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) for Rapti.
+* Added dummy data to [Sample Dataset](https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view) for Rapti.
 
 **v0.1**
 
@@ -220,7 +220,7 @@ when clicked.
 * Implementation Capacity Score is added. If medium or low is selected, then building-level metrics is increased by 25% and 50%, respectively. If high is selected, there is no change in the metrics.
 
 ## Quickstart
-* Download [Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing) to your local environment and unzip the archieve file.
+* Download [Sample Dataset](https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view) to your local environment and unzip the archieve file.
 * Go to [engine](/engine)
 * Drag/drop necessary files to the drop zone of the engine and execute the engine. A sample session is displayed below. 
 * The impact metrics will be immediately seen on the page.
@@ -264,7 +264,7 @@ General capabilities/features of the web application can be summarized as follow
 
 * 20 [policies](/docs/policies) related to damage mitigation
 
-*[Sample Dataset](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=sharing)*
+*[Sample Dataset](https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view)*
 
 * Dar Es Salaam
 * Rapti
