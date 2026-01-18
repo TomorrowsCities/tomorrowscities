@@ -2,9 +2,9 @@
 author: huseyin.kaya
 title: Contributing
 description: A step-by-step guideline for contributors
-image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/data.png?raw=true
-thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/data.png?raw=true
-alt: "Data Formats"
+image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/contribute.png?raw=true
+thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/contribute.png?raw=true
+alt: "Contributing"
 createdAt: 2023-10-10
 duration: 6 min read
 category:

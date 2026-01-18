@@ -809,7 +809,7 @@ def FragilityDisplayer(vuln_xml: dict):
 
 
 @solara.component
-def MetricWidget(name, description, value, max_value, render_count):
+def MetricWidget(name, description, value, max_value, render_count, icon=None):
     value, set_value = solara.use_state_or_update(value)
     max_value, set_max_value = solara.use_state_or_update(max_value)
     options = { 
@@ -817,12 +817,13 @@ def MetricWidget(name, description, value, max_value, render_count):
                 "type": 'gauge',  
                 "min": 0,
                 "name": description,
+                "radius": '90%', # Larger radius
                 "max": max(1,max_value), # workaround when max_value = 0
                 "startAngle": 180,
                 "endAngle": 0,
-                "progress": {"show": True, "width": 14},
+                "progress": {"show": True, "width": 8}, # Thinner line
                 "pointer": { "show": False},
-                "axisLine": {"lineStyle": {"width": 14, "color": [
+                "axisLine": {"lineStyle": {"width": 8, "color": [ # Thinner line
                     #[0.25, 'hotpink'],
                     #[0.5, 'red'],
                     #[0.75, 'brown'],
@@ -835,17 +836,21 @@ def MetricWidget(name, description, value, max_value, render_count):
                 "title": {"show": False},
                 "detail": {
                     "valueAnimation": True,
-                    "offsetCenter": [0, '50%'],
+                    "offsetCenter": [0, '20%'], # Adjust text position
                     "fontSize": 20,
                     "color": 'inherit'},
                 #"title": {"fontSize": 12},
                 "data": [{"value": value, "name": name}]}]}
     print(f'value/max_value {value}:{max_value}')
 
-    with solara.Tooltip(description):
-        #with solara.Column():
-        with solara.GridFixed(columns=1):
-            solara.FigureEcharts(option=options, attributes={"style": "height:100%; width:100%"})
+    with solara.Card(elevation=2, style={"height": "240px", "padding": "2px", "text-align": "center", "border-radius": "8px"}):
+        with solara.Column(align="center", gap="0px"): # Center stack, tight gap
+            if icon:
+                solara.Image(icon, width="90px") 
+            # Visible Label, Fixed Height for Alignment, vertically centered
+            solara.Text(description, style={"font-weight": "bold", "font-size": "12px", "height": "55px", "display": "flex", "align-items": "center", "justify-content": "center", "margin-top": "4px", "line-height": "1.2"})
+            solara.FigureEcharts(option=options, attributes={"style": "height:140px; width:100%; display: flex; justify-content: center; align-items: center;"}) #min-width: 80px;
+
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
@@ -1102,19 +1107,25 @@ def MetricPanel():
 
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row(justify="space-around"):
-        solara.Markdown('''<h2 style="font-weight: bold">IMPACTS</h2>''')
-    solara.ProgressLinear(metric_update_pending.value)
-    with solara.Row(justify="space-around"):                     
-        for i in range(len(metric_icons)):
-            solara.Image(metric_icons[i])
+    with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
+        solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
+        with solara.Link("/docs/metrics"):
+             with solara.Tooltip('Metric definitions. Click for more info.'):
+                solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
+    if metric_update_pending.value:
+        solara.ProgressLinear(metric_update_pending.value)
     
-    with solara.Row(justify="space-around"):
-        for name, metric in filtered_metrics.items():
-            MetricWidget(name, metric['desc'], 
-                        metric['value'], 
-                        metric['max_value'],
-                        layers.value['render_count'].value)      
+    with solara.v.Row(justify="space-around", style_="margin-top: 0px; padding-top: 0px;"):
+        for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
+            # Responsive grid: 
+            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md=3 (Small Desktop 4/row)
+            # class_="col-lg-custom-8" (Large Desktop 8/row via custom CSS)
+            with solara.v.Col(cols=6, sm=4, md=3, class_="col-lg-custom-8", style_="padding: 5px;"):
+                MetricWidget(name, metric['desc'], 
+                            metric['value'], 
+                            metric['max_value'],
+                            layers.value['render_count'].value,
+                            icon=icon)      
 
 @solara.component
 def MetricStatistics():

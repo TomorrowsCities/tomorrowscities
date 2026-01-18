@@ -408,19 +408,25 @@ def MetricPanel():
         filtered_metrics = generate_metrics_local.value
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row(justify="space-around"):
-        solara.Markdown('''<h2 style="font-weight: bold">IMPACTS</h2>''')
-    solara.ProgressLinear(metric_update_pending.value)
-    with solara.Row(justify="space-around"):                     
-        for i in range(len(metric_icons)):
-            solara.Image(metric_icons[i])
-    
-    with solara.Row(justify="space-around"):
-        for name, metric in filtered_metrics.items():
-            MetricWidget(name, metric['desc'], 
-                        metric['value'],
-                        metric['max_value'],
-                        layers.value['render_count'].value)
+    with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
+        solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
+        with solara.Link("/docs/metrics"):
+             with solara.Tooltip('Metric definitions. Click for more info.'):
+                solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
+    if metric_update_pending.value:
+        solara.ProgressLinear(metric_update_pending.value)
+
+    with solara.v.Row(justify="space-around", style_="margin-top: 0px; padding-top: 0px;"):
+        for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
+            # Responsive grid:
+            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md=3 (Small Desktop 4/row)
+            # class_="col-lg-custom-8" (Large Desktop 8/row via custom CSS)
+            with solara.v.Col(cols=6, sm=4, md=3, class_="col-lg-custom-8", style_="padding: 5px;"):
+                MetricWidget(name, metric['desc'], 
+                            metric['value'],
+                            metric['max_value'],
+                            layers.value['render_count'].value,
+                            icon=icon)
 
     print(f"render count {render_count.value}")
 
@@ -528,6 +534,7 @@ def FilterPanel():
 
 @solara.component
 def Page():    
+    solara.Title(" ")
     with solara.Sidebar():
         with solara.lab.Tabs(value=selected_tab.value, on_value=selected_tab.set):
             with solara.lab.Tab("SESSIONS"):
