@@ -1,10 +1,10 @@
 ---
 author: o-z-e-r-e-r
-title: How to use WebApp
+title: How to Use WebApp
 description: Use instructions for TCDSE WebApp
 image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/welcome.png?raw=true
 thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/welcome.png?raw=true
-alt: "How to use WebApp"
+alt: "How to Use WebApp"
 createdAt: 2026-01-19
 duration: 20 min read
 category:
