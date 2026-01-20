@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>TCDSE WebApp</title>
+  <style>
+    :root {
+      --bg: #EBEBEB;
+      --panel: rgba(255, 255, 255, 0.92);
+      --panel2: rgba(255, 255, 255, 0.88);
+      --text: #111111;
+      --muted: rgba(17, 17, 17, 0.65);
+      --accent: #1fb15a;
+      --border: rgba(0, 0, 0, 0.08);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      line-height: 1.5;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      background: rgba(235, 235, 235, 0.92);
+      backdrop-filter: blur(8px);
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 18px 0;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 220px;
+    }
+
+    .mark {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+      background: radial-gradient(circle at 30% 30%, rgba(0, 154, 68, 1), rgba(0, 154, 68, 1));
+      border: 1px solid rgba(0, 0, 0, 0.10);
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.10);
+    }
+
+    .brand-title {
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      font-size: 16px;
+    }
+
+    .brand-sub {
+      margin-top: 2px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    main {
+      padding: 18px 0 46px;
+    }
+
+    .hero {
+      padding: 78px 0 22px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      margin: 0 auto;
+      max-width: 860px;
+      font-size: 38px;
+      line-height: 1.15;
+      letter-spacing: 0.2px;
+      color: rgba(0, 154, 68, 1);
+      text-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+    }
+
+    .hero p {
+      margin: 14px auto 0;
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 16px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      box-shadow: 0 14px 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .card:hover {
+      transform: translateY(-2px);
+      transition: transform 160ms ease;
+    }
+
+    .features {
+      padding: 26px 0 12px;
+    }
+
+    .feature-row {
+      display: flex;
+      gap: 18px;
+      justify-content: space-between;
+      align-items: stretch;
+      flex-wrap: wrap;
+    }
+
+    .feature {
+      flex: 1 1 280px;
+      min-width: 260px;
+    }
+
+    .feature h3 {
+      margin: 0 0 8px;
+      font-size: 18px;
+      color: #111111;
+      text-align: center;
+    }
+
+    .feature p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .sections {
+      padding: 34px 0 10px;
+    }
+
+    .info-stack {
+      display: grid;
+      gap: 18px;
+    }
+
+    .info-row {
+      display: grid;
+      grid-template-columns: 1.15fr 0.85fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .info-row.reverse {
+      grid-template-columns: 0.85fr 1.15fr;
+    }
+
+    .info-card {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      min-height: 190px;
+    }
+
+    .info-card h2 {
+      margin: 0 0 10px;
+      font-size: 26px;
+      color: #111111;
+    }
+
+    .info-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 15px;
+      text-align: justify;
+      text-justify: inter-word;
+      hyphens: auto;
+    }
+
+    .info-img {
+      width: 100%;
+      height: 100%;
+      min-height: 190px;
+      border-radius: 18px;
+      border: 1px solid var(--border);
+      object-fit: cover;
+      box-shadow: 0 14px 34px rgba(0, 0, 0, 0.10);
+      display: block;
+    }
+
+    .cta {
+      padding: 38px 0 12px;
+      text-align: center;
+    }
+
+    .cta h2 {
+      margin: 0 0 14px;
+      font-size: 34px;
+      letter-spacing: 0.8px;
+      color: #111111;
+    }
+
+    .cta-grid {
+      margin-top: 18px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 18px;
+      text-align: left;
+      align-items: stretch;
+    }
+
+    .cta-grid a {
+      display: flex;
+      height: 100%;
+    }
+
+    .cta-grid .card {
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .cta-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin: 0 0 8px;
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.4px;
+      color: #111;
+    }
+
+    .cta-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 12px;
+      background: rgba(31, 177, 90, 0.12);
+      border: 1px solid rgba(31, 177, 90, 0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: rgba(14, 106, 52, 0.95);
+      flex: 0 0 auto;
+    }
+
+    .pill {
+      display: inline-block;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(31, 177, 90, 0.35);
+      background: rgba(31, 177, 90, 0.10);
+      color: rgba(232, 239, 233, 0.9);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      margin-bottom: 10px;
+    }
+
+    footer {
+      padding: 18px 0 34px;
+      border-top: 1px solid rgba(0, 0, 0, 0.10);
+      margin-top: 26px;
+      text-align: center;
+    }
+
+    a {
+      color: rgba(14, 106, 52, 0.95);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    footer p {
+      margin: 10px 0 0;
+      color: rgba(17, 17, 17, 0.60);
+      font-size: 12px;
+    }
+
+    @media (max-width: 880px) {
+
+      .info-row,
+      .info-row.reverse {
+        grid-template-columns: 1fr;
+      }
+
+      .cta-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .hero h1 {
+        font-size: 30px;
+      }
+    }
+
+
+
+    /* heading-color-normalize */
+    h2,
+    h3 {
+      color: #111111;
+    }
+
+    .hero h1 {
+      color: rgba(0, 154, 68, 1);
+    }
+
+    /* keep top headline green */
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <section class="hero" id="about">
+      <h1>TCDSE WebApp is a platform for computing multi-hazard impacts of a future urban context</h1>
+      <p>Explore scenarios, compare hazards, and understand downstream impacts beyond direct damages.</p>
+    </section>
+
+    <section class="features" aria-label="Key pillars">
+      <div class="feature-row">
+        <div class="card feature">
+          <h3>Future Looking</h3>
+          <p>WebApp enables you to look into future impacts in the face of hazards and climate change.</p>
+        </div>
+        <div class="card feature">
+          <h3>Multi-hazard</h3>
+          <p>WebApp allows you to address more than just one hazard.</p>
+        </div>
+        <div class="card feature">
+          <h3>Human Centred</h3>
+          <p>WebApp computes more than damages. It computes what these damages will lead to.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="sections">
+      <div class="info-stack">
+        <div class="info-row">
+          <article class="info-card">
+            <h2>What is WebApp</h2>
+            <p>TCDSE is a web application designed to conduct computational tasks to generate information needed for
+              decision mechanisms in designing future cities. The web application, which will be referred as TCDSE for
+              short, contains a computational engine capable of executing several hazard scenarios on different exposure
+              datasets and infrastructures. This platform is developed within the scope of the Tomorrow's Cities
+              project. For project details, please <a href='https://tomorrowscities.org/' target='_blank'><b>click
+                  here</b></a>.</p>
+          </article>
+          <img class="info-img"
+            src="https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/whatiswebapp.webp?raw=true"
+            alt="whatiswebapp" />
+        </div>
+
+        <div class="info-row reverse">
+          <img class="info-img"
+            src="https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/whoiswebappfor.webp?raw=true"
+            alt="whoiswebappfor" />
+          <article class="info-card">
+            <h2>Who is WebApp for</h2>
+            <p>TCDSE is intended for urban planners, municipal and regional decision-makers, researchers, and
+              infrastructure practitioners who need to explore how multiple hazards may affect assets and people under
+              future scenarios. It supports evidence-based planning by enabling users to compare scenarios, test
+              assumptions, and communicate results to stakeholders in a consistent, transparent way.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta" id="documentation">
+      <section class="hero" id="engine" style="margin-top: 0; padding-top: 10px;">
+        <h1>Use WebApp</h1>
+      </section>
+
+      <div class="cta-grid">
+        <a href="/engine" target="_parent" style="text-decoration:none;color:inherit;">
+          <div class="card">
+            <div class="cta-title">
+              <span class="cta-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M8 3h8M9 7h6M7 21h10a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2H7a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2Z"
+                    stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M9 12h6M9 16h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg></span>
+              <span>COMPUTE</span>
+            </div>
+            <p style="margin:0;color:var(--muted);font-size:14px;">
+              For making bespoke computations for your future city context.
+            </p>
+          </div>
+        </a>
+
+        <a href="/explore" target="_parent" style="text-decoration:none;color:inherit;">
+          <div class="card">
+            <div class="cta-title">
+              <span class="cta-icon"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M11 21a9 9 0 1 1 0-18 9 9 0 0 1 0 18Z" stroke="currentColor" stroke-width="1.8" />
+                  <path d="M21 21l-4.2-4.2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M11 7v8M7 11h8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg></span>
+              <span>EXPLORE</span>
+            </div>
+            <p style="margin:0;color:var(--muted);font-size:14px;">
+              For discovering previously computed results.
+            </p>
+          </div>
+        </a>
+
+        <a href="/utilities" target="_parent" style="text-decoration:none;color:inherit;">
+          <div class="card">
+            <div class="cta-title">
+              <span class="cta-icon"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24"
+                  fill="none" class="icon icon-tabler icons-tabler-outline icon-tabler-tools">
+                  <path stroke="none" d="M0 0h24v24H0z" fill="none" />
+                  <path d="M3 21h4l13 -13a1.5 1.5 0 0 0 -4 -4l-13 13v4" stroke="currentColor" stroke-width="1.8"
+                    stroke-linecap="round" />
+                  <path d="M14.5 5.5l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M12 8l-5 -5l-4 4l5 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M7 8l-1.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M16 12l5 5l-4 4l-5 -5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M16 17l-1.5 1.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+                </svg></span>
+              <span>UTILITIES</span>
+            </div>
+            <p style="margin:0;color:var(--muted);font-size:14px;">
+              For data conversion and auxiliary tasks.
+            </p>
+          </div>
+        </a>
+
+
+      </div>
+    </section>
+
+    <footer id="contact">
+      <p><strong>Contact us:</strong>
+        <a href="mailto:support@tomorrowscities.org">support@tomorrowscities.org</a>
+        &nbsp;|&nbsp;
+        <a href="mailto:info@anofa.co">info@anofa.co</a>
+      </p>
+      <p>Copyright © 2023 by Tomorrow's Cities Software Development Team</p>
+    </footer>
+  </main>
+</body>
+
+</html>

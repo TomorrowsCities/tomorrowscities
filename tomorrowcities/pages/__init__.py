@@ -28,7 +28,7 @@ google_client = OAuth2Session(config['google_client_id'],
                     scope=[config['google_scope']], 
                     redirect_uri=config['google_redirect_uri'])
 
-route_order = ["/", "engine","explore","settings", "docs", "utilities", "account"] # "policies"
+route_order = ["/", "docs", "engine","explore", "utilities", "account"] # "policies"
 
 def store_in_session_storage(key, value):
     sesssion_id = solara.get_session_id()
@@ -50,7 +50,7 @@ def check_auth(route, children):
 
     # routes that are public or only for admin
     # the rest only requires login
-    public_paths = ["/", "engine", "explore", "settings", "docs", "utilities", "account"] # "policies"
+    public_paths = ["/", "docs", "engine", "explore", "utilities", "account"] # "policies"
     admin_paths = [""]
 
     if route.path in public_paths:
@@ -158,11 +158,26 @@ def Layout(children=[]):
                     # Use standard Buttons in a Column for reliable clicking
                     with solara.Column(style={"margin-top": "20px", "gap": "10px"}):
                         for route_entry in routes:
-                            if route_entry.path == "account":
+                            if route_entry.path in ["engine", "explore", "utilities"]:
                                 continue
-                            name = route_entry.path if route_entry.path != "/" else "Welcome"
+                            # if route_entry.path == "account":
+                            #    continue
+                            if route_entry.path == "/":
+                                name = "home"
+                            elif route_entry.path == "docs":
+                                name = "DOCUMENTATION"
+                            elif route_entry.path == "account":
+                                name = "➜] LOGIN"
+                            else:
+                                name = route_entry.path
+
                             
-                            is_active = (route_entry.path == route.path) if route else False
+                            is_active = False
+                            if route:
+                                if route_entry.path == "/":
+                                    is_active = (route.path == "/")
+                                else:
+                                    is_active = route.path.startswith(route_entry.path)
                             
                             def on_click_nav(r=route_entry):
                                 router.push(r.path)
@@ -183,12 +198,6 @@ def Layout(children=[]):
                                 mobile_menu_open.set(False)
                             solara.Button(label="Logout", icon_name="mdi-logout", on_click=on_click_logout, 
                                           text=True, style={"justify-content": "flex-start", "height": "50px", "color": "red", "width": "100%"})
-                        else:
-                            def on_click_login():
-                                router.push("/account")
-                                mobile_menu_open.set(False)
-                            solara.Button(label="Login", icon_name="mdi-login", on_click=on_click_login, 
-                                          text=True, style={"justify-content": "flex-start", "height": "50px", "color": "green", "width": "100%"})
 
             with solara.Row(style="width: 100%; align-items: center"):
                 # Left Column: Logo + Text
@@ -200,26 +209,32 @@ def Layout(children=[]):
 
                 # Center Column: Tabs (Desktop Only)
                 with solara.Div(classes=["mobile-hide"]):
-                    with solara.lab.Tabs(align="center"):
-                        for route in routes:
-                            if route.path == "account":
-                                continue
-                            name = route.path if route.path != "/" else "Welcome"
-                            # in this case we disable the tab
-                            solara.lab.Tab(name, path_or_route=route, disabled=False)
-                
-                rv.Spacer()
+                    current_route_index = None
+                    filtered_routes = [r for r in routes if r.path not in ["engine", "explore", "utilities"]]
+                    for i, r in enumerate(filtered_routes):
+                        if route.path == r.path:
+                            current_route_index = i
+                        elif route.path.startswith(r.path) and r.path != "/":
+                            current_route_index = i
 
-                # Right Column: Login/User Info (Desktop Only)
-                with solara.Div(classes=["mobile-hide"], style="display: flex; align-items: center"):
-                    if user.value:
-                        solara.Text(f"Logged in as {user.value.username} as {'admin' if user.value.admin else 'user'}")
-                        with solara.Tooltip("Logout"):
-                            with solara.Link(f"/account"):
-                                solara.Button(icon_name="mdi-logout", icon=True, on_click=logout)
-                    else:
-                        with solara.Link(f"/account"):
-                            solara.Button(icon_name="mdi-login",label='LOGIN', icon=True, style={"margin-right": "10px"})
+                    def on_tab_change(index):
+                        target_route = filtered_routes[index]
+                        router.push(target_route.path)
+
+                    with rv.Tabs(v_model=current_route_index, on_v_model=on_tab_change, right=True, optional=True, background_color="transparent"):
+                        for route_entry in filtered_routes:
+                            if route_entry.path == "/":
+                                name = "home"
+                            elif route_entry.path == "docs":
+                                name = "DOCUMENTATION"
+                            elif route_entry.path == "account":
+                                name = "➜] LOGIN"
+                            else:
+                                name = route_entry.path
+                            
+                            with rv.Tab():
+                                solara.Text(name)
+
                 
                 # Hamburger Button (Mobile Only)
                 # Using Div with mobile-show class to hide on desktop using !important
@@ -355,7 +370,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     solara.Style(value=css)
     with solara.VBox() as main:
         solara.Title(" ")
-        article = articles["welcome"]
+        article = articles["home"]
         solara.Markdown(article.markdown)
 
 

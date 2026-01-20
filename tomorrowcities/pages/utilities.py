@@ -147,15 +147,82 @@ def Downloader():
         solara.Success(success_msg)
     if app_data.value['gdf'].value is not None:
         file_object = app_data.value['gdf'].value .to_json()
-        with solara.FileDownload(file_object, "intensity_blabla.geojson", mime_type="application/geo+json"):
+        with solara.FileDownload(file_object, "converted.geojson", mime_type="application/geo+json"):
             solara.Button("Click to Downlaod genereated GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
+            DataframeDisplayer()
+@solara.component
+def JsonToCsvConverter():
+    content, set_content = solara.use_state(None)
+    filename, set_filename = solara.use_state(None)
+    error, set_error = solara.use_state(None)
+    
+    def on_file(f):
+        set_filename(f["name"])
+        set_content(f["data"])
+        set_error(None)
+
+    with solara.Details("🔁 JSON → CSV Converter"):
+        solara.FileDrop(on_file=on_file, lazy=False)
+        if filename:
+            solara.Text(f"Selected file: {filename}")
+        
+        if content:
+            try:
+                from io import BytesIO
+                df = pd.read_json(BytesIO(content))
+                csv_content = df.to_csv(index=False)
+                with solara.FileDownload(data=csv_content, filename="converted.csv", label="⬇️ Download CSV"):
+                    pass
+            except Exception as e:
+                solara.Error(f"Error: {e}")
+
+@solara.component
+def CsvToJsonConverter():
+    content, set_content = solara.use_state(None)
+    filename, set_filename = solara.use_state(None)
+    error, set_error = solara.use_state(None)
+    
+    def on_file(f):
+        set_filename(f["name"])
+        try:
+            # Solara file drop returns bytes, so we might need to decode if read_csv expects string/buffer
+            # pd.read_csv can accept bytes
+            set_content(f["data"])
+            set_error(None)
+        except Exception as e:
+            set_error(str(e))
+
+    with solara.Details("🔁 CSV → JSON Converter"):
+        solara.FileDrop(on_file=on_file, lazy=False)
+        if filename:
+            solara.Text(f"Selected file: {filename}")
+        
+        if content:
+            try:
+                # Assuming content is bytes
+                from io import BytesIO
+                df = pd.read_csv(BytesIO(content))
+                json_content = df.to_json(orient="columns", force_ascii=False)
+                with solara.FileDownload(data=json_content, filename="converted.json",  mime_type="application/json", label="⬇️ Download JSON"):
+                    pass
+            except Exception as e:
+                solara.Error(f"Error: {e}")
+
+@solara.component
+def ExcelToGeoJsonConverter():
+    with solara.Details("🔁 EXCEL → GEOJSON Converter"):
+        with solara.Columns([30,80]):
+            FileDropZone()
+            FieldSelector()
+        Downloader()
+        
 @solara.component
 def Utilities():
-    with solara.Columns([30,80]):
-        FileDropZone()
-        FieldSelector()
-    Downloader()
-    DataframeDisplayer()
+    
+    with solara.Column():
+        ExcelToGeoJsonConverter()
+        JsonToCsvConverter()
+        CsvToJsonConverter()
     
 
 @solara.component

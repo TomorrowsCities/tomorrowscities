@@ -526,6 +526,7 @@ def FilterPanel():
     print(f"fiter panel render count {render_count.value}")
 
     # preserve_edge_directions is only used for graph-based inputs (power and road)
+    solara.Text("Spacer", style={'visibility':'hidden'})
     with solara.Row(justify="left", style="min-height: 0px"):
         solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
         with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
@@ -536,7 +537,7 @@ def FilterPanel():
 def Page():    
     solara.Title(" ")
     with solara.Sidebar():
-        with solara.lab.Tabs(value=selected_tab.value, on_value=selected_tab.set):
+        with solara.lab.Tabs(value=selected_tab.value, on_value=selected_tab.set, grow=True, align="center"):
             with solara.lab.Tab("SESSIONS"):
                 StorageViewer()
             with solara.lab.Tab("MAP INFO"):

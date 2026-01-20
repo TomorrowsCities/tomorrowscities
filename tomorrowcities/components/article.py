@@ -6,7 +6,7 @@ from ..data import articles
 @solara.component
 def ArticleCard(name):
     article = articles[name]
-    with rv.Card(max_width="300px", height="360px", class_="d-flex flex-column") as main:
+    with rv.Card(class_="d-flex flex-column fill-height", hover=True) as main:
         with solara.Link(f"/docs/{name}"):
             rv.Img(height="150", src=article.image_url)
         rv.CardTitle(children=[article.title])
@@ -21,21 +21,23 @@ def ArticleCard(name):
 @solara.component
 def Overview():
     # welcome is removed
-    # 1.1. Data Formats
-    # 1.2. Metrics
-    # 1.3. Policies
-    # 1.4. Contributing
-    # 2.1 Flood
-    # 2.2. Landslide
-    # 2.3 Road Networks
-    # 2.4 Power Network Analysis
-    order = ["data", "metrics", "policies", "contribution", "flood", "landslide", "road", "power"]
+    # How to Use
+    # Changelog   
+    # Data Formats
+    # Metrics
+    # Policies
+    # Contributing
+    # Flood
+    # Landslide
+    # Road Networks
+    # Power Network Analysis    
+
+    order = ["howtouse", "changelog", "data", "metrics", "policies", "contribution", "flood", "landslide", "road", "power"]
     
-    with solara.ColumnsResponsive(12) as main:
-        with solara.Card():
-            with solara.ColumnsResponsive(12, small=6, large=3):
-                for name in order:
-                     if name in articles:
-                        ArticleCard(name)
-    solara.Title(" ")
+    with rv.Row(wrap=True) as main:
+        for name in order:
+                if name in articles:
+                    with rv.Col(cols=12, sm=6, lg=3, class_="pa-4"):
+                    	ArticleCard(name)
+    # solara.Title(" ")
     return main
