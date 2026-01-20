@@ -20,15 +20,15 @@ class Article:
 articles: Dict[str, Article] = {}
 
 for file in (HERE.parent / "content/articles").glob("*.md"):
-    content = file.read_text()
+    content = file.read_text(encoding="utf-8")
     lines = [k.strip() for k in content.split("\n")]
     frontmatter_start = lines.index("---", 0)
     frontmatter_end = lines.index("---", frontmatter_start + 1)
-    yamltext = "\n".join(lines[frontmatter_start + 1 : frontmatter_end - 2])
+    yamltext = "\n".join(lines[frontmatter_start + 1 : frontmatter_end])
     metadata = yaml.safe_load(yamltext)
     markdown = "\n".join(lines[frontmatter_end + 1 :])
     articles[file.stem] = Article(markdown=markdown, 
-                                  title=metadata["title"], 
-                                  description=metadata["description"],
-                                  image_url=metadata["image"])
+                                  title=metadata.get("title"), 
+                                  description=metadata.get("description"),
+                                  image_url=metadata.get("image"))
 

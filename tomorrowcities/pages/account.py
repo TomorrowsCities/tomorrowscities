@@ -1,5 +1,6 @@
 from typing import Optional
 import solara
+from solara.alias import rv
 import os
 import pprint
 from urllib.parse import parse_qs
@@ -7,7 +8,8 @@ import json
 
 from . import user, User, config, LoginForm, \
               github_client, google_client, \
-              session_storage, read_from_session_storage, store_in_session_storage
+              session_storage, read_from_session_storage, store_in_session_storage, \
+              logout
 
 
 # used only to force updating of the page
@@ -28,14 +30,38 @@ def Page():
     if user.value is None:
         LoginForm()        
     else:
-        solara.Text(f'Hello {user.value.username}')
-        solara.Text(f'Univeral id {user.value.get_unique_id()}')
-        if user.value.user_profile:
-            for key, value in user.value.user_profile.items():
-                if key in ['avatar_url', 'picture']:
-                    solara.Image(value)
-                else:
-                    solara.Text(f'{key}: {value}')
+        profile = user.value.user_profile or {}
+        avatar = profile.get('avatar_url') or profile.get('picture')
+        name = profile.get('name', user.value.username)
+        email = profile.get('email', '')
+        
+        with solara.Card(style={"max-width": "400px", "margin": "0 auto", "padding": "20px"}):
+            with solara.Column(align="center"):
+                if avatar:
+                    rv.Img(src=avatar, height="100", width="100", style_="border-radius: 50%; margin-bottom: 15px")
+                
+                solara.Text(name, style={"font-size": "1.5rem", "font-weight": "bold"})
+                if email:
+                    solara.Text(email, style={"color": "gray", "margin-bottom": "20px"})
+                
+                solara.Markdown("---")
+                
+                with solara.GridFixed(columns=2, row_gap="10px"):
+                    if 'given_name' in profile:
+                        solara.Text("First Name:", style={"font-weight": "bold"})
+                        solara.Text(profile['given_name'])
+                    if 'family_name' in profile:
+                        solara.Text("Last Name:", style={"font-weight": "bold"})
+                        solara.Text(profile['family_name'])
+                    if 'locale' in profile:
+                        solara.Text("Locale:", style={"font-weight": "bold"})
+                        solara.Text(profile['locale'])
+                    
+                    solara.Text("Company:", style={"font-weight": "bold"})
+                    solara.Text(user.value.auth_company or "Local")
+                
+                solara.Markdown("---")
+                solara.Button("Logout", color="red", on_click=logout, width="100%", style={"margin-top": "20px"})
 
     router = solara.use_router()
     if is_callback(router):

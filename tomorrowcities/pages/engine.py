@@ -22,8 +22,17 @@ import logging, sys
 import pickle
 import datetime
 from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
-from .settings import landslide_max_trials
-from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
+# from .settings import landslide_max_trials
+# from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
+
+landslide_max_trials = solara.reactive(5)
+threshold_flood_ds2 = solara.reactive(0.05)
+threshold_flood_ds3 = solara.reactive(0.20)
+threshold_flood_ds4 = solara.reactive(0.50)
+
+threshold_flood_distance = solara.reactive(10)
+threshold_road_water_height = solara.reactive(0.3) 
+threshold_culvert_water_height = solara.reactive(1.5)
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, generate_exposure, \
     create_tally, generate_metrics
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
@@ -807,6 +816,52 @@ def FragilityDisplayer(vuln_xml: dict):
         with solara.Column():
             FragilityFunctionDisplayer(vuln_xml['fragilityFunctions'][func_labels.index(func_label)])
 
+
+@solara.component
+def MetricParameters():
+    with solara.Details(summary="Calculation Parameters"):
+        with solara.Card(title='Metric Parameters', subtitle='Choose metric calculation parameters'):
+            solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
+            with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
+                solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
+
+        with solara.Card(title='Flood Parameters',subtitle='Choose the parameters for the flood simulations'):
+            solara.Markdown(md_text='''
+                            If the relative damage obtained from the vulnerability curve is beyond 
+                            the flood threshold, the structure is assumed to flooded.
+                            After resetting the value, please execute the simulation again to see its effect.''')
+            
+            solara.Text('Flood Threshold for DS2')
+            solara.SliderFloat(label=None, value=threshold_flood_ds2, min=0.05,max=1, step=0.05)
+            
+            solara.Text('Flood Threshold for DS3')
+            solara.SliderFloat(label=None, value=threshold_flood_ds3, min=0.05,max=1, step=0.05)
+            
+            solara.Text('Flood Threshold for DS4')
+            solara.SliderFloat(label=None, value=threshold_flood_ds4, min=0.05,max=1, step=0.05)
+            
+            solara.Markdown(md_text='''
+                            If the distance from a structure to the nearest flood intensity measure
+                            is greater than Flood Distance, then the structure is assumed to be
+                            intact from flood.
+                            After resetting the value, please execute the simulation again to see its effect.''')
+            solara.Text('Minimum Flood Distance Threshold (meters)')
+            solara.SliderInt(label=None, value=threshold_flood_distance, min=0,max=100)
+
+            solara.Markdown(md_text='''
+                            If the water level is beyond this threshold then the road 
+                            is assumed to be flooded.''')
+            solara.Text('Minimum Water Level Threshold for Roads (meters)')
+            solara.SliderFloat(label=None, value=threshold_road_water_height, min=0,max=1)
+            
+            solara.Markdown(md_text='''
+                            If the water level is beyond this threshold then the culvert 
+                            hence the road containing it is assumed to be flooded.''')
+            solara.Text('Minimum Water Level Threshold for Culverts (meters)')
+            solara.SliderFloat(label=None, value=threshold_culvert_water_height, min=0,max=3)
+
+        # with solara.Card(title='Landslide Parameters',subtitle='Choose the parameters for the landslide simulation'):
+        #     solara.SliderInt(label='Number of Monte-Carlo Trials', value=landslide_max_trials, min=1,max=100)
 
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count, icon=None):
@@ -1648,12 +1703,7 @@ def ExecutePanel():
                                 # values=['low','medium','high'],
                                 # on_value=layers.value['implementation_capacity_score'].set,
                                 # )
-        solara.Markdown("#### Metric Parameters")
-        # preserve_edge_directions is only used for graph-based inputs (power and road)
-        with solara.Row(justify="left", style="min-height: 0px"):
-            solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
-            with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
-                solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
+        MetricParameters()
 
     solara.ProgressLinear(value=False)
     with solara.Columns([70,30]):
@@ -2105,7 +2155,7 @@ def WebApp():
     solara.Title(" ")
     reload_info_from_session()
     with solara.Sidebar():
-        with solara.lab.Tabs():
+        with solara.lab.Tabs(grow=True, align="center"):
             with solara.lab.Tab("DATA IMPORT"):
                 #ImportDataZone()
                 solara.Details(
