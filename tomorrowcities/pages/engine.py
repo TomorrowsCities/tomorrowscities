@@ -1110,7 +1110,7 @@ def LayerDisplayer():
                     PowerFragilityDisplayer(data, items_per_page=5)
                 else:
                     solara.DataFrame(data, items_per_page=5)
-            if selected in ["building","road edges","road nodes","power nodes","power edges"] :
+            if selected in ["landuse","building","road edges","road nodes","power nodes","power edges","intensity"] :
                 with solara.Row():
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
@@ -1118,11 +1118,37 @@ def LayerDisplayer():
                     with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
+            elif selected in ['household', 'individual', 'fragility', 'landslide fragility', 'vulnerability', 'power fragility', 'road fragility']:
+                 with solara.Row():
+                    file_object = data.to_json()
+                    with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
+                        solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
+                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                        solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
+                 solara.Text("Spacer", style={"visibility": "hidden"})
         elif isinstance(data, ParameterFile):
             ParameterFileWidget(parameter_file=data)                        
         if selected == 'gem_vulnerability':
+            def default(obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return str(obj)
+            with solara.Row():
+                file_object = json.dumps(data, default=default)
+                with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
+                    solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
+            solara.Text("Spacer", style={"visibility": "hidden"})
             VulnerabiliyDisplayer(data)
         elif selected == 'gem_fragility':
+            def default(obj):
+                if isinstance(obj, np.ndarray):
+                    return obj.tolist()
+                return str(obj)
+            with solara.Row():
+                file_object = json.dumps(data, default=default)
+                with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
+                    solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
+            solara.Text("Spacer", style={"visibility": "hidden"})
             FragilityDisplayer(data)
 
 metric_update_pending = solara.reactive(False)

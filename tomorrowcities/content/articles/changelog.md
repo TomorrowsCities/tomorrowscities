@@ -5,13 +5,47 @@ description: Details of the revisions applied
 image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/changelog.png?raw=true
 thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/changelog.png?raw=true
 alt: "Changelog"
-createdAt: 2023-01-18
-duration: 6 min read
+createdAt: 2026-01-18
+duration: 10 min read
 category:
   - general
 ---
 
-## What is New?
+**Changelog: v1.0**
+
+## What's Changed
+* feat: revamp home page, restructure navigation, consolidate pages and add utility tools by @o-z-e-r-e-r in [129](https://github.com/TomorrowsCities/tomorrowscities/pull/129)
+* refactor/ui: improve navbar/sidebar/docs and refactor metrics panels by @o-z-e-r-e-r in [128](https://github.com/TomorrowsCities/tomorrowscities/pull/128)
+* fix: Solara startup, hooks, calculation errors and data alignment by @o-z-e-r-e-r in [127](https://github.com/TomorrowsCities/tomorrowscities/pull/127)
+* ui: move settings by @hkayabilisim in [124](https://github.com/TomorrowsCities/tomorrowscities/pull/124)
+* ui: added favicon files by @hkayabilisim in [123](https://github.com/TomorrowsCities/tomorrowscities/pull/123)
+* ui: give extra info after data generation by @hkayabilisim in [122](https://github.com/TomorrowsCities/tomorrowscities/pull/122)
+* feat: probabilistic damage calculation for buildings on earthquake by @hkayabilisim in [119](https://github.com/TomorrowsCities/tomorrowscities/pull/119)
+
+## Highlights
+- Revamped home page and restructured navigation; consolidated pages and added utility tools.
+- Improved UI/UX across navbar/sidebar and metrics panels, including better mobile compatibility.
+- Stability and correctness fixes: Solara startup, hooks, calculation errors, and data alignment.
+- Added earthquake Monte Carlo simulation support (multiple runs) with UI controls and metric statistics.
+
+## Added
+- New/updated home page assets and icons; favicon support.
+- Earthquake Monte Carlo simulation with support for multiple runs.
+- UI options for earthquake simulation, plus metric statistics (e.g., boxplot/table).
+
+## Changed / Improved
+- Navigation and layout updates (navbar/sidebar) with refined styling and mobile improvements.
+- Metrics panels unified between pages for consistent layout and styling.
+- Settings/UI adjustments (e.g., moving population displacement consensus to Engine page).
+- Improved user feedback after data generation.
+- Page structure consolidated as part of the home/navigation revamp.
+
+## Fixed
+- Solara startup and hooks reliability.
+- Calculation errors and data alignment issues.
+
+**Full Changelog**: [v0.6...v1.0](https://github.com/TomorrowsCities/tomorrowscities/compare/v0.6...v1.0)
+
 
 **Changelog: v0.6**
 
