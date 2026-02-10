@@ -2498,7 +2498,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     #          ['lut_number','lrstype','CodeLevel','nstoreys','OccBld','unit_price'])
     building_df = building_df.drop(columns=['lut_number'])
     household_df = household_df.drop(columns=\
-             ['income_numb','zoneType','zoneid','approxFootprint'])
+             ['income_numb','zoneType','approxFootprint'])
     individual_df = individual_df.drop(columns=\
                         ['schoolEnrollment','labourForce','employed'])
         

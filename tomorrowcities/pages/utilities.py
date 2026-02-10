@@ -565,12 +565,16 @@ def PowerFragilityDisplayer(data, items_per_page=5):
 
 lbl_2_str = {
     'landuse': {
+        'zoneid': {'name': 'Zone ID',
+                'mapping': {}},
         'luf': {'name': 'Land Use Type',
                 'mapping': {}},
         'avgincome': {'name': 'Average Income',
                 'mapping': {'highIncome': 'High Income', 'lowIncomeA': 'Low Income', 'lowIncomeB': 'Low Income', 'midIncome': 'Moderate Income'}},
         },
     'building': {
+        'zoneid': {'name': 'Zone ID',
+                'mapping': {}},
         'ds': {'name': 'Damage State',
                 'mapping': {0: '0-No',1: '1-Slight', 2:'2-Moderate',3:'3-Extensive',4:'4-Complete'}},
         'specialfac': {'name': 'Special Facility',
@@ -589,6 +593,8 @@ lbl_2_str = {
                 'mapping': {}},
         },
     'tally_minimal': {
+        'zoneid': {'name': 'Zone ID',
+                'mapping': {}},
         'ds': {'name': 'Damage State',
                 'mapping': {0: '0-No',1: '1-Slight', 2:'2-Moderate',3:'3-Extensive',4:'4-Complete'}},
         'income': {'name': 'Income Level',
