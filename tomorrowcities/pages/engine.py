@@ -70,7 +70,7 @@ def create_new_app_state():
     'flood_depth_reduction': solara.reactive(0.2),
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
-    'version': '0.6',
+    'version': '1.0',
     'layers' : {
         'parameter': {
             'render_order': 0,
@@ -283,7 +283,7 @@ def create_new_app_state():
     'data_import_method': solara.reactive("drag&drop"),
     'map_info_button': solara.reactive("summary"),
     'map_info_detail': solara.reactive({}),
-    'tally_filter_cols': ['ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
+    'tally_filter_cols': ['zoneid','ds','income','material','gender','age','head','eduattstat','luf','occupancy'],
     'tally_is_available': solara.reactive(False),
     'metrics_realized': solara.reactive(None),
     'metrics': {
@@ -443,7 +443,7 @@ def save_app_state():
 def generic_layer_colors(feature):
     return None
 
-def generic_layer_click_handler(event=None, feature=None, id=None, properties=None):
+def generic_layer_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
 
@@ -451,11 +451,11 @@ def building_colors(feature):
     ds = feature['properties']['ds']
     return {'fillColor': ds_to_color[ds], 'color': 'black'}
 
-def building_click_handler(event=None, feature=None, id=None, properties=None):
+def building_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
 
-def road_node_click_handler(event=None, feature=None, id=None, properties=None):
+def road_node_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
@@ -467,7 +467,7 @@ def road_edge_colors(feature):
     else:
         return {'color': 'black',  'dashArray': '0'}
 
-def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
+def road_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail") 
@@ -479,12 +479,12 @@ def power_edge_colors(feature):
     else:
         return {'color': 'blue',  'dashArray': '0'}
 
-def power_edge_click_handler(event=None, feature=None, id=None, properties=None):
+def power_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     #print(properties)
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
 
-def landuse_click_handler(event=None, feature=None, id=None, properties=None):
+def landuse_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     layers.value['map_info_detail'].set(properties)
     layers.value['map_info_button'].set("detail")  
 
@@ -530,6 +530,8 @@ def landuse_colors(feature):
         luf_color = {'color': 'black','fillColor': 'orange'} 
     return luf_color
 
+
+
 def create_map_layer(df, name):
     if name == "intensity":
         # Take the largest 500_000 values to display
@@ -545,7 +547,7 @@ def create_map_layer(df, name):
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=landuse_colors)
-        map_layer.on_click(landuse_click_handler)   
+        map_layer.on_click(landuse_click_handler)
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
@@ -872,7 +874,8 @@ def MetricWidget(name, description, value, max_value, render_count, icon=None):
                 "type": 'gauge',  
                 "min": 0,
                 "name": description,
-                "radius": '90%', # Larger radius
+                "radius": '90%', # Reduce radius slightly to accommodate lower value
+                "center": ['50%', '65%'], # Move up closer to text
                 "max": max(1,max_value), # workaround when max_value = 0
                 "startAngle": 180,
                 "endAngle": 0,
@@ -891,7 +894,7 @@ def MetricWidget(name, description, value, max_value, render_count, icon=None):
                 "title": {"show": False},
                 "detail": {
                     "valueAnimation": True,
-                    "offsetCenter": [0, '20%'], # Adjust text position
+                    "offsetCenter": [0, '50%'], # Move value below the arc
                     "fontSize": 20,
                     "color": 'inherit'},
                 #"title": {"fontSize": 12},
@@ -901,10 +904,10 @@ def MetricWidget(name, description, value, max_value, render_count, icon=None):
     with solara.Card(elevation=2, style={"height": "240px", "padding": "2px", "text-align": "center", "border-radius": "8px"}):
         with solara.Column(align="center", gap="0px"): # Center stack, tight gap
             if icon:
-                solara.Image(icon, width="90px") 
+                solara.Image(icon, width="75px") 
             # Visible Label, Fixed Height for Alignment, vertically centered
             solara.Text(description, style={"font-weight": "bold", "font-size": "12px", "height": "55px", "display": "flex", "align-items": "center", "justify-content": "center", "margin-top": "4px", "line-height": "1.2"})
-            solara.FigureEcharts(option=options, attributes={"style": "height:140px; width:100%; display: flex; justify-content: center; align-items: center;"}) #min-width: 80px;
+            solara.FigureEcharts(option=options, attributes={"style": "height:100px; width:100%; display: flex; justify-content: center; align-items: center;"}) #min-width: 80px;
 
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
@@ -1054,10 +1057,10 @@ def FilterPanel():
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("BUILDING FILTERS")
         with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(building_filter_view)
                 for col, colinfo in lbl_2_str['building'].items():
-                    solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True)
+                    solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True, max_unique=5000)
     
     # Landuse
     solara.use_memo(create_landuse_filter_view, [layers.value['layers']['landuse']['df'].value])
@@ -1067,10 +1070,10 @@ def FilterPanel():
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("LANDUSE FILTERS")
         with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(landuse_filter_view)
                 for col, colinfo in lbl_2_str['landuse'].items():
-                    solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True)
+                    solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True, max_unique=5000)
     
     # Tally minimal
     solara.use_memo(create_tally_minimal_filter_view, [tally_counter.value])
@@ -1080,10 +1083,10 @@ def FilterPanel():
             solara.Markdown('''<h5 style=""></h5>''') 
         btn = solara.Button("METRIC FILTERS")
         with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"35vh", "align":"stretch"}): #"height":"60vh"   
+            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(tally_minimal_filter_view)
                 for col, colinfo in lbl_2_str['tally_minimal'].items():
-                    solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True)
+                    solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True, max_unique=5000)
 
 @solara.component
 def LayerDisplayer():
@@ -1834,11 +1837,7 @@ def MapInfo():
                 solara.Text(f'{key}')
                 with solara.Row(justify="right"):
                     strvalue = str(value)
-                    if len(strvalue) > 10:
-                        with solara.Tooltip(f'{value}'):
-                            solara.Text(f'{strvalue[:10]}...')
-                    else:
-                        solara.Text(f'{value}')
+                    solara.Text(f'{strvalue}')
 
 @solara.component
 def ImportDataZone1():
@@ -1958,7 +1957,7 @@ def ImportDataZone1():
     #                            on_value=layers.value['data_import_method'].set, 
     #                            values=["drag&drop","s3"], 
     #                            style={"align-items": "center"})
-    with solara.Card(title="Upload Data", style={"width":"35vh", "align":"stretch"}):
+    with solara.Card(title="Upload Data", style={"width":"100%", "align":"stretch"}):
     #with solara.Card(title="Upload", subtitle="Drag & Drop from your local drive"):
         solara.Markdown('''<div style="text-align: justify">
                         Drag & drop your local files to 
@@ -2118,7 +2117,7 @@ def ImportDataZone2():
                                # values=["drag&drop","s3"], 
                                # style={"align-items": "center"})                                           
         
-    with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"35vh", "align":"stretch"}):          
+    with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"100%"}):          
         solara.Markdown('''<div style="text-align: justify">
                         First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download and extract our <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">Sample Exposure Dataset</a> to your local drive and upload to the platform via drag & drop.
                         </div">
@@ -2177,26 +2176,33 @@ def ImportDataZone2():
         solara.ProgressLinear(value=False)
 
 @solara.component
+def EngineSidebarContent():
+    with solara.lab.Tabs(grow=True, align="center"):
+        with solara.lab.Tab("DATA IMPORT"):
+            solara.Details(
+                summary="Upload Data",
+                children=[ImportDataZone1()],
+                expand=False
+            )
+        with solara.lab.Tab("SETTINGS"):
+            ExecutePanel()
+            FilterPanel()
+        with solara.lab.Tab("MAP INFO"):
+            MapInfo()
+
+@solara.component
 def WebApp():
     solara.Title(" ")
     reload_info_from_session()
+
+    # Mobile View: Content at the top
+    with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):
+        EngineSidebarContent()
+
+    # Desktop View: Content in Sidebar
     with solara.Sidebar():
-        with solara.lab.Tabs(grow=True, align="center"):
-            with solara.lab.Tab("DATA IMPORT"):
-                #ImportDataZone()
-                solara.Details(
-                summary="Upload Data",
-                children=[ImportDataZone1()],
-                expand=False)
-                # solara.Details(
-                # summary="Generate Data",
-                # children=[ImportDataZone2()],
-                # expand=False)
-            with solara.lab.Tab("SETTINGS"):
-                ExecutePanel()
-                FilterPanel()
-            with solara.lab.Tab("MAP INFO"):
-                MapInfo()
+        with solara.Column(classes=["d-none", "d-md-block"]):
+             EngineSidebarContent()
 
     # LayerController()
     MapViewer()
@@ -2230,7 +2236,7 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         line-height: 1;
     }
     .v-input {
-        height: 10px;
+        /* height: 10px; removed to fix overlap issue */
     }
 
     .v-btn-toggle:not(.v-btn-toggle--dense) .v-btn.v-btn.v-size--default {
@@ -2249,6 +2255,33 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
 
     .solara-file-browser {
         overflow: auto;
+    }
+
+    @media (max-width: 960px) {
+        .v-app-bar__nav-icon {
+            display: none !important;
+        }
+        .v-navigation-drawer {
+            display: none !important;
+        }
+        .v-navigation-drawer__overlay, .v-overlay__scrim {
+            display: none !important;
+        }
+        .v-navigation-drawer, .v-navigation-drawer__overlay, .v-overlay__scrim, .v-overlay {
+            display: none !important;
+            pointer-events: none !important;
+        }
+        html, body {
+            overflow-y: auto !important;
+            height: auto !important;
+            position: relative !important;
+            pointer-events: auto !important;
+        }
+        .v-application, .v-application--wrap, .v-main, .v-content {
+            overflow: visible !important;
+            height: auto !important;
+            pointer-events: auto !important;
+        }
     }
     """
     solara.Style(value=css)
