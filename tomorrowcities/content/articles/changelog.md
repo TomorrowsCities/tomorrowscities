@@ -5,7 +5,7 @@ description: Details of the revisions applied
 image: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/changelog.png?raw=true
 thumbnail: https://github.com/TomorrowsCities/tomorrowcities/blob/main/tomorrowcities/content/images/changelog.png?raw=true
 alt: "Changelog"
-createdAt: 2026-01-18
+createdAt: 2026-02-10
 duration: 10 min read
 category:
   - general
@@ -14,6 +14,8 @@ category:
 **Changelog: v1.0**
 
 ## What's Changed
+* feat: optimise mobile layout & add zoneid filter by @o-z-e-r-e-r in [131](https://github.com/TomorrowsCities/tomorrowscities/pull/131)
+* feat: enable data export for all spatial, non-spatial and GEM layers by @o-z-e-r-e-r in [130](https://github.com/TomorrowsCities/tomorrowscities/pull/130)
 * feat: revamp home page, restructure navigation, consolidate pages and add utility tools by @o-z-e-r-e-r in [129](https://github.com/TomorrowsCities/tomorrowscities/pull/129)
 * refactor/ui: improve navbar/sidebar/docs and refactor metrics panels by @o-z-e-r-e-r in [128](https://github.com/TomorrowsCities/tomorrowscities/pull/128)
 * fix: Solara startup, hooks, calculation errors and data alignment by @o-z-e-r-e-r in [127](https://github.com/TomorrowsCities/tomorrowscities/pull/127)

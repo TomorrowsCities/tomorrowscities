@@ -4,6 +4,7 @@ import random
 import json
 import pandas as pd
 import os
+import re
 from scipy.stats import norm
 
 
@@ -161,7 +162,7 @@ def JsonToCsvConverter():
         set_content(f["data"])
         set_error(None)
 
-    with solara.Details("🔁 JSON → CSV Converter"):
+    with solara.Details("JSON → CSV Converter"):
         solara.FileDrop(on_file=on_file, lazy=False)
         if filename:
             solara.Text(f"Selected file: {filename}")
@@ -192,7 +193,7 @@ def CsvToJsonConverter():
         except Exception as e:
             set_error(str(e))
 
-    with solara.Details("🔁 CSV → JSON Converter"):
+    with solara.Details("CSV → JSON Converter"):
         solara.FileDrop(on_file=on_file, lazy=False)
         if filename:
             solara.Text(f"Selected file: {filename}")
@@ -210,11 +211,100 @@ def CsvToJsonConverter():
 
 @solara.component
 def ExcelToGeoJsonConverter():
-    with solara.Details("🔁 EXCEL → GEOJSON Converter"):
+    with solara.Details("EXCEL → GEOJSON Converter"):
         with solara.Columns([30,80]):
             FileDropZone()
             FieldSelector()
         Downloader()
+
+@solara.component
+def FloodVulnerabilityTemplateGenerator():
+    filename, set_filename = solara.use_state(None)
+    df, set_df = solara.use_state(None)
+    selected_col, set_selected_col = solara.use_state(None)
+    error, set_error = solara.use_state(None)
+
+    def natural_sort_key(s):
+        parts = s.split('+')
+        key = []
+        
+        # Custom mapping for LC, MC, HC order (LC < MC < HC)
+        code_order = {'lc': '1_lc', 'mc': '2_mc', 'hc': '3_hc'}
+        
+        for part in parts:
+            part_lower = part.lower()
+            if part_lower in code_order and len(code_order[part_lower]) > 0:
+                 key.append([code_order[part_lower]])
+            else:
+                 sub_parts = [int(c) if c.isdigit() else c.lower() for c in re.split('([0-9]+)', part) if c]
+                 key.append(sub_parts)
+        
+        # Prioritize 4th component (Occupancy) over 3rd (Height) if 4 components exist
+        if len(key) >= 4:
+            return key[:2] + [key[3]] + [key[2]] + key[4:]
+        return key
+
+    def on_file(f):
+        set_filename(f["name"])
+        set_error(None)
+        set_df(None)
+        set_selected_col(None)
+        
+        try:
+            # Handle GeoJSON
+            if f["name"].lower().endswith('.geojson') or f["name"].lower().endswith('.json'):
+                json_string = f["data"].decode('utf-8')
+                json_data = json.loads(json_string)
+                if "features" in json_data.keys():
+                    gdf = gpd.GeoDataFrame.from_features(json_data['features'])
+                    set_df(gdf)
+                else:
+                    set_error("Invalid GeoJSON: 'features' key missing")
+            # Handle Zip (Shapefile)
+            elif f["name"].lower().endswith('.zip'):
+                from io import BytesIO
+                gdf = gpd.read_file(BytesIO(f["data"]))
+                set_df(gdf)
+            else:
+                 set_error("Unsupported file format. Please upload GeoJSON or Zipped Shapefile.")
+        except Exception as e:
+            set_error(f"Error reading file: {e}")
+
+    with solara.Details("Flood Vulnerability Template Generator"):
+        solara.Markdown("Step 1: Drag and drop your building data in GeoJSON or Zipped Shapefile format.")
+        solara.FileDrop(on_file=on_file, lazy=False)
+        if filename:
+            solara.Text(f"Selected file: {filename}")
+        
+        if error:
+            solara.Error(error)
+
+        if df is not None:
+             solara.Markdown("Step 2: Select the ‘Exposure string’ attribute.")
+             cols = list(df.columns)
+             solara.Select(label="Exposure String", value=selected_col, values=cols, on_value=set_selected_col)
+
+             if selected_col:
+                 try:
+                     unique_vals = sorted(df[selected_col].astype(str).unique(), key=natural_sort_key)
+                     target_cols = ['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5', 'hw6']
+                     new_df = pd.DataFrame(columns=target_cols)
+                     new_df['expstr'] = unique_vals
+                     
+                     from io import BytesIO
+                     output = BytesIO()
+                     new_df.to_excel(output, index=False)
+                     excel_content = output.getvalue()
+                     
+                     solara.Div(style={"margin-top": "40px"})
+                     solara.Markdown("Step 3: Download XLSX")
+                     with solara.FileDownload(data=excel_content, filename="flood_vulnerability_template.xlsx", label="⬇️ Download XLSX"):
+                        pass
+                 except Exception as e:
+                     solara.Error(f"Error processing data: {e}")
+             
+             solara.Div(style={"margin-bottom": "50px"})
+
         
 @solara.component
 def Utilities():
@@ -223,6 +313,8 @@ def Utilities():
         ExcelToGeoJsonConverter()
         JsonToCsvConverter()
         CsvToJsonConverter()
+        FloodVulnerabilityTemplateGenerator()
+
     
 
 @solara.component
@@ -238,6 +330,12 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         min-width: 24px;
     }
 
+    .v-expansion-panel-header {
+        font-weight: bold;
+        font-size: 1.1em;
+        color: #424242;
+    }
+    }
     """
     solara.Style(value=css)
     solara.Title(" ")
