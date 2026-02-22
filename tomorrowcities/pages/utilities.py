@@ -19,6 +19,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 from ..backend.engine import compute, compute_power_infra
+from ..components.file_drop import FileDrop
 
 app_data = solara.reactive({'df': solara.reactive(None), 
                             'gdf': solara.reactive(None),
@@ -74,7 +75,7 @@ def FileDropZone():
     result = solara.use_thread(load, dependencies=[fileinfo])
 
     solara.Markdown("Step1: Drag and drop your Excel file to the below area.")
-    solara.FileDrop(on_total_progress=progress,
+    FileDrop(on_total_progress=progress,
                     on_file=on_file_deneme, 
                     lazy=False)
     if total_progress > -1 and total_progress < 100:
@@ -163,7 +164,7 @@ def JsonToCsvConverter():
         set_error(None)
 
     with solara.Details("JSON → CSV Converter"):
-        solara.FileDrop(on_file=on_file, lazy=False)
+        FileDrop(on_file=on_file, lazy=False)
         if filename:
             solara.Text(f"Selected file: {filename}")
         
@@ -194,7 +195,7 @@ def CsvToJsonConverter():
             set_error(str(e))
 
     with solara.Details("CSV → JSON Converter"):
-        solara.FileDrop(on_file=on_file, lazy=False)
+        FileDrop(on_file=on_file, lazy=False)
         if filename:
             solara.Text(f"Selected file: {filename}")
         
@@ -272,7 +273,7 @@ def FloodVulnerabilityTemplateGenerator():
 
     with solara.Details("Flood Vulnerability Template Generator"):
         solara.Markdown("Step 1: Drag and drop your building data in GeoJSON or Zipped Shapefile format.")
-        solara.FileDrop(on_file=on_file, lazy=False)
+        FileDrop(on_file=on_file, lazy=False)
         if filename:
             solara.Text(f"Selected file: {filename}")
         

@@ -624,6 +624,14 @@ def Page():
     solara.Style(value=css)
     solara.Title(" ")
     
+    def on_load():
+        session_data = read_from_session_storage('explore_initialized')
+        if session_data is None:
+            clear_session()
+            store_in_session_storage('explore_initialized', True)
+            
+    solara.use_effect(on_load, [])
+
     # Mobile View: Content at the top
     with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):
         ExploreSidebarContent()
