@@ -1,5 +1,6 @@
 <template>
-  <div ref="dropzone" class="solara-file-drop" effectAllowed="move">
+  <div ref="dropzone" class="solara-file-drop" effectAllowed="move" @click="triggerFileInput">
+    <input type="file" ref="fileInput" :multiple="multiple" style="display: none;" @change="onFileChange" />
     <template v-if="file_info && file_info.length > 0">
       <template v-if="multiple">
         <div v-for="file in file_info">
@@ -44,6 +45,24 @@ module.exports = {
     });
   },
   methods: {
+    triggerFileInput() {
+      this.$refs.fileInput.click();
+    },
+    onFileChange(event) {
+      if (!event.target.files || event.target.files.length === 0) return;
+      this.jupyter_clear();
+      const files = Array.from(event.target.files);
+      
+      this.native_file_info = files;
+      this.file_info = this.native_file_info.map(
+        ({name, size}) => ({
+          name,
+          isFile: true,
+          size,
+        }));
+        
+      event.target.value = '';
+    },
     jupyter_clear() {
       this.native_file_info = [];
       this.file_info = [];
@@ -81,5 +100,9 @@ module.exports = {
   margin: 8px 0;
   padding: 8px;
   overflow: auto;
+  cursor: pointer;
+}
+.solara-file-drop:hover {
+  background-color: rgba(0, 0, 0, 0.05);
 }
 </style>

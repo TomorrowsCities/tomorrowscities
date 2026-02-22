@@ -394,7 +394,10 @@ def reload_info_from_session():
             print('reloading',attr, session_data)
             layers.value[attr].set(session_data)
 
+reset_counter = solara.reactive(0)
+
 def reset_session():
+    reset_counter.value += 1
     store_in_session_storage('population_displacement_consensus', None)
     for layer_name in layers.value['layers'].keys():
         store_in_session_storage(layer_name, None)
@@ -1093,6 +1096,11 @@ def LayerDisplayer():
     print(f'{layers.value["bounds"].value}')
     nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
     nonempty_layer_names = list(nonempty_layers.keys())
+    
+    if len(nonempty_layer_names) == 0:
+        solara.Info("There is no layer details data yet!")
+        return
+
     selected = layers.value['selected_layer'].value
     def set_selected(s):
         layers.value['selected_layer'].set(s)
@@ -1214,7 +1222,7 @@ def MetricPanel():
 @solara.component
 def MetricStatistics():
     if layers.value['metrics_realized'].value is None:
-        solara.Text('There is no metrics statistics data yet!')
+        solara.Info('There is no metrics statistics data yet!')
         return
 
     # list of metrics measurements
@@ -1283,10 +1291,12 @@ def MapViewer():
 
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
-        base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
-        base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
-        base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True)                                                                                                                                         
-        set_base_layers([base_layer4, base_layer3, base_layer2, base_layer1])
+        base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
+        base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
+        base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldImagery.build_url(),name="Esri WorldImagery",base = True)        
+        base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True) 
+        base_layer6 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.DarkMatter.build_url(),name="CartoDB Dark",base = True)                                                                                                                                        
+        set_base_layers([base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1])
 
     # create base layers only once
     solara.use_memo(create_base_layers,[])
@@ -1978,6 +1988,13 @@ def ImportDataZone1():
             return True
         return False
 
+    def handle_reset():
+        set_fileinfo(None)
+        set_total_progress(-1)
+        set_generate_message("")
+        set_generate_counter(0)
+    solara.use_effect(handle_reset, [reset_counter.value])
+
     def generate():
         if generate_counter > 0 :
             set_generate_message('Generating exposure...')
@@ -2007,6 +2024,9 @@ def ImportDataZone1():
         
     def open_file_dialog():
         print('entered open file dialog...')    
+        
+    def on_clear():
+        reset_session()
     
     result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
     generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
@@ -2016,7 +2036,7 @@ def ImportDataZone1():
     #                            on_value=layers.value['data_import_method'].set, 
     #                            values=["drag&drop","s3"], 
     #                            style={"align-items": "center"})
-    with solara.Card(title="Upload Data", style={"width":"100%", "align":"stretch"}):
+    with solara.Column(style={"width":"100%", "align":"stretch", "padding": "0 15px"}):
     #with solara.Card(title="Upload", subtitle="Drag & Drop from your local drive"):
         solara.Markdown('''<div style="text-align: justify">
                         Drag & drop your local files to 
@@ -2024,12 +2044,13 @@ def ImportDataZone1():
                         For more information, please refer to <a href="https://github.com/TomorrowsCities/tomorrowscities/wiki" target="_blank">Data Formats</a>.</br>
                         You can download and extract our <a href="https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view?usp=sharing" 
                         target="_blank">Sample Dataset</a> to your local drive and upload to the platform via drag & drop.
-                        </div">
+                        </div>
                         ''')
         FileDropMultiple(on_total_progress=progress,
                 on_file=on_file_deneme, 
                 lazy=False,
-                label='Drop files here')
+                label='Drop files here or click to browse',
+                uid=str(reset_counter.value))
                 
         #with solara.Column():
         def sample_data():
@@ -2047,6 +2068,9 @@ def ImportDataZone1():
             children=[sample_data()],
             expand=False
             )
+        
+        with solara.Row(style={"width": "100%"}):
+            solara.Button("Clear", on_click=on_clear, text=True, outlined=True, style={"width": "100%"})
         
     if total_progress > -1 and total_progress < 100:
         solara.Text(f"Uploading {total_progress}%")
@@ -2136,6 +2160,13 @@ def ImportDataZone2():
             return True
         return False
 
+    def handle_reset():
+        set_fileinfo(None)
+        set_total_progress(-1)
+        set_generate_message("")
+        set_generate_counter(0)
+    solara.use_effect(handle_reset, [reset_counter.value])
+
     def generate():
         if generate_counter > 0 :
             set_generate_message('Generating exposure...')
@@ -2176,16 +2207,17 @@ def ImportDataZone2():
                                # values=["drag&drop","s3"], 
                                # style={"align-items": "center"})                                           
         
-    with solara.Card(title="Data Generation", subtitle="Exposure generation", style={"width":"100%"}):          
+    with solara.Column(style={"width":"100%"}):          
         solara.Markdown('''<div style="text-align: justify">
                         First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download and extract our <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">Sample Exposure Dataset</a> to your local drive and upload to the platform via drag & drop.
-                        </div">
+                        </div>
                         ''')
                         
         FileDropMultiple(on_total_progress=progress,
             on_file=on_file_deneme, 
             lazy=False,
-            label='Drop files here')
+            label='Drop files here or click to browse',
+            uid=str(reset_counter.value))
         solara.Text("Spacer", style={"visibility": "hidden"})
             
         with solara.Row():
@@ -2252,7 +2284,16 @@ def EngineSidebarContent():
 @solara.component
 def WebApp():
     solara.Title(" ")
-    reload_info_from_session()
+    
+    def on_load():
+        session_data = read_from_session_storage('engine_initialized')
+        if session_data is None:
+            reset_session()
+            store_in_session_storage('engine_initialized', True)
+        else:
+            reload_info_from_session()
+            
+    solara.use_effect(on_load, [])
 
     # Mobile View: Content at the top
     with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):

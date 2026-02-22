@@ -30,11 +30,12 @@ class FileDropZone(FileInput):
 
 @solara.component
 def _FileDrop(
-    label="Drop file(s) here",
+    label="Drop file(s) here or click to browse",
     on_total_progress: Optional[Callable[[float], None]] = None,
     on_file: Optional[Callable[[Union[FileInfo, List[FileInfo]]], None]] = None,
     lazy: bool = True,
     multiple: bool = False,
+    uid: Optional[str] = None,
 ):
     """Generic implementation used by FileDrop and FileDropMultiple.
 
@@ -44,7 +45,7 @@ def _FileDrop(
     file_info, set_file_info = solara.use_state(None)
     wired_files, set_wired_files = solara.use_state(cast(Optional[typing.List[FileInfo]], None))
 
-    file_drop = FileDropZone.element(label=label, on_total_progress=on_total_progress, on_file_info=set_file_info, multiple=multiple)  # type: ignore
+    file_drop = FileDropZone.element(label=label, on_total_progress=on_total_progress, on_file_info=set_file_info, multiple=multiple).key(uid) if uid else FileDropZone.element(label=label, on_total_progress=on_total_progress, on_file_info=set_file_info, multiple=multiple)  # type: ignore
 
     def wire_files():
         if not file_info:
@@ -83,10 +84,11 @@ def _FileDrop(
 
 @solara.component
 def FileDrop(
-    label="Drop file here",
+    label="Drop file here or click to browse",
     on_total_progress: Optional[Callable[[float], None]] = None,
     on_file: Optional[Callable[[FileInfo], None]] = None,
     lazy: bool = True,
+    uid: Optional[str] = None,
 ):
     """Region a user can drop a file into for file uploading.
 
@@ -113,15 +115,16 @@ def FileDrop(
 
     """
 
-    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file, lazy=lazy, multiple=False)
+    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file, lazy=lazy, multiple=False, uid=uid)
 
 
 @solara.component
 def FileDropMultiple(
-    label="Drop files here",
+    label="Drop files here or click to browse",
     on_total_progress: Optional[Callable[[float], None]] = None,
     on_file: Optional[Callable[[List[FileInfo]], None]] = None,
     lazy: bool = True,
+    uid: Optional[str] = None,
 ):
     """Region a user can drop multiple files into for file uploading.
 
@@ -136,4 +139,4 @@ def FileDropMultiple(
 
     """
 
-    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file, lazy=lazy, multiple=True)
+    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file, lazy=lazy, multiple=True, uid=uid)
