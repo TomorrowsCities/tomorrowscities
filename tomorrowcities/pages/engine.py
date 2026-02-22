@@ -1648,6 +1648,16 @@ def ExecutePanel():
                 max_trials = 1
 
             metrics_results = []
+            
+            # Dictionary to accumulate damage states and statuses across trials
+            mc_accumulator = {
+                'building_ds': [],
+                'road_edges_ds': [],
+                'road_nodes_ds': [],
+                'power_nodes_ds': [],
+                'power_edges_ds': []
+            }
+
             for trial in range(1,max_trials+1):
                 if trial == 1:
                     set_progress_message('Running...')
@@ -1655,6 +1665,8 @@ def ExecutePanel():
                     set_progress_message(f'Monte-Carlo trial {trial}/{max_trials}...')
                 if 'power' in layers.value['infra'].value:
                     nodes, buildings, household = execute_power()
+                    mc_accumulator['power_nodes_ds'].append(nodes['ds'])
+                    # edges are not modified by execute_power but we need them below if applicable
                     layers.value['layers']['power nodes']['data'].set(nodes)
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['household']['data'].set(household)
@@ -1663,6 +1675,7 @@ def ExecutePanel():
                     layers.value['layers']['household']['df'].set(household)
                 if 'road' in layers.value['infra'].value:
                     edges, buildings, household, individual = execute_road()
+                    mc_accumulator['road_edges_ds'].append(edges['ds'])
                     layers.value['layers']['road edges']['data'].set(edges)
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['household']['data'].set(household)
@@ -1673,6 +1686,7 @@ def ExecutePanel():
                     layers.value['layers']['individual']['df'].set(individual)
                 if 'building' in layers.value['infra'].value:
                     buildings = execute_building()
+                    mc_accumulator['building_ds'].append(buildings['ds'])
                     layers.value['layers']['building']['data'].set(buildings)
                     layers.value['layers']['building']['df'].set(buildings.drop(columns=['geometry']))
 
@@ -1689,6 +1703,51 @@ def ExecutePanel():
                                            layers.value['hazard'].value, 
                                            population_displacement_consensus.value)
                 metrics_results.append(metrics_result)
+
+            # --- Calculate Mode (Most Frequent Damage State) after all trials ---
+            if max_trials > 1:
+                if 'building' in layers.value['infra'].value and len(mc_accumulator['building_ds']) > 0:
+                    df_modes = pd.DataFrame(mc_accumulator['building_ds']).mode(axis=0)
+                    mode_ds = df_modes.iloc[0].astype(int)
+                    
+                    bld_data = layers.value['layers']['building']['data'].value
+                    bld_df = layers.value['layers']['building']['df'].value
+                    bld_data['ds'] = mode_ds
+                    bld_df['ds'] = mode_ds
+                    
+                    layers.value['layers']['building']['data'].set(bld_data)
+                    layers.value['layers']['building']['df'].set(bld_df)
+                
+                if 'road' in layers.value['infra'].value and len(mc_accumulator['road_edges_ds']) > 0:
+                    df_modes = pd.DataFrame(mc_accumulator['road_edges_ds']).mode(axis=0)
+                    mode_ds = df_modes.iloc[0].astype(int)
+                    
+                    road_edges_data = layers.value['layers']['road edges']['data'].value
+                    road_edges_df = layers.value['layers']['road edges']['df'].value
+                    road_edges_data['ds'] = mode_ds
+                    road_edges_df['ds'] = mode_ds
+                    
+                    # Update is_damaged based on mode_ds > 0 (or specific threshold if needed)
+                    road_edges_data['is_damaged'] = mode_ds > 0
+                    road_edges_df['is_damaged'] = mode_ds > 0
+
+                    layers.value['layers']['road edges']['data'].set(road_edges_data)
+                    layers.value['layers']['road edges']['df'].set(road_edges_df)
+                    
+                if 'power' in layers.value['infra'].value and len(mc_accumulator['power_nodes_ds']) > 0:
+                    df_modes = pd.DataFrame(mc_accumulator['power_nodes_ds']).mode(axis=0)
+                    mode_ds = df_modes.iloc[0].astype(int)
+                    
+                    power_nodes_data = layers.value['layers']['power nodes']['data'].value
+                    power_nodes_df = layers.value['layers']['power nodes']['df'].value
+                    power_nodes_data['ds'] = mode_ds
+                    power_nodes_df['ds'] = mode_ds
+                    
+                    power_nodes_data['is_damaged'] = mode_ds > 2 # DS_MODERATE = 2
+                    power_nodes_df['is_damaged'] = mode_ds > 2 # DS_MODERATE = 2
+                    
+                    layers.value['layers']['power nodes']['data'].set(power_nodes_data)
+                    layers.value['layers']['power nodes']['df'].set(power_nodes_df)
 
             layers.value['metrics_realized'].set(metrics_results)
             set_progress_message('')
