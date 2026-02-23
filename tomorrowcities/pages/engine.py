@@ -1183,6 +1183,17 @@ def generate_metrics_local():
             tally_filtered = tally_filtered[tally_filter.value]
         print('Triggering generate_metrics')
         metrics = generate_metrics(tally_filtered, tally_geo, hazard, population_displacement_consensus)
+        
+        is_unfiltered = (len(tally_filtered) == len(tally_geo))
+        if is_unfiltered:
+            realized = layers.value['metrics_realized'].value
+            if realized is not None and len(realized) > 1:
+                for metric_key in metrics.keys():
+                    avg_val = sum(trial[metric_key]['value'] for trial in realized) / len(realized)
+                    avg_max = sum(trial[metric_key]['max_value'] for trial in realized) / len(realized)
+                    metrics[metric_key]['value'] = int(round(avg_val))
+                    metrics[metric_key]['max_value'] = int(round(avg_max))
+        
         print('metrics', metrics)
     metric_update_pending.set(False)
     return metrics
@@ -1193,7 +1204,8 @@ def MetricPanel():
     solara.use_memo(generate_metrics_local, 
                     [tally_counter.value,
                      layers.value['bounds'].value,
-                     tally_filter.value], debug_name="generate_metrics_loca")
+                     tally_filter.value,
+                     layers.value['render_count'].value], debug_name="generate_metrics_loca")
     if generate_metrics_local.finished:
         filtered_metrics = generate_metrics_local.value
 
