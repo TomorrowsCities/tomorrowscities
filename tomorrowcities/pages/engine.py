@@ -917,7 +917,8 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data_array = fileinfo['data']
     extension = fileinfo['name'].split('.')[-1]
     if extension == 'xlsx':
-        data = pd.read_excel(data_array)
+        import io
+        data = pd.read_excel(io.BytesIO(data_array))
     elif extension in ['tiff','tif']:
         data = read_tiff(data_array)
     elif extension.lower() in ['xml']:
@@ -928,7 +929,8 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
         if "features" in json_data.keys():
             data = gpd.GeoDataFrame.from_features(json_data['features'])
         else:
-            data = pd.read_json(json_string)
+            import io
+            data = pd.read_json(io.StringIO(json_string))
 
     if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
         # reset existing index to avoid conflicts in index-related computations
@@ -1063,7 +1065,8 @@ def FilterPanel():
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(building_filter_view)
                 for col, colinfo in lbl_2_str['building'].items():
-                    solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+                    if colinfo['name'] in building_filter_view.columns:
+                        solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True, max_unique=5000)
     
     # Landuse
     solara.use_memo(create_landuse_filter_view, [layers.value['layers']['landuse']['df'].value])
@@ -1076,7 +1079,8 @@ def FilterPanel():
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(landuse_filter_view)
                 for col, colinfo in lbl_2_str['landuse'].items():
-                    solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+                    if colinfo['name'] in landuse_filter_view.columns:
+                        solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True, max_unique=5000)
     
     # Tally minimal
     solara.use_memo(create_tally_minimal_filter_view, [tally_counter.value])
@@ -1089,7 +1093,8 @@ def FilterPanel():
             with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
                 solara.CrossFilterReport(tally_minimal_filter_view)
                 for col, colinfo in lbl_2_str['tally_minimal'].items():
-                    solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+                    if colinfo['name'] in tally_minimal_filter_view.columns:
+                        solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True, max_unique=5000)
 
 @solara.component
 def LayerDisplayer():
@@ -1115,6 +1120,8 @@ def LayerDisplayer():
             if "geometry" in data.columns:
                 ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
                 df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                if df_filtered.empty:
+                    df_filtered = data.drop(columns='geometry')
                 solara.DataFrame(df_filtered, items_per_page=5)
             else:
                 if selected == "power fragility":
@@ -1333,7 +1340,13 @@ def MapViewer():
                     if landuse_filter.value is not None:
                         df_filtered = df[landuse_filter.value]
 
-                map_layer = create_map_layer(df_filtered, l)
+                # Cache map layers by dataframe id to prevent ipyleaflet from un-rendering existing layers
+                cache_key = (l, id(df_filtered))
+                if cache_key not in layers.value.setdefault('_map_layer_cache', {}):
+                    print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
+                    layers.value['_map_layer_cache'][cache_key] = create_map_layer(df_filtered, l)
+                
+                map_layer = layers.value['_map_layer_cache'][cache_key]
                 map_layers.append(map_layer)
 
         set_map_layers(map_layers)
@@ -1991,8 +2004,9 @@ def ImportDataZone1():
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
 
             if unrecognized_file_exists:
-                return False
-        return True
+                return "error"
+            return "success"
+        return "empty"
     
     def is_ready_to_generate():
         if layers.value['layers']['parameter']['data'].value is not None and \
@@ -2089,21 +2103,21 @@ def ImportDataZone1():
         solara.ProgressLinear(value=total_progress)
     else:
         if result.state == solara.ResultState.FINISHED:
-            if result.value:
-                solara.Text("Spacer", style={'visibility':'hidden'})
-            else:
+            if result.value == "success":
+                solara.Success("Data is successfully loaded and ready for analysis.")
+            elif result.value == "error":
                 solara.Text("Unrecognized file")
+            else:
+                solara.Text("Spacer", style={'visibility':'hidden'})
             solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.INITIAL:
-            #solara.Text("Spacer", style={'visibility':'hidden'})
-            #pass
-            solara.Text("Please wait")
-            solara.ProgressLinear(value=True)
+            solara.Text("Spacer", style={'visibility':'hidden'})
+            solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.ERROR:
             solara.Text(f'{result.error}')
             solara.ProgressLinear(value=False)
         else:
-            solara.Text("Preprocessing")
+            solara.Text("Please wait...")
             solara.ProgressLinear(value=True)
 
 @solara.component
@@ -2163,8 +2177,9 @@ def ImportDataZone2():
             layers.value['render_count'].set(layers.value['render_count'].value + 1)
 
             if unrecognized_file_exists:
-                return False
-        return True
+                return "error"
+            return "success"
+        return "empty"
     
     def is_ready_to_generate():
         if layers.value['layers']['parameter']['data'].value is not None and \
@@ -2242,10 +2257,12 @@ def ImportDataZone2():
         solara.ProgressLinear(value=total_progress)
     else:
         if result.state == solara.ResultState.FINISHED:
-            if result.value:
-                pass#solara.Text("Spacer", style={'visibility':'hidden'})
-            else:
+            if result.value == "success":
+                solara.Success("Data is successfully loaded and ready for analysis.")
+            elif result.value == "error":
                 solara.Text("Unrecognized file")
+            else:
+                solara.Text("Spacer", style={'visibility':'hidden'})
             solara.ProgressLinear(value=False)
         elif result.state == solara.ResultState.INITIAL:
             solara.Text("Spacer", style={'visibility':'hidden'})
@@ -2254,7 +2271,7 @@ def ImportDataZone2():
             solara.Text(f'{result.error}')
             solara.ProgressLinear(value=False)
         else:
-            solara.Text("Pre-processing")
+            solara.Text("Please wait...")
             solara.ProgressLinear(value=True)
 
     if generate_result.error is not None:

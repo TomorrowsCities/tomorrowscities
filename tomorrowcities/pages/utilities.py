@@ -32,16 +32,19 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     data = fileinfo['data']
     extension = fileinfo['name'].split('.')[-1]
     if extension == 'xlsx':
-        df = pd.read_excel(data)
+        import io
+        df = pd.read_excel(io.BytesIO(data))
     elif extension == 'csv':
-        df = pd.read_csv(data)
+        import io
+        df = pd.read_csv(io.BytesIO(data))
     else:
         json_string = data.decode('utf-8')
         json_data = json.loads(json_string)
         if "features" in json_data.keys():
             df = gpd.GeoDataFrame.from_features(json_data['features'])
         else:
-            df = pd.read_json(json_string)
+            import io
+            df = pd.read_json(io.StringIO(json_string))
 
     df.columns = df.columns.str.lower()
 
@@ -724,10 +727,11 @@ def convert_data_for_filter_view(data, layer_name):
         return data
     
     # Take the columns
-    df = data[lbl_2_str[layer_name].keys()]
+    keys_intersection = [k for k in lbl_2_str[layer_name].keys() if k in data.columns]
+    df = data[keys_intersection].copy()
 
     for col, colinfo in lbl_2_str[layer_name].items():
-        if len(colinfo['mapping']) > 0:
+        if col in df.columns and len(colinfo['mapping']) > 0:
             df.replace({col: colinfo['mapping']}, inplace=True)
 
     renaming = {col: colinfo['name'] for col, colinfo in lbl_2_str[layer_name].items()}
