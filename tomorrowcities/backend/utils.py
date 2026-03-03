@@ -25,11 +25,17 @@ def identity_preprocess(df, extra_cols):
 
 class ParameterFile:
     def __init__(self, content: bytes):
-        self.df_nc = pd.read_excel(content,sheet_name=1,header=None)
-        self.ipdf = pd.read_excel(content,sheet_name=2, header=None)
-        self.df1 = pd.read_excel(content,sheet_name=3, header=None)
-        self.df2 = pd.read_excel(content,sheet_name=4, header=None)
-        self.df3 = pd.read_excel(content,sheet_name=5, header=None)
+        import io
+        bcontent = io.BytesIO(content)
+        self.df_nc = pd.read_excel(bcontent,sheet_name=1,header=None)
+        bcontent.seek(0)
+        self.ipdf = pd.read_excel(bcontent,sheet_name=2, header=None)
+        bcontent.seek(0)
+        self.df1 = pd.read_excel(bcontent,sheet_name=3, header=None)
+        bcontent.seek(0)
+        self.df2 = pd.read_excel(bcontent,sheet_name=4, header=None)
+        bcontent.seek(0)
+        self.df3 = pd.read_excel(bcontent,sheet_name=5, header=None)
 
     def get_sheets(self):
         return (self.df_nc, self.ipdf, self.df1, self.df2, self.df3)
