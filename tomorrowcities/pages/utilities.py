@@ -19,7 +19,7 @@ import logging, sys
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 
 from ..backend.engine import compute, compute_power_infra
-from ..components.file_drop import FileDrop
+from ..components.file_drop import FileDrop, FileDropMultiple
 
 app_data = solara.reactive({'df': solara.reactive(None), 
                             'gdf': solara.reactive(None),
@@ -310,6 +310,428 @@ def FloodVulnerabilityTemplateGenerator():
              solara.Div(style={"margin-bottom": "50px"})
 
         
+def classify_dataset(df, filename):
+    cols = set(df.columns)
+    name = filename.lower()
+    
+    # Try filename heuristics first if distinct
+    if 'landuse' in name or 'luf' in cols or 'densitycap' in cols: return 'landuse'
+    
+    # Building requires residents, nhouse, fptarea, etc.
+    if 'building' in name or 'fptarea' in cols or ('expstr' in cols and 'nhouse' in cols) or ('residents' in cols): return 'building'
+    
+    # Household requires commfacid or nind
+    if 'household' in name or 'commfacid' in cols or 'nind' in cols: return 'household'
+    
+    # Individual requires eduattstat or gender
+    if 'individual' in name or 'eduattstat' in cols or 'gender' in cols: return 'individual'
+    
+    # fallback to column overlap
+    rules = [
+        ('landuse', {'zoneid', 'luf', 'densitycap', 'avgincome'}),
+        ('building', {'residents', 'fptarea', 'repvalue', 'nhouse', 'expstr', 'bldid', 'specialfac'}),
+        ('household', {'hhid', 'nind', 'income', 'bldid', 'commfacid'}),
+        ('individual', {'individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'})
+    ]
+    best_match = "unknown"
+    max_overlap = 0
+    for dtype, req_cols in rules:
+        overlap = len(cols.intersection(req_cols))
+        if overlap > max_overlap:
+            max_overlap = overlap
+            best_match = dtype
+            
+    if max_overlap < 2:
+        return "unknown"
+        
+    return best_match
+
+@solara.component
+def LanduseExposureCheck():
+    messages, set_messages = solara.use_state([])
+    is_processing, set_is_processing = solara.use_state(False)
+    file_drop_key, set_file_drop_key = solara.use_state(0)
+
+    def process_files(files):
+        set_is_processing(True)
+        set_messages([])
+        
+        msgs = []
+        datasets = {}
+        
+        for f in files:
+            msgs.append(("info", f"Reading {f['name']}..."))
+        set_messages(msgs.copy())
+        
+        msgs = [] # Reset to collect actual status
+        for f in files:
+            try:
+                df = import_data(f)
+                if df is None:
+                    msgs.append(("error", f"Could not extract dataframe from {f['name']}."))
+                    continue
+                
+                dtype = classify_dataset(df, f['name'])
+                if dtype == "unknown":
+                    msgs.append(("error", f"File '{f['name']}' does not contain required attributes for landuse, building, household, or individual data. Check attributes!"))
+                elif dtype in datasets:
+                    msgs.append(("warning", f"Multiple files detected for {dtype} ({f['name']}). Ignoring."))
+                else:
+                    datasets[dtype] = df
+                    msgs.append(("success", f"Loaded '{f['name']}' successfully as {dtype}."))
+            except Exception as e:
+                msgs.append(("error", f"Error reading {f['name']}: {e}"))
+
+        # Validate presence of 4 datasets
+        required = ['landuse', 'building', 'household', 'individual']
+        missing = [d for d in required if d not in datasets]
+        if missing:
+            msgs.append(("error", f"Missing datasets: {', '.join(missing)}."))
+
+        if not missing:
+            msgs.append(("success", "All 4 required datasets are loaded. Proceeding with validation..."))
+
+        # LANDUSE
+        if 'landuse' in datasets:
+            lu_df = datasets['landuse']
+            req_lu = {'geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'}
+            missing_cols = req_lu - set(lu_df.columns)
+            if missing_cols:
+                msgs.append(("error", f"Landuse is missing required attributes: {', '.join(missing_cols)}"))
+            
+            if 'zoneid' in lu_df.columns:
+                if not lu_df['zoneid'].is_unique:
+                    msgs.append(("error", "Landuse 'zoneid' values are not unique."))
+                else:
+                    msgs.append(("success", "Landuse 'zoneid' uniqueness verified."))
+            
+            if 'densitycap' in lu_df.columns and 'avgincome' in lu_df.columns:
+                # convert densitycap to numeric
+                lu_df['densitycap'] = pd.to_numeric(lu_df['densitycap'], errors='coerce')
+                
+                invalid_density = lu_df[lu_df['densitycap'] < 0]
+                if not invalid_density.empty:
+                    msgs.append(("error", "Landuse 'densitycap' contains negative values."))
+                else:
+                    msgs.append(("success", "Landuse 'densitycap' >= 0 verified."))
+                    
+                valid_incomes = {"lowIncomeA", "lowIncomeB", "midIncome", "highIncome"}
+                mask = lu_df['densitycap'] > 0
+                if mask.any():
+                    invalid_incomes = lu_df[mask & (~lu_df['avgincome'].isin(valid_incomes))]
+                    if not invalid_incomes.empty:
+                        msgs.append(("error", f"Landuse rows with densitycap > 0 must have avgincome in {valid_incomes}. Found {len(invalid_incomes)} invalid rows."))
+                    else:
+                        msgs.append(("success", "Landuse 'avgincome' conditions verified for densitycap > 0."))
+
+        # BUILDING
+        if 'building' in datasets:
+            bld_df = datasets['building']
+            req_bld = {'geometry', 'residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'specialfac'}
+            missing_cols = req_bld - set(bld_df.columns)
+            if missing_cols:
+                msgs.append(("error", f"Building is missing required attributes: {', '.join(missing_cols)}"))
+            
+            if 'zoneid' in bld_df.columns and 'landuse' in datasets and 'zoneid' in datasets['landuse'].columns:
+                lu_zoneids = set(datasets['landuse']['zoneid'].dropna())
+                bld_zoneids = set(bld_df['zoneid'].dropna())
+                invalid_bld_zones = bld_zoneids - lu_zoneids
+                if invalid_bld_zones:
+                    l = list(invalid_bld_zones)
+                    msgs.append(("error", f"Building 'zoneid' values not found in Landuse: {l[:5]}{'...' if len(l)>5 else ''}"))
+                else:
+                    msgs.append(("success", "Building to Landuse 'zoneid' linkage verified."))
+
+        # HOUSEHOLD
+        if 'household' in datasets:
+            hh_df = datasets['household']
+            req_hh = {'hhid', 'nind', 'income', 'bldid', 'commfacid'}
+            missing_cols = req_hh - set(hh_df.columns)
+            if missing_cols:
+                msgs.append(("error", f"Household is missing required attributes: {', '.join(missing_cols)}"))
+                
+            if 'bldid' in hh_df.columns and 'building' in datasets and 'bldid' in datasets['building'].columns:
+                bld_bldids = set(datasets['building']['bldid'].dropna())
+                hh_bldids = set(hh_df['bldid'].dropna())
+                invalid_hh_blds = hh_bldids - bld_bldids
+                if invalid_hh_blds:
+                    l = list(invalid_hh_blds)
+                    msgs.append(("error", f"Household 'bldid' values not found in Building: {l[:5]}{'...' if len(l)>5 else ''}"))
+                else:
+                    msgs.append(("success", "Household to Building 'bldid' linkage verified."))
+
+        # INDIVIDUAL
+        if 'individual' in datasets:
+            ind_df = datasets['individual']
+            req_ind = {'individ', 'hhid', 'gender', 'age', 'eduattstat', 'head', 'indivfacid'}
+            missing_cols = req_ind - set(ind_df.columns)
+            if missing_cols:
+                msgs.append(("error", f"Individual is missing required attributes: {', '.join(missing_cols)}"))
+                
+            if 'hhid' in ind_df.columns and 'household' in datasets and 'hhid' in datasets['household'].columns:
+                hh_hhids = set(datasets['household']['hhid'].dropna())
+                ind_hhids = set(ind_df['hhid'].dropna())
+                invalid_ind_hhs = ind_hhids - hh_hhids
+                if invalid_ind_hhs:
+                    l = list(invalid_ind_hhs)
+                    msgs.append(("error", f"Individual 'hhid' values not found in Household: {l[:5]}{'...' if len(l)>5 else ''}"))
+                else:
+                    msgs.append(("success", "Individual to Household 'hhid' linkage verified."))
+
+        set_messages(msgs)
+        set_is_processing(False)
+
+    def clear():
+        set_messages([])
+        set_is_processing(False)
+        set_file_drop_key(file_drop_key + 1)
+
+    with solara.Details("Landuse + Exposure Data Check"):
+        solara.Markdown("Full validation requires these 4 datasets: **landuse, building, household, individual**.")
+        solara.Markdown("Drag and drop these 4 files below or click to browse.")
+        
+        FileDropMultiple(on_file=process_files, lazy=False, uid=str(file_drop_key))
+        
+        if is_processing:
+            solara.ProgressLinear(value=True)
+            solara.Text("Validating files, please wait...")
+        else:
+            if len(messages) > 0:
+                solara.Button("Clear", on_click=clear, icon_name="mdi-delete", color="error", class_="mt-4 mb-4")
+
+        for m_type, msg in messages:
+            if m_type == "error":
+                solara.Error(msg)
+            elif m_type == "warning":
+                solara.Warning(msg)
+            elif m_type == "success":
+                solara.Success(msg)
+            elif m_type == "info":
+                solara.Info(msg)
+
+@solara.component
+def HazardDataCheck():
+    messages, set_messages = solara.use_state([])
+    is_processing, set_is_processing = solara.use_state(False)
+    file_drop_key, set_file_drop_key = solara.use_state(0)
+
+    def process_file(file_info):
+        set_is_processing(True)
+        set_messages([])
+        
+        set_messages([("info", f"Reading {file_info['name']}...")])
+        
+        msgs = []
+        try:
+            df = import_data(file_info)
+            if df is None:
+                msgs.append(("error", f"Could not extract dataframe from {file_info['name']}."))
+            else:
+                req_cols = {'geometry', 'im'}
+                missing_cols = req_cols - set(df.columns)
+                
+                if missing_cols:
+                    msgs.append(("error", f"File '{file_info['name']}' does not contain required attribute(s) for a hazard data ({', '.join(missing_cols)}). Check attributes!"))
+                else:
+                    msgs.append(("success", f"Loaded '{file_info['name']}' successfully."))
+                    msgs.append(("success", "Required attributes ('geometry', 'im') verified."))
+                    
+                    # Check 'im' is >= 0
+                    df['im'] = pd.to_numeric(df['im'], errors='coerce')
+                    invalid_im = df[df['im'] < 0]
+                    if not invalid_im.empty:
+                        msgs.append(("error", f"Hazard 'im' contains negative values. Found {len(invalid_im)} invalid rows."))
+                    else:
+                        msgs.append(("success", "Hazard 'im' >= 0 verified."))
+                        
+        except Exception as e:
+            msgs.append(("error", f"Error reading {file_info['name']}: {e}"))
+            
+        set_messages(msgs)
+        set_is_processing(False)
+
+    def clear():
+        set_messages([])
+        set_is_processing(False)
+        set_file_drop_key(file_drop_key + 1)
+
+    with solara.Details("Hazard Data Check"):
+        solara.Markdown("Validation requires a hazard dataset containing **geometry** and **im** attributes.")
+        solara.Markdown("Drag and drop your file below or click to browse.")
+        
+        FileDrop(on_file=process_file, lazy=False, uid=str(file_drop_key))
+        
+        if is_processing:
+            solara.ProgressLinear(value=True)
+            solara.Text("Validating file, please wait...")
+        else:
+            if len(messages) > 0:
+                solara.Button("Clear", on_click=clear, icon_name="mdi-delete", color="error", class_="mt-4 mb-4")
+
+        for m_type, msg in messages:
+            if m_type == "error":
+                solara.Error(msg)
+            elif m_type == "warning":
+                solara.Warning(msg)
+            elif m_type == "success":
+                solara.Success(msg)
+            elif m_type == "info":
+                solara.Info(msg)
+
+@solara.component
+def VulnerabilityFragilityDataCheck():
+    messages, set_messages = solara.use_state([])
+    is_processing, set_is_processing = solara.use_state(False)
+    file_drop_key, set_file_drop_key = solara.use_state(0)
+
+    def process_files(files):
+        set_is_processing(True)
+        set_messages([])
+        
+        msgs = []
+        for f in files:
+            msgs.append(("info", f"Reading {f['name']}..."))
+        set_messages(msgs.copy())
+        
+        msgs = []
+        datasets = {}
+        vuln_frag_df = None
+        vuln_frag_name = ""
+        vuln_frag_type = ""
+
+        # Extract files
+        for f in files:
+            try:
+                df = import_data(f)
+                if df is None:
+                    msgs.append(("error", f"Could not extract dataframe from {f['name']}."))
+                    continue
+                
+                cols = set(df.columns)
+                
+                # Check for Vulnerability
+                req_vuln = {'expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5', 'hw6'}
+                # Check for Fragility
+                req_frag = {'expstr', 'muds1_g', 'muds2_g', 'muds3_g', 'muds4_g', 'sigmads1', 'sigmads2', 'sigmads3', 'sigmads4'}
+                # Check for Building
+                req_building = {'residents', 'fptarea', 'repvalue', 'nhouse', 'zoneid', 'expstr', 'bldid', 'geometry', 'specialfac'}
+
+                if req_vuln.issubset(cols):
+                    if vuln_frag_df is not None:
+                        msgs.append(("warning", f"Multiple vulnerability/fragility files detected. Ignoring '{f['name']}'."))
+                    else:
+                        vuln_frag_df = df
+                        vuln_frag_name = f['name']
+                        vuln_frag_type = "Vulnerability"
+                        msgs.append(("success", f"Loaded '{f['name']}' successfully as Vulnerability data."))
+                elif req_frag.issubset(cols):
+                    if vuln_frag_df is not None:
+                        msgs.append(("warning", f"Multiple vulnerability/fragility files detected. Ignoring '{f['name']}'."))
+                    else:
+                        vuln_frag_df = df
+                        vuln_frag_name = f['name']
+                        vuln_frag_type = "Earthquake Fragility"
+                        msgs.append(("success", f"Loaded '{f['name']}' successfully as Earthquake Fragility data."))
+                else:
+                    is_building = False
+                    if 'nhouse' in cols and 'fptarea' in cols and 'residents' in cols:
+                        is_building = True
+                    else:
+                        dtype = classify_dataset(df, f['name'])
+                        if dtype == 'building':
+                            is_building = True
+
+                    if is_building:
+                        missing_bld = req_building - cols
+                        if missing_bld:
+                            msgs.append(("error", f"Building data '{f['name']}' is missing required attributes: {', '.join(missing_bld)}"))
+                        else:
+                            datasets['building'] = df
+                            msgs.append(("success", f"Loaded '{f['name']}' successfully as Building data."))
+                    else:
+                        msgs.append(("error", f"File '{f['name']}' does not contain required attributes for building, vulnerability, or fragility data. Check attributes!"))
+
+            except Exception as e:
+                msgs.append(("error", f"Error reading {f['name']}: {e}"))
+
+        if vuln_frag_df is None:
+            msgs.append(("error", "Missing Vulnerability or Earthquake Fragility dataset. Please upload at least one."))
+        else:
+            # 3. Check for missing values in rows where expstr has a value
+            # Only consider rows where 'expstr' is not empty
+            valid_rows = vuln_frag_df[vuln_frag_df['expstr'].notna() & (vuln_frag_df['expstr'] != '')]
+            
+            if vuln_frag_type == "Vulnerability":
+                cols_to_check = ['expstr', 'hw0', 'hw0_5', 'hw1', 'hw1_5', 'hw2', 'hw3', 'hw4', 'hw5', 'hw6']
+            else:
+                cols_to_check = ['expstr', 'muds1_g', 'muds2_g', 'muds3_g', 'muds4_g', 'sigmads1', 'sigmads2', 'sigmads3', 'sigmads4']
+                
+            missing_vals = valid_rows[cols_to_check].isnull().any(axis=1)
+            num_invalid = missing_vals.sum()
+            
+            if num_invalid > 0:
+                msgs.append(("error", f"{vuln_frag_type} data contains '{num_invalid}' rows with missing values where 'expstr' is provided."))
+            else:
+                msgs.append(("success", f"{vuln_frag_type} data missing values check passed."))
+
+            # Check matching with building data if present
+            vf_expstr_list = set(valid_rows['expstr'].astype(str).unique())
+            
+            if 'building' in datasets:
+                bld_df = datasets['building']
+                if 'expstr' in bld_df.columns:
+                    bld_expstr_list = set(bld_df[bld_df['expstr'].notna()]['expstr'].astype(str).unique())
+                    missing_in_vf = bld_expstr_list - vf_expstr_list
+                    if missing_in_vf:
+                        l = list(missing_in_vf)
+                        msgs.append(("error", f"{vuln_frag_type} data is missing 'expstr' records found in building data: {l[:5]}{'...' if len(l)>5 else ''}"))
+                    else:
+                        msgs.append(("success", f"All 'expstr' records in building data are present in the {vuln_frag_type} data."))
+                else:
+                    msgs.append(("error", "Building data is missing the 'expstr' attribute for cross-checking."))
+            else:
+                msgs.append(("info", f"Provide a building dataset along with your {vuln_frag_type} data for a full cross-check of 'expstr' consistency."))
+
+        set_messages(msgs)
+        set_is_processing(False)
+
+    def clear():
+        set_messages([])
+        set_is_processing(False)
+        set_file_drop_key(file_drop_key + 1)
+
+    with solara.Details("Vulnerability / Fragility Data Check"):
+        solara.Markdown("Validation requires either a **Flood Vulnerability** or **Earthquake Fragility** dataset. You can also optionally upload your **Building** dataset for a full cross-check.")
+        solara.Markdown("Drag and drop your file(s) below or click to browse.")
+        
+        FileDropMultiple(on_file=process_files, lazy=False, uid=str(file_drop_key))
+        
+        if is_processing:
+            solara.ProgressLinear(value=True)
+            solara.Text("Validating file(s), please wait...")
+        else:
+            if len(messages) > 0:
+                solara.Button("Clear", on_click=clear, icon_name="mdi-delete", color="error", class_="mt-4 mb-4")
+
+        for m_type, msg in messages:
+            if m_type == "error":
+                solara.Error(msg)
+            elif m_type == "warning":
+                solara.Warning(msg)
+            elif m_type == "success":
+                solara.Success(msg)
+            elif m_type == "info":
+                solara.Info(msg)
+
+
+@solara.component
+def DataValidator():
+    with solara.Details("Data Validator"):
+        with solara.Column(classes=["data-validator-subtools"]):
+            LanduseExposureCheck()
+            HazardDataCheck()
+            VulnerabilityFragilityDataCheck()
+
 @solara.component
 def Utilities():
     
@@ -318,6 +740,7 @@ def Utilities():
         JsonToCsvConverter()
         CsvToJsonConverter()
         FloodVulnerabilityTemplateGenerator()
+        DataValidator()
 
     
 
@@ -339,6 +762,12 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         font-size: 1.1em;
         color: #424242;
     }
+    
+    .data-validator-subtools .v-expansion-panel-header {
+        font-size: 1em; /* smaller than main heading which uses 1.1em or browser default larger */
+        color: #757575; /* lighter gray */
+        font-weight: 600;
+        margin-left: 10px;
     }
     """
     solara.Style(value=css)
