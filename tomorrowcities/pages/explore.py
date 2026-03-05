@@ -350,6 +350,14 @@ def MapViewer():
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')
 
+    def cleanup_cache():
+        # Clear the map layer cache when the MapViewer is unmounted. 
+        # Solara automatically closes the ipyleaflet widgets on unmount, 
+        # so if we revisit this page, we don't want to reuse dead widgets.
+        return lambda: layers.value.setdefault('_map_layer_cache', {}).clear()
+    
+    solara.use_effect(cleanup_cache, [])
+
     def create_layers():
         map_layers = []
         for l in layers.value['layers'].keys():
@@ -363,7 +371,20 @@ def MapViewer():
                     if landuse_filter.value is not None:
                         df_filtered = df[landuse_filter.value]
 
-                map_layer = create_map_layer(df_filtered, l)
+                # Use a robust cache key rather than id(df_filtered) to avoid id() collisions when ephemeral filtered dataframes are garbage collected
+                cache_key_parts = [l, render_count.value]
+
+                if l == 'building' and building_filter.value is not None:
+                    cache_key_parts.append(hash(tuple(building_filter.value)))
+                elif l == 'landuse' and landuse_filter.value is not None:
+                    cache_key_parts.append(hash(tuple(landuse_filter.value)))
+
+                cache_key = tuple(cache_key_parts)
+                if cache_key not in layers.value.setdefault('_map_layer_cache', {}):
+                    print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
+                    layers.value['_map_layer_cache'][cache_key] = create_map_layer(df_filtered, l)
+                
+                map_layer = layers.value['_map_layer_cache'][cache_key]
                 map_layers.append(map_layer)
 
         set_map_layers(map_layers)
