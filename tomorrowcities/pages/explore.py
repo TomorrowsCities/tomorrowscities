@@ -328,9 +328,6 @@ def MapViewer():
     print('rendering mapviewer')
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
-    base_layers, set_base_layers = solara.use_state_or_update([])
-    map_layers, set_map_layers = solara.use_state_or_update([])
-
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -338,10 +335,10 @@ def MapViewer():
         base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldImagery.build_url(),name="Esri WorldImagery",base = True)        
         base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True) 
         base_layer6 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.DarkMatter.build_url(),name="CartoDB Dark",base = True)                                                                                                                                        
-        set_base_layers([base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1])
+        return [base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1]
 
     # create base layers only once
-    solara.use_memo(create_base_layers,[])
+    base_layers = solara.use_memo(create_base_layers,[])
     
     layout = ipywidgets.Layout.element(width='100%', height='55vh')
 
@@ -350,13 +347,7 @@ def MapViewer():
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')
 
-    def cleanup_cache():
-        # Clear the map layer cache when the MapViewer is unmounted. 
-        # Solara automatically closes the ipyleaflet widgets on unmount, 
-        # so if we revisit this page, we don't want to reuse dead widgets.
-        return lambda: layers.value.setdefault('_map_layer_cache', {}).clear()
-    
-    solara.use_effect(cleanup_cache, [])
+    # Removed cleanup_cache as we no longer cache map layers
 
     def create_layers():
         map_layers = []
@@ -371,25 +362,13 @@ def MapViewer():
                     if landuse_filter.value is not None:
                         df_filtered = df[landuse_filter.value]
 
-                # Use a robust cache key rather than id(df_filtered) to avoid id() collisions when ephemeral filtered dataframes are garbage collected
-                cache_key_parts = [l, render_count.value]
-
-                if l == 'building' and building_filter.value is not None:
-                    cache_key_parts.append(hash(tuple(building_filter.value)))
-                elif l == 'landuse' and landuse_filter.value is not None:
-                    cache_key_parts.append(hash(tuple(landuse_filter.value)))
-
-                cache_key = tuple(cache_key_parts)
-                if cache_key not in layers.value.setdefault('_map_layer_cache', {}):
-                    print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
-                    layers.value['_map_layer_cache'][cache_key] = create_map_layer(df_filtered, l)
-                
-                map_layer = layers.value['_map_layer_cache'][cache_key]
+                print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
+                map_layer = create_map_layer(df_filtered, l)
                 map_layers.append(map_layer)
 
-        set_map_layers(map_layers)
+        return map_layers
 
-    solara.use_memo(create_layers,
+    map_layers = solara.use_memo(create_layers,
                     [building_filter.value, landuse_filter.value] +
                     [render_count.value])
 
