@@ -1305,9 +1305,6 @@ def MapViewer():
     print('rendering mapviewer')
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
-    base_layers, set_base_layers = solara.use_state_or_update([])
-    map_layers, set_map_layers = solara.use_state_or_update([])
-
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -1315,10 +1312,10 @@ def MapViewer():
         base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldImagery.build_url(),name="Esri WorldImagery",base = True)        
         base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True) 
         base_layer6 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.DarkMatter.build_url(),name="CartoDB Dark",base = True)                                                                                                                                        
-        set_base_layers([base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1])
+        return [base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1]
 
     # create base layers only once
-    solara.use_memo(create_base_layers,[])
+    base_layers = solara.use_memo(create_base_layers,[])
     
     layout = ipywidgets.Layout.element(width='100%', height='55vh')
 
@@ -1364,9 +1361,9 @@ def MapViewer():
                 map_layer = layers.value['_map_layer_cache'][cache_key]
                 map_layers.append(map_layer)
 
-        set_map_layers(map_layers)
+        return map_layers
 
-    solara.use_memo(create_layers,
+    map_layers = solara.use_memo(create_layers,
                     [building_filter.value, landuse_filter.value] + 
                     [layers.value['render_count'].value])  
 
