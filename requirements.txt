@@ -1,4 +1,5 @@
 solara
+starlette<1.0
 geopandas
 ipyleaflet
 plotly
