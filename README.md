@@ -19,5 +19,13 @@ pip install -e .
 solara run tomorrowcities.pages
 ~~~
 
+### Development setup note
+Use `pip install -e .` for local development. It installs dependencies from
+`pyproject.toml` and installs this repository as an editable package, so
+`solara run tomorrowcities.pages` can import `tomorrowcities` correctly.
+
+`pip install -r requirements.txt` only installs listed dependencies and does
+not install this project package itself unless explicitly included.
+
 ## Sample Data
-[tcdse_sample_data](https://drive.google.com/file/d/1BGPZQ2IKJHY9ExOCCHcNNrCTioYZ8D1y/view?usp=drive_link)
+[tcdse_sample_data](https://drive.google.com/file/d/1HthdwrK0snqVUk0T_j2tHtLJoIyLFdKu/view)
