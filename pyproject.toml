@@ -8,11 +8,12 @@ license = {file = "LICENSE"}
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
 dependencies = [
-    "solara", 
-    "geopandas", 
-    "ipyleaflet", 
+    "solara",
+    "starlette<1.0",
+    "geopandas",
+    "ipyleaflet",
     "plotly",
-    "lorem_text", 
+    "lorem-text",
     "matplotlib",
     "psycopg2-binary",
     "scipy", 
