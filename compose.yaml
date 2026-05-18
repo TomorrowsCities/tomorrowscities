@@ -2,7 +2,9 @@ services:
   tc-app:
     build: .
     image: tc-app
-    ports:
-      - 7860:7860
     network_mode: nginx-proxy-manager_npmnetwork
     restart: unless-stopped
+    mem_limit: 5g
+    memswap_limit: 6g
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
