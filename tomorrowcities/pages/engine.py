@@ -830,6 +830,13 @@ def MetricParameters():
             with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
                 solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
 
+        with solara.Card(title='Earthquake Parameters', subtitle='Choose the parameters for the earthquake simulations'):
+            with solara.Column(gap='10px'):
+                solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
+                solara.Select(label='earthquake simulation method', values=layers.value['earthquake_simulation_methods'], value=layers.value['earthquake_simulation_method_selected'])
+                if layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
+                    solara.InputInt(label='Number of trials',value=layers.value['earthquake_simulation_trial_count'])
+
         with solara.Card(title='Flood Parameters',subtitle='Choose the parameters for the flood simulations'):
             solara.Markdown(md_text='''
                             If the relative damage obtained from the vulnerability curve is beyond 
@@ -1367,6 +1374,74 @@ def MapViewer():
                     [building_filter.value, landuse_filter.value] + 
                     [layers.value['render_count'].value])  
 
+    def create_legend_control():
+        df_lu = layers.value['layers']['landuse']['data'].value
+        df_b = layers.value['layers']['building']['data'].value
+        
+        has_lu = df_lu is not None and isinstance(df_lu, gpd.GeoDataFrame) and 'luf' in df_lu.columns
+        has_b = df_b is not None and isinstance(df_b, gpd.GeoDataFrame) and 'ds' in df_b.columns
+        
+        if not has_lu and not has_b:
+            return None
+            
+        import uuid
+        uid = str(uuid.uuid4())[:8]
+
+        html_lu = ""
+        if has_lu:
+            unique_lufs = set(df_lu['luf'].dropna().unique())
+            for luf in sorted(list(unique_lufs)):
+                color = landuse_colors({'properties': {'luf': luf}})['fillColor']
+                html_lu += f"<div style='display: flex; align-items: center; margin-bottom: 3px;'><div style='width: 15px; height: 15px; flex-shrink: 0; background-color: {color}; border: 1px solid black; margin-right: 5px;'></div><span style='font-size: 12px; line-height: 1.2;'>{luf}</span></div>"
+        else:
+            html_lu = "<span style='font-size: 12px;'>No land use data</span>"
+
+        html_ds = ""
+        ds_labels = {0: "DS0 (No Damage)", 1: "DS1 (Slight)", 2: "DS2 (Moderate)", 3: "DS3 (Extensive)", 4: "DS4 (Complete)"}
+        for ds in [0, 1, 2, 3, 4]:
+            color = ds_to_color[ds]
+            label = ds_labels[ds]
+            html_ds += f"<div style='display: flex; align-items: center; margin-bottom: 3px;'><div style='width: 15px; height: 15px; flex-shrink: 0; background-color: {color}; border: 1px solid black; margin-right: 5px;'></div><span style='font-size: 12px; line-height: 1.2;'>{label}</span></div>"
+
+        html_content = f"""
+        <style>
+        .tabs-{uid} {{ display: flex; margin-bottom: 5px; }}
+        .tab-label-{uid} {{ flex: 1; padding: 4px 2px; text-align: center; cursor: pointer; border: 1px solid #ccc; background: #eee; font-size: 11px; font-weight: bold; border-radius: 3px 3px 0 0; margin-right: 2px; }}
+        .tab-radio-{uid} {{ display: none; }}
+        .tab-content-{uid} {{ display: none; padding-top: 5px; }}
+        #tab1-{uid}:checked ~ .tabs-{uid} .label1-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
+        #tab2-{uid}:checked ~ .tabs-{uid} .label2-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
+        #tab1-{uid}:checked ~ #content1-{uid} {{ display: block; }}
+        #tab2-{uid}:checked ~ #content2-{uid} {{ display: block; }}
+        </style>
+        <details open style='background: white; padding: 8px; border-radius: 5px; box-shadow: 0 1px 5px rgba(0,0,0,0.4); max-height: 300px; overflow-y: auto; width: 170px;'>
+            <summary style='cursor: pointer; font-weight: bold; margin-bottom: 8px; font-size: 13px;'>Map Legend</summary>
+            <input type="radio" name="legend-tab-{uid}" id="tab1-{uid}" class="tab-radio-{uid}" checked>
+            <input type="radio" name="legend-tab-{uid}" id="tab2-{uid}" class="tab-radio-{uid}">
+            <div class="tabs-{uid}">
+                <label for="tab1-{uid}" class="tab-label-{uid} label1-{uid}">Land Use</label>
+                <label for="tab2-{uid}" class="tab-label-{uid} label2-{uid}">Damage</label>
+            </div>
+            <div id="content1-{uid}" class="tab-content-{uid}">
+                {html_lu}
+            </div>
+            <div id="content2-{uid}" class="tab-content-{uid}">
+                {html_ds}
+            </div>
+        </details>
+        """
+        
+        legend_widget = ipywidgets.HTML(value=html_content)
+        return ipyleaflet.WidgetControl.element(widget=legend_widget, position='bottomright')
+
+    legend_control = solara.use_memo(create_legend_control, [
+        layers.value['layers']['landuse']['data'].value,
+        layers.value['layers']['building']['data'].value
+    ])
+    controls = [tool1, tool2, tool3, tool4]
+    if legend_control is not None:
+        controls.append(legend_control)
+
     ipyleaflet.Map.element(
         zoom=zoom,
         max_zoom=23,                    
@@ -1381,7 +1456,7 @@ def MapViewer():
         box_zoom=True,
         keyboard=True if random.random() > 0.5 else False,
         layers=base_layers + map_layers,
-        controls = [tool1, tool2, tool3, tool4],
+        controls = controls,
         layout = layout
         )
         
@@ -1819,12 +1894,6 @@ def ExecutePanel():
         solara.Markdown("#### Hazard")
         with solara.Row(justify="left"):
             solara.ToggleButtonsSingle(value=layers.value['hazard'].value, on_value=layers.value['hazard'].set, values=layers.value['hazard_list'])
-        if layers.value['hazard'].value == 'earthquake':
-            with solara.Column(gap='40px'):
-                solara.Select(label='unit of earthquake intensity map', values=['m/s2','g'], value=layers.value['earthquake_intensity_unit'])
-                solara.Select(label='earthquake simulation method', values=layers.value['earthquake_simulation_methods'], value=layers.value['earthquake_simulation_method_selected'])
-                if layers.value['earthquake_simulation_method_selected'].value == 'monte carlo':
-                    solara.InputInt(label='Number of trials',value=layers.value['earthquake_simulation_trial_count'])
         if layers.value['hazard'].value == 'landslide':
             solara.Markdown("#### Landslide trigger level")
             with solara.Row(justify="left"):
@@ -1911,8 +1980,7 @@ def MapInfo():
     print(f'{layers.value["bounds"].value}')
     version = layers.value["version"]
     print(layers.value['map_info_button'].value)
-    with solara.Row(justify="center"):
-        solara.Markdown(f'Engine [v{version}](https://github.com/TomorrowsCities/tomorrowcities/releases/tag/v{version})')
+    solara.Div(style={"height": "2px"})
     with solara.Row(justify="center"):
         solara.ToggleButtonsSingle(value=layers.value['map_info_button'].value, 
                                on_value=layers.value['map_info_button'].set, 
@@ -2314,7 +2382,7 @@ def EngineSidebarContent():
             solara.Details(
                 summary="Upload Data",
                 children=[ImportDataZone1()],
-                expand=False
+                expand=True
             )
         with solara.lab.Tab("SETTINGS"):
             ExecutePanel()
