@@ -28,7 +28,7 @@ google_client = OAuth2Session(config['google_client_id'],
                     scope=[config['google_scope']], 
                     redirect_uri=config['google_redirect_uri'])
 
-route_order = ["/", "docs", "engine","explore", "utilities", "account"] # "policies"
+route_order = ["/", "engine","explore", "utilities", "docs", "account"] # "policies"
 
 def store_in_session_storage(key, value):
     sesssion_id = solara.get_session_id()
@@ -158,18 +158,22 @@ def Layout(children=[]):
                     # Use standard Buttons in a Column for reliable clicking
                     with solara.Column(style={"margin-top": "20px", "gap": "10px"}):
                         for route_entry in routes:
-                            if route_entry.path in ["engine", "explore", "utilities"]:
-                                continue
                             # if route_entry.path == "account":
                             #    continue
                             if route_entry.path == "/":
-                                name = "home"
+                                name = "HOME"
+                            elif route_entry.path == "engine":
+                                name = "COMPUTE"
+                            elif route_entry.path == "explore":
+                                name = "EXPLORE"
+                            elif route_entry.path == "utilities":
+                                name = "UTILITIES"
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
                             elif route_entry.path == "account":
                                 name = "➜] LOGIN"
                             else:
-                                name = route_entry.path
+                                name = route_entry.path.upper()
 
                             
                             is_active = False
@@ -210,7 +214,7 @@ def Layout(children=[]):
                 # Center Column: Tabs (Desktop Only)
                 with solara.Div(classes=["mobile-hide"]):
                     current_route_index = None
-                    filtered_routes = [r for r in routes if r.path not in ["engine", "explore", "utilities"]]
+                    filtered_routes = routes
                     for i, r in enumerate(filtered_routes):
                         if route.path == r.path:
                             current_route_index = i
@@ -224,13 +228,19 @@ def Layout(children=[]):
                     with rv.Tabs(v_model=current_route_index, on_v_model=on_tab_change, right=True, optional=True, background_color="transparent"):
                         for route_entry in filtered_routes:
                             if route_entry.path == "/":
-                                name = "home"
+                                name = "HOME"
+                            elif route_entry.path == "engine":
+                                name = "COMPUTE"
+                            elif route_entry.path == "explore":
+                                name = "EXPLORE"
+                            elif route_entry.path == "utilities":
+                                name = "UTILITIES"
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
                             elif route_entry.path == "account":
                                 name = "➜] LOGIN"
                             else:
-                                name = route_entry.path
+                                name = route_entry.path.upper()
                             
                             with rv.Tab():
                                 solara.Text(name)
