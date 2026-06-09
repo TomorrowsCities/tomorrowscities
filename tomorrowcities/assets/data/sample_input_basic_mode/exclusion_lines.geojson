@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "exclusion_lines",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1, "setback": 5 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 36.779359625513941, -1.298545864931573 ], [ 36.779089388221529, -1.291943745399927 ] ] ] } },
+{ "type": "Feature", "properties": { "id": 2, "setback": 10 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 36.775942394921785, -1.292708828476695 ], [ 36.782347797370733, -1.292438625402857 ] ] ] } },
+{ "type": "Feature", "properties": { "id": 3, "setback": 2 }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 36.784036607346152, -1.295798514691526 ], [ 36.784432596384008, -1.29816949747103 ], [ 36.786661130049993, -1.298001219118237 ] ] ] } }
+]
+}

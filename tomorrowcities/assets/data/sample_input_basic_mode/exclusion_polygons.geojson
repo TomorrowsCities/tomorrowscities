@@ -1,0 +1,8 @@
+{
+"type": "FeatureCollection",
+"name": "exclusion_polygons",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1, "setback": 5, "population": 0 }, "geometry": { "type": "MultiPolygon", "coordinates": [ [ [ [ 36.785127369542643, -1.294487199730274 ], [ 36.786316661239347, -1.294380301901544 ], [ 36.786463987796992, -1.29553757278169 ], [ 36.785250898944, -1.295667979089441 ], [ 36.785127369542643, -1.294487199730274 ] ] ] ] } }
+]
+}

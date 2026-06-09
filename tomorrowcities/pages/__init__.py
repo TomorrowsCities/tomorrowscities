@@ -222,6 +222,8 @@ def Layout(children=[]):
                             current_route_index = i
 
                     def on_tab_change(index):
+                        if index is None or index < 0 or index >= len(filtered_routes):
+                            return
                         target_route = filtered_routes[index]
                         router.push(target_route.path)
 

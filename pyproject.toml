@@ -11,6 +11,7 @@ dependencies = [
     "solara",
     "starlette<1.0",
     "geopandas",
+    "fiona",
     "ipyleaflet",
     "plotly",
     "lorem-text",

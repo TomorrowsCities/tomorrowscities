@@ -17,10 +17,13 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import io
 from shapely.geometry import Point, Polygon
 import xml
+import xml.etree.ElementTree as ET
 import logging, sys
+import re
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
+from solara.hooks.dataframe import cross_filter_context
 from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
 # from .settings import landslide_max_trials
 # from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
@@ -38,16 +41,83 @@ from ..backend.engine import compute, compute_power_infra, compute_road_infra, g
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer, \
                         convert_data_for_filter_view, lbl_2_str
-from ..components.file_drop import FileDropMultiple
+from ..components.file_drop import FileDrop, FileDropMultiple
+from ..components.notification_center import (
+    NotificationCenter,
+    clear_notifications,
+    log_error as notify_error,
+    log_info as notify_info,
+    log_success as notify_success,
+    log_warning as notify_warning,
+)
 from .docs import data_import_help
 import ipywidgets
 from solara.lab import task
 import tempfile
+from ..backend.exposure_generator import (
+    fetch_osm_constraints,
+    merge_constraints,
+    process_data as process_generated_exposure,
+    read_excel_bytes,
+    read_geospatial_bytes,
+    read_multiple_geospatial_bytes,
+)
+from ..backend.exposure_generator.logging_utils import clear_log_buffer, set_log_sink
+from ..backend.exposure_generator.basic_mode import (
+    BASIC_MODE_CONFIG,
+    INCOME_OPTIONS,
+    URBAN_ATLAS_CLASSES,
+    create_basic_mapping_table,
+    normalize_basic_mapping_table,
+    prepare_basic_landuse,
+)
+
+EXPOSURE_DATA_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "data"
+BASIC_SYMBOLOGY_SLD_PATH = Path(__file__).resolve().parents[1] / "assets" / "symbology" / "Urban_Atlas_2018_Legend.sld"
+BASIC_LUF_PLACEHOLDER = "Select appropriate class..."
+BASIC_INCOME_PLACEHOLDER = "Select average income..."
+
+
+def get_sld_color_map():
+    if not BASIC_SYMBOLOGY_SLD_PATH.exists():
+        return {}
+
+    try:
+        tree = ET.parse(BASIC_SYMBOLOGY_SLD_PATH)
+        root = tree.getroot()
+        ns = {
+            "sld": "http://www.opengis.net/sld",
+            "se": "http://www.opengis.net/se",
+            "ogc": "http://www.opengis.net/ogc",
+        }
+        color_map = {}
+        for rule in root.findall(".//se:Rule", ns):
+            title_elem = rule.find(".//se:Title", ns)
+            fill_elem = rule.find('.//se:Fill/se:SvgParameter[@name="fill"]', ns)
+            if title_elem is None or fill_elem is None or not title_elem.text or not fill_elem.text:
+                continue
+            title = title_elem.text
+            class_name = title.split(":", 1)[1].strip() if ":" in title else title.strip()
+            norm_name = re.sub(r"[^a-z0-9]", "", class_name.lower())
+            color_map[norm_name] = fill_elem.text
+        return color_map
+    except Exception:
+        return {}
+
+
+SLD_COLOR_MAP = get_sld_color_map()
+
+
+def landuse_style(fill_color: str):
+    return {"color": "#666666", "fillColor": fill_color, "weight": 1, "fillOpacity": 0.7}
 
 tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
 building_filter = solara.reactive(None)
 landuse_filter = solara.reactive(None)
+selected_tab = solara.reactive(None)
+MAP_INFO_TAB_INDEX = 2
+scenario_name = solara.reactive("")
 center_default = (41.01,28.98)
 population_displacement_consensus = solara.reactive(2)
 def create_new_app_state():
@@ -91,6 +161,16 @@ def create_new_app_state():
             'filter_cols': ['luf'],
             'attributes_required': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'avgincome'])],
             'attributes': [set(['geometry', 'zoneid', 'luf', 'population', 'densitycap', 'floorarat', 'setback', 'avgincome'])]},
+        'constraint': {
+            'render_order': 25,
+            'map_info_tooltip': 'Number of exclusion/alignment features',
+            'data': solara.reactive(None),
+            'df': solara.reactive(None),
+            'pre_processing': identity_preprocess,
+            'extra_cols': {},
+            'filter_cols': [],
+            'attributes_required': [set(['geometry'])],
+            'attributes': [set(['geometry'])]},
         'building': {
             'render_order': 50,
             'map_info_tooltip': 'Number of buildings',
@@ -398,6 +478,8 @@ reset_counter = solara.reactive(0)
 
 def reset_session():
     reset_counter.value += 1
+    clear_notifications()
+    scenario_name.set("")
     store_in_session_storage('population_displacement_consensus', None)
     for layer_name in layers.value['layers'].keys():
         store_in_session_storage(layer_name, None)
@@ -418,6 +500,8 @@ def create_metadata(data):
     m = dict()
     m['hazard'] = data['hazard']
     m['infra'] = data['infra']
+    cleaned_name = scenario_name.value.strip()
+    m['scenario_name'] = cleaned_name if cleaned_name else None
     m['datetime_analysis'] = data['datetime_analysis']
     m['datetime_upload'] = datetime.datetime.utcnow()
     if user.value:
@@ -426,13 +510,20 @@ def create_metadata(data):
         m['user_id'] = None
     return m
 
+def build_scenario_basename(metadata):
+    date_string = metadata['datetime_upload'].strftime('%Y%m%d%H%M%S')
+    cleaned_name = (metadata.get('scenario_name') or "").strip()
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", cleaned_name).strip("_")
+    if not slug:
+        slug = "SCENARIO"
+    return f'TCDSE_SESSION_{slug}_{date_string}_PKL'
+
 @task 
 def save_app_state():
     data = clone_app_state(layers.value)
     metadata = create_metadata(data)
     print('metadata', metadata)
-    date_string = metadata['datetime_upload'].strftime('%Y%m%d%H%M%S')
-    basename = f'TCDSE_SESSION_{date_string}_PKL'
+    basename = build_scenario_basename(metadata)
     for ext, var in zip(['data','metadata'],[data,metadata]):
         filename = f'{basename}.{ext}'
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -446,22 +537,30 @@ def save_app_state():
 def generic_layer_colors(feature):
     return None
 
-def generic_layer_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
+def ensure_map_info_state():
+    if 'map_info_detail' not in layers.value:
+        layers.value['map_info_detail'] = solara.reactive({})
+    if 'map_info_button' not in layers.value:
+        layers.value['map_info_button'] = solara.reactive("summary")
+
+def open_map_info(properties):
+    ensure_map_info_state()
     layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    layers.value['map_info_button'].set("detail")
+    selected_tab.set(MAP_INFO_TAB_INDEX)
+
+def generic_layer_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
+    open_map_info(properties)
 
 def building_colors(feature):
     ds = feature['properties']['ds']
     return {'fillColor': ds_to_color[ds], 'color': 'black'}
 
 def building_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def road_node_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def road_edge_colors(feature):
     is_damaged = feature['properties']['is_damaged']
@@ -471,9 +570,7 @@ def road_edge_colors(feature):
         return {'color': 'black',  'dashArray': '0'}
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail") 
+    open_map_info(properties)
 
 def power_edge_colors(feature):
     is_damaged = feature['properties'].get('is_damaged', False)
@@ -483,55 +580,96 @@ def power_edge_colors(feature):
         return {'color': 'blue',  'dashArray': '0'}
 
 def power_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def landuse_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
-@solara.memoize(key=lambda feature: (feature['properties']['luf']))
+def intensity_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
+    open_map_info(properties)
+
 def landuse_colors(feature):
-    #print(feature)
-    luf_type = set(feature['properties']['luf'].lower().replace('(','').replace(')','').split())
-    if {'high','residential','density'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#AF2418'}
-    elif {'medium','residential','density'}.issubset(luf_type) or {'moderate','residential','density'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#EB5149'}
-    elif {'low','residential','density'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#EF8784'}
-    elif {'commercial','residential'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#B73A51'}
-    elif {'water'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#9DEFE6'}
-    elif {'agriculture'}.issubset(luf_type) or {'agricultural'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#FFFFB2'}
-    elif {'forest'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#3D8A26'}
-    elif {'industry'}.issubset(luf_type) or {'industrial'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#8A00FF'}
-    elif {'road'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#949595'}
-    elif {'railway'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#595959'}
-    elif {'logistical'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#E1CDCB'}
-    elif {'urban','green'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#9EDA43'}
-    elif {'sports'}.issubset(luf_type) or {'leisure'}.issubset(luf_type) or {'recreational'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#B6D1A9'}
-    elif {'pasture'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#E6E669'}
-    elif {'wetland'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#A5A6F9'}
-    elif {'public'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#8A60FF'}
-    elif {'commercial'}.issubset(luf_type):
-        luf_color = {'color': 'black', 'fillColor': '#BD55EB'}
-    else:
-        luf_color = {'color': 'black','fillColor': 'orange'} 
-    return luf_color
+    properties = feature.get("properties", {})
+    luf_value = str(properties.get("luf", "") or "")
+    norm_luf = re.sub(r"[^a-z0-9]", "", luf_value.lower())
+    if norm_luf in SLD_COLOR_MAP:
+        return landuse_style(SLD_COLOR_MAP[norm_luf])
+    for key, color in SLD_COLOR_MAP.items():
+        if key and (key in norm_luf or norm_luf in key):
+            return landuse_style(color)
+
+    luf_type = set(luf_value.lower().replace('(','').replace(')','').split())
+    if {'continuous', 'urban', 'fabric'}.issubset(luf_type):
+        return landuse_style('#800000')
+    if {'discontinuous', 'dense', 'urban', 'fabric'}.issubset(luf_type):
+        return landuse_style('#BF0000')
+    if {'discontinuous', 'medium', 'density', 'urban', 'fabric'}.issubset(luf_type):
+        return landuse_style('#FF4040')
+    if {'discontinuous', 'low', 'density', 'urban', 'fabric'}.issubset(luf_type):
+        return landuse_style('#FF8080')
+    if {'discontinuous', 'very', 'low', 'density', 'urban', 'fabric'}.issubset(luf_type):
+        return landuse_style('#FFBFBF')
+    if {'isolated', 'structures'}.issubset(luf_type):
+        return landuse_style('#CC6666')
+    if {'industrial', 'commercial', 'public', 'military', 'private', 'units'}.issubset(luf_type):
+        return landuse_style('#CC4DF2')
+    if {'fast', 'transit', 'roads'}.issubset(luf_type):
+        return landuse_style('#959595')
+    if {'other', 'roads'}.issubset(luf_type):
+        return landuse_style('#B3B3B3')
+    if {'railways'}.issubset(luf_type) or {'railway'}.issubset(luf_type):
+        return landuse_style('#595959')
+    if {'port', 'areas'}.issubset(luf_type):
+        return landuse_style('#E6CCCC')
+    if {'airports'}.issubset(luf_type) or {'airport'}.issubset(luf_type):
+        return landuse_style('#E6CCCC')
+    if {'mineral', 'extraction'}.issubset(luf_type):
+        return landuse_style('#A64D00')
+    if {'construction', 'sites'}.issubset(luf_type):
+        return landuse_style('#FF4DFF')
+    if {'without', 'current', 'use'}.issubset(luf_type):
+        return landuse_style('#FFA6FF')
+    if {'green', 'urban', 'areas'}.issubset(luf_type):
+        return landuse_style('#A6FF80')
+    if {'sports', 'leisure'}.issubset(luf_type) or {'recreational'}.issubset(luf_type):
+        return landuse_style('#A6E64D')
+    if {'arable', 'land'}.issubset(luf_type):
+        return landuse_style('#FFFFA8')
+    if {'permanent', 'crops'}.issubset(luf_type):
+        return landuse_style('#E68000')
+    if {'pastures'}.issubset(luf_type) or {'pasture'}.issubset(luf_type):
+        return landuse_style('#E6A64D')
+    if {'complex', 'mixed', 'cultivation'}.issubset(luf_type):
+        return landuse_style('#E6E64D')
+    if {'orchards'}.issubset(luf_type):
+        return landuse_style('#F2A64D')
+    if {'forests'}.issubset(luf_type) or {'forest'}.issubset(luf_type):
+        return landuse_style('#00A600')
+    if {'herbaceous'}.issubset(luf_type):
+        return landuse_style('#A6F200')
+    if {'open', 'spaces', 'vegetation'}.issubset(luf_type):
+        return landuse_style('#E6E64D')
+    if {'wetlands'}.issubset(luf_type) or {'wetland'}.issubset(luf_type):
+        return landuse_style('#A6A6FF')
+    if {'water', 'bodies'}.issubset(luf_type) or {'water'}.issubset(luf_type):
+        return landuse_style('#00CCFF')
+    if luf_type == {'residential'}:
+        return landuse_style('#FF4040')
+    if {'high', 'residential', 'density'}.issubset(luf_type):
+        return landuse_style('#800000')
+    if {'medium', 'residential', 'density'}.issubset(luf_type) or {'moderate', 'residential', 'density'}.issubset(luf_type):
+        return landuse_style('#FF4040')
+    if {'low', 'residential', 'density'}.issubset(luf_type):
+        return landuse_style('#FF8080')
+    if {'commercial', 'residential'}.issubset(luf_type):
+        return landuse_style('#CC4DF2')
+    if {'industry'}.issubset(luf_type) or {'industrial'}.issubset(luf_type):
+        return landuse_style('#CC4DF2')
+    if {'road'}.issubset(luf_type):
+        return landuse_style('#B3B3B3')
+    if {'public'}.issubset(luf_type):
+        return landuse_style('#CC4DF2')
+    return landuse_style('orange')
 
 
 
@@ -540,16 +678,33 @@ def create_map_layer(df, name):
         # Take the largest 500_000 values to display
         im_col = 'pga' if 'pga' in df.columns else 'im'
         df_non_zero = df[df[im_col] > 0]
-        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000))
+        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000)).copy()
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1, name = name) 
+        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1, name = name)
+        clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
+        half_side = 0.00008
+        clickable_df["geometry"] = clickable_df["geometry"].apply(lambda point: Polygon([
+            (point.x - half_side, point.y - half_side),
+            (point.x + half_side, point.y - half_side),
+            (point.x + half_side, point.y + half_side),
+            (point.x - half_side, point.y + half_side),
+        ]))
+        info_layer = ipyleaflet.GeoJSON(
+            data=json.loads(clickable_df.to_json()),
+            name=f"{name}-info",
+            style={"opacity": 0, "fillOpacity": 0, "weight": 0},
+            hover_style={"opacity": 0.15, "fillOpacity": 0.15, "weight": 1, "color": "#ffffff"},
+        )
+        info_layer.on_click(intensity_click_handler)
+        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name)
     elif name == "landuse":
+        style_callback = landuse_colors if "luf" in df.columns else generic_layer_colors
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
-            style_callback=landuse_colors)
+            style_callback=style_callback)
         map_layer.on_click(landuse_click_handler)
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
@@ -916,8 +1071,157 @@ def MetricWidget(name, description, value, max_value, render_count, icon=None):
             if icon:
                 solara.Image(icon, width="75px") 
             # Visible Label, Fixed Height for Alignment, vertically centered
-            solara.Text(description, style={"font-weight": "bold", "font-size": "12px", "height": "55px", "display": "flex", "align-items": "center", "justify-content": "center", "margin-top": "4px", "line-height": "1.2"})
+            solara.Text(description, style={"font-weight": "bold", "font-size": "14px", "height": "55px", "display": "flex", "align-items": "center", "justify-content": "center", "margin-top": "4px", "line-height": "1.2"})
             solara.FigureEcharts(option=options, attributes={"style": "height:100px; width:100%; display: flex; justify-content: center; align-items: center;"}) #min-width: 80px;
+
+
+def create_distribution_chart(dataframe: pd.DataFrame, column_name: str, title: str, sort_order=None):
+    if dataframe is None or column_name not in dataframe.columns:
+        return None
+
+    series = dataframe[column_name].dropna()
+    if series.empty:
+        return None
+
+    counts = series.value_counts().reset_index()
+    counts.columns = [column_name, "Count"]
+
+    if sort_order is not None:
+        counts[column_name] = pd.Categorical(counts[column_name], categories=sort_order, ordered=True)
+        counts = counts.sort_values(column_name)
+    else:
+        try:
+            counts = counts.sort_values(column_name)
+        except Exception:
+            counts = counts.sort_values("Count", ascending=False)
+
+    counts["Label"] = counts[column_name].astype(str)
+    counts["Percent"] = (counts["Count"] / counts["Count"].sum() * 100).round(1)
+
+    return {
+        "title": {"text": title, "left": "center", "textStyle": {"fontSize": 14, "fontWeight": 700}},
+        "tooltip": {"trigger": "axis", "axisPointer": {"type": "shadow"}},
+        "grid": {"left": 40, "right": 20, "top": 55, "bottom": 80},
+        "xAxis": {
+            "type": "category",
+            "data": counts["Label"].tolist(),
+            "axisLabel": {"interval": 0, "rotate": 25, "fontSize": 11},
+        },
+        "yAxis": {"type": "value", "name": "Count", "nameTextStyle": {"fontSize": 11}},
+        "series": [
+            {
+                "type": "bar",
+                "data": counts["Count"].tolist(),
+                "itemStyle": {
+                    "color": {
+                        "type": "linear",
+                        "x": 0,
+                        "y": 0,
+                        "x2": 0,
+                        "y2": 1,
+                        "colorStops": [
+                            {"offset": 0, "color": "#235789"},
+                            {"offset": 1, "color": "#7fb7df"},
+                        ],
+                    },
+                    "borderRadius": [6, 6, 0, 0],
+                },
+                "label": {
+                    "show": True,
+                    "position": "top",
+                    "formatter": [f"{value}%" for value in counts["Percent"].tolist()],
+                    "fontSize": 11,
+                },
+            }
+        ],
+        "backgroundColor": "transparent",
+    }
+
+
+@solara.component
+def ChartCard(option):
+    with solara.Card(
+        elevation=1,
+        style={
+            "padding": "8px",
+            "borderRadius": "14px",
+            "border": "1px solid rgba(31, 42, 51, 0.08)",
+            "background": "#fcfdff",
+        },
+    ):
+        solara.FigureEcharts(option=option, attributes={"style": "height:340px; width:100%;"})
+
+
+@solara.component
+def GeneratedDataTablesCharts():
+    buildings = layers.value["layers"]["building"]["data"].value
+    households = layers.value["layers"]["household"]["data"].value
+    individuals = layers.value["layers"]["individual"]["data"].value
+
+    if buildings is None:
+        solara.Info("There is no generated exposure data yet.")
+        return
+
+    building_df = pd.DataFrame(buildings.drop(columns="geometry", errors="ignore")) if isinstance(buildings, gpd.GeoDataFrame) else pd.DataFrame(buildings)
+    household_df = pd.DataFrame(households) if households is not None else None
+    individual_df = pd.DataFrame(individuals) if individuals is not None else None
+
+    with solara.lab.Tabs():
+        with solara.lab.Tab("Statistics"):
+            with solara.Row(gap="16px", style={"flexWrap": "wrap"}):
+                with solara.Card(title="Buildings", elevation=1, style={"minWidth": "180px"}):
+                    solara.Text(f"{len(building_df):,}", style={"font-size": "1.6rem", "font-weight": "800"})
+                with solara.Card(title="Households", elevation=1, style={"minWidth": "180px"}):
+                    solara.Text(f"{0 if household_df is None else len(household_df):,}", style={"font-size": "1.6rem", "font-weight": "800"})
+                with solara.Card(title="Individuals", elevation=1, style={"minWidth": "180px"}):
+                    solara.Text(f"{0 if individual_df is None else len(individual_df):,}", style={"font-size": "1.6rem", "font-weight": "800"})
+
+        with solara.lab.Tab("Building Data"):
+            solara.Markdown("Generated building attributes.")
+            solara.DataFrame(building_df, items_per_page=10)
+
+        with solara.lab.Tab("Building Charts"):
+            solara.Markdown("Distribution views for the generated building stock.")
+            with solara.GridFixed(columns=2):
+                for option in [
+                    create_distribution_chart(building_df, "lrstype", "LRS Distribution"),
+                    create_distribution_chart(building_df, "occbld", "Occupancy Distribution"),
+                    create_distribution_chart(building_df, "codelevel", "Code Level Distribution"),
+                    create_distribution_chart(building_df, "nstoreys", "Storey Distribution"),
+                ]:
+                    if option is not None:
+                        ChartCard(option)
+
+        if household_df is not None:
+            with solara.lab.Tab("Household Data"):
+                solara.Markdown("Generated household attributes.")
+                solara.DataFrame(household_df, items_per_page=10)
+
+            with solara.lab.Tab("Household Charts"):
+                solara.Markdown("Distribution views for household composition.")
+                with solara.GridFixed(columns=2):
+                    for option in [
+                        create_distribution_chart(household_df, "nind", "Household Size Distribution"),
+                        create_distribution_chart(household_df, "income", "Income Level Distribution", sort_order=["lowIncomeA", "lowIncomeB", "midIncome", "highIncome"]),
+                    ]:
+                        if option is not None:
+                            ChartCard(option)
+
+        if individual_df is not None:
+            with solara.lab.Tab("Individual Data"):
+                solara.Markdown("Generated individual attributes.")
+                solara.DataFrame(individual_df, items_per_page=10)
+
+            with solara.lab.Tab("Individual Charts"):
+                solara.Markdown("Distribution views for individual demographics.")
+                with solara.GridFixed(columns=2):
+                    for option in [
+                        create_distribution_chart(individual_df, "gender", "Gender Distribution"),
+                        create_distribution_chart(individual_df, "eduattstat", "Education Status Distribution"),
+                        create_distribution_chart(individual_df, "age", "Age Distribution"),
+                    ]:
+                        if option is not None:
+                            ChartCard(option)
 
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
@@ -983,8 +1287,39 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
         
     return (name, data)
 
+
+def update_map_center_from_gdf(data: gpd.GeoDataFrame):
+    if data is None or data.empty or "geometry" not in data.columns:
+        return
+    data_wgs84 = data if data.crs == "EPSG:4326" else data.to_crs("EPSG:4326")
+    centroids = data_wgs84.to_crs("EPSG:3857").centroid.to_crs("EPSG:4326")
+    layers.value["center"].set((centroids.y.mean(), centroids.x.mean()))
+
+
+def set_layer_data(layer_name: str, data, update_center: bool = False):
+    if isinstance(data, gpd.GeoDataFrame):
+        gdf = data.reset_index(drop=True)
+        if gdf.crs is None:
+            gdf = gdf.set_crs("EPSG:4326")
+        layers.value["layers"][layer_name]["data"].set(gdf)
+        layers.value["layers"][layer_name]["df"].set(gdf.drop(columns=["geometry"], errors="ignore"))
+        if update_center:
+            update_map_center_from_gdf(gdf)
+    elif isinstance(data, pd.DataFrame):
+        df = data.reset_index(drop=True)
+        layers.value["layers"][layer_name]["data"].set(df)
+        layers.value["layers"][layer_name]["df"].set(df)
+    else:
+        layers.value["layers"][layer_name]["data"].set(data)
+
+
+def clear_layer_data(layer_name: str):
+    layers.value["layers"][layer_name]["data"].set(None)
+    layers.value["layers"][layer_name]["df"].set(None)
+
 @solara.component
 def FilterPanel():
+    cross_filter_store = solara.use_context(cross_filter_context)
     #print(f'{layers.value["bounds"].value}')
     # nonempty_layers = {name: layer for name, layer in layers.value['layers'].items() if layer['data'].value is not None}
     #with solara.lab.Tabs(background_color="#ebebeb"):
@@ -1061,47 +1396,58 @@ def FilterPanel():
         print(df)
         set_tally_minimal_filter_view(df)
 
-    # Building
-    solara.use_memo(create_building_filter_view, [layers.value['layers']['building']['df'].value])
-    building_filter.value, _ = solara.use_cross_filter(id(building_filter_view), "building_filter")
-    if building_filter_view is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("BUILDING FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
-                solara.CrossFilterReport(building_filter_view)
-                for col, colinfo in lbl_2_str['building'].items():
-                    if colinfo['name'] in building_filter_view.columns:
-                        solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True, max_unique=5000)
-    
-    # Landuse
-    solara.use_memo(create_landuse_filter_view, [layers.value['layers']['landuse']['df'].value])
-    landuse_filter.value, _ = solara.use_cross_filter(id(landuse_filter_view), "landuse_filter")
-    if landuse_filter_view is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("LANDUSE FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
-                solara.CrossFilterReport(landuse_filter_view)
-                for col, colinfo in lbl_2_str['landuse'].items():
-                    if colinfo['name'] in landuse_filter_view.columns:
-                        solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True, max_unique=5000)
-    
-    # Tally minimal
-    solara.use_memo(create_tally_minimal_filter_view, [tally_counter.value])
-    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal_filter_view), "tally_filter")
-    if tally_minimal_filter_view is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("METRIC FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
-                solara.CrossFilterReport(tally_minimal_filter_view)
-                for col, colinfo in lbl_2_str['tally_minimal'].items():
-                    if colinfo['name'] in tally_minimal_filter_view.columns:
-                        solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+    with solara.Column(classes=["map-filter-panel"], gap="8px"):
+        solara.Markdown("#### Filters")
+
+        solara.use_memo(create_landuse_filter_view, [layers.value['layers']['landuse']['df'].value])
+        landuse_filter.value, set_landuse_cross_filter = solara.use_cross_filter(id(landuse_filter_view), "landuse_filter")
+        solara.use_memo(create_building_filter_view, [layers.value['layers']['building']['df'].value])
+        building_filter.value, set_building_cross_filter = solara.use_cross_filter(id(building_filter_view), "building_filter")
+        solara.use_memo(create_tally_minimal_filter_view, [tally_counter.value])
+        tally_filter.value, set_tally_cross_filter = solara.use_cross_filter(id(tally_minimal_filter_view), "tally_filter")
+        if landuse_filter_view is None and building_filter_view is None and tally_minimal_filter_view is None:
+            solara.Text("Filters become available when analysis results are ready.")
+
+        if landuse_filter_view is not None:
+            btn = solara.Button("LANDUSE FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Land Use Filters**")
+                        solara.CrossFilterReport(landuse_filter_view)
+                        for col, colinfo in lbl_2_str['landuse'].items():
+                            if colinfo['name'] in landuse_filter_view.columns:
+                                solara.CrossFilterSelect(landuse_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+
+        if building_filter_view is not None:
+            btn = solara.Button("BUILDING FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Building Filters**")
+                        solara.CrossFilterReport(building_filter_view)
+                        for col, colinfo in lbl_2_str['building'].items():
+                            if colinfo['name'] in building_filter_view.columns:
+                                solara.CrossFilterSelect(building_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+
+        if tally_minimal_filter_view is not None:
+            btn = solara.Button("METRIC FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Metric Filters**")
+                        solara.CrossFilterReport(tally_minimal_filter_view)
+                        for col, colinfo in lbl_2_str['tally_minimal'].items():
+                            if colinfo['name'] in tally_minimal_filter_view.columns:
+                                solara.CrossFilterSelect(tally_minimal_filter_view, colinfo['name'], multiple=True, max_unique=5000)
+        def reset_filters():
+            for data_key in [id(landuse_filter_view), id(building_filter_view), id(tally_minimal_filter_view)]:
+                if data_key in cross_filter_store.filters:
+                    for key in list(cross_filter_store.filters[data_key].keys()):
+                        cross_filter_store.filters[data_key][key] = None
+            for listener in list(cross_filter_store.listeners):
+                listener()
+        solara.Button("Reset Filters", on_click=reset_filters, text=True, outlined=True, style={"width": "100%"})
 
 @solara.component
 def LayerDisplayer():
@@ -1228,7 +1574,7 @@ def MetricPanel():
     with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
         solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
         with solara.Link("/docs/metrics"):
-             with solara.Tooltip('Metric definitions. Click for more info.'):
+             with solara.Tooltip('Click for impact metric definitions'):
                 solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
     if metric_update_pending.value:
         solara.ProgressLinear(metric_update_pending.value)
@@ -1312,6 +1658,7 @@ def MapViewer():
     print('rendering mapviewer')
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
+    filters_open, set_filters_open = solara.use_state(False)
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -1341,8 +1688,12 @@ def MapViewer():
 
     def create_layers():
         map_layers = []
-        for l in layers.value['layers'].keys():
-            df = layers.value['layers'][l]['data'].value
+        sorted_layers = sorted(
+            layers.value['layers'].items(),
+            key=lambda item: item[1].get('render_order', 0)
+        )
+        for l, layer_config in sorted_layers:
+            df = layer_config['data'].value
             if df is not None and isinstance(df, gpd.GeoDataFrame):
                 df_filtered = df
                 if l == 'building':
@@ -1442,23 +1793,38 @@ def MapViewer():
     if legend_control is not None:
         controls.append(legend_control)
 
-    ipyleaflet.Map.element(
-        zoom=zoom,
-        max_zoom=23,                    
-        on_zoom=set_zoom,
-        on_bounds=layers.value['bounds'].set,
-        center=layers.value['center'].value,
-        on_center=layers.value['center'].set,
-        scroll_wheel_zoom=True,
-        dragging=True,
-        double_click_zoom=True,
-        touch_zoom=True,
-        box_zoom=True,
-        keyboard=True if random.random() > 0.5 else False,
-        layers=base_layers + map_layers,
-        controls = controls,
-        layout = layout
-        )
+    with solara.Div(classes=["map-shell"]):
+        ipyleaflet.Map.element(
+            zoom=zoom,
+            max_zoom=23,                    
+            on_zoom=set_zoom,
+            on_bounds=layers.value['bounds'].set,
+            center=layers.value['center'].value,
+            on_center=layers.value['center'].set,
+            scroll_wheel_zoom=True,
+            dragging=True,
+            double_click_zoom=True,
+            touch_zoom=True,
+            box_zoom=True,
+            keyboard=True if random.random() > 0.5 else False,
+            layers=base_layers + map_layers,
+            controls = controls,
+            layout = layout
+            )
+        with solara.Div(classes=["map-filter-overlay"]):
+            with solara.Tooltip("Show filters"):
+                solara.Button(
+                    icon_name="mdi-filter-variant",
+                    icon=True,
+                    on_click=lambda: set_filters_open(not filters_open),
+                    outlined=True,
+                    classes=["map-filter-toggle"],
+                    style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                )
+            if filters_open:
+                with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "10px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
+                    with solara.Div(classes=["map-filter-content"]):
+                        FilterPanel()
         
 @solara.component
 def ExecutePanel(): 
@@ -1882,7 +2248,7 @@ def ExecutePanel():
     result = solara.use_thread(execute_engine, dependencies=[execute_counter], intrusive_cancel=False)
 
     with solara.GridFixed(columns=1):
-        solara.Markdown("#### Infrastructure")
+        solara.Markdown("#### Assets at Risk")
         with solara.Row(justify="left"):
             solara.ToggleButtonsMultiple(value=layers.value['infra'].value, on_value=layers.value['infra'].set, values=["building","power","road"])
         # preserve_edge_directions is only used for graph-based inputs (power and road)
@@ -1910,44 +2276,18 @@ def ExecutePanel():
         MetricParameters()
 
     solara.ProgressLinear(value=False)
-    with solara.Columns([70,30]):
-        with solara.Column():
-            solara.Button("Calculate", on_click=on_click, outlined=True,
-                disabled=execute_btn_disabled)
-        with solara.Column():
-            solara.Button("Reset", on_click=on_reset, outlined=True,
-                disabled=False)
+    with solara.Column(style={"width": "100%", "gap": "8px"}):
+        solara.Button("Calculate", on_click=on_click, outlined=True,
+            disabled=execute_btn_disabled, style={"width": "100%"})
+        solara.Button("Reset", on_click=on_reset, outlined=True,
+            disabled=False, style={"width": "100%"})
     if storage.value is not None:        
+        solara.InputText(label="Scenario name", value=scenario_name, continuous_update=True)
         if layers.value['tally_is_available'].value and user.value is not None:
-            solara.Button("Save Session",on_click=save_app_state, disabled=False)
+            solara.Button("Save Scenario",on_click=save_app_state, disabled=False)
         else:
-            solara.Button("Save Session", disabled=True)
+            solara.Button("Save Scenario", disabled=True)
         solara.ProgressLinear(save_app_state.pending)
-    PolicyPanel()
-    policies = [p['id'] for _, p in layers.value['policies'].items() if f"{p['description']} ({p['label']})" in layers.value['selected_policies'].value]
-    if len(policies) > 0:
-        with solara.Column(gap="30px"):
-            # if at least one of the policies is selected
-            if bool(set({1,2,4,6,8}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2,4,6,8. Code-level upgrade of residential buildings (percentage increase in median value of the CDF default: 0.2)'):
-                    solara.InputFloat(label='cdf_median_increase_in_percent',  value=layers.value['cdf_median_increase_in_percent'],
-                                    continuous_update=True)
-            if bool(set({1,2,3,6}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 1,2,3,6. Before interpolation, water depth assigned to building will be decreased default: 20 cm'):
-                    solara.InputFloat(label='flood_depth_reduction',  value=layers.value['flood_depth_reduction'],
-                                    continuous_update=True)
-            if bool(set({4}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for culverts'):
-                    solara.InputFloat(label='threshold_increase_culvert_water_height',  value=layers.value['threshold_increase_culvert_water_height'],
-                                    continuous_update=True)
-            if bool(set({4}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 4. Increasing water-depth threshold for roads'):
-                    solara.InputFloat(label='threshold_increase_road_water_height',  value=layers.value['threshold_increase_road_water_height'],
-                                    continuous_update=True)
-            if bool(set({8,9}).intersection(set(policies))):
-                with solara.Tooltip('Effects policies 8, 9. Suppress damage curves via multiplying this factor'):
-                    solara.InputFloat(label='damage_curve_suppress_factor',  value=layers.value['damage_curve_suppress_factor'],
-                                    continuous_update=True)
     # The statements in this block are passed several times during thread execution
     # The statements in this block are passed several times during thread execution
     # if result.error is not None:
@@ -1969,12 +2309,6 @@ def ExecutePanel():
         set_execute_btn_disabled(False)
         solara.ProgressLinear(value=False)
         
-@solara.component
-def PolicyPanel():
-    all_policies = [f"{p['description']} ({p['label']})" for _, p in layers.value['policies'].items()]
-    with solara.Row():
-        solara.SelectMultiple("Policies", layers.value['selected_policies'].value, all_policies, on_value=layers.value['selected_policies'].set, dense=False, style={"width": "35vh", "height": "auto"})
-
 @solara.component
 def MapInfo():
     print(f'{layers.value["bounds"].value}')
@@ -2133,6 +2467,30 @@ def ImportDataZone1():
         
     def on_clear():
         reset_session()
+
+    def load_sample_scenario():
+        try:
+            sample_dir = EXPOSURE_DATA_ASSET_DIR / "sample_scenario_input"
+            sample_files = [
+                "1_landuse.geojson",
+                "2_building.geojson",
+                "3_household.xlsx",
+                "4_individual.xlsx",
+                "5_flood_vulnerability_dummy.xlsx",
+                "6_intensity_dummy.geojson",
+            ]
+            loaded_files = []
+            for filename in sample_files:
+                path = sample_dir / filename
+                loaded_files.append({
+                    "name": path.name,
+                    "data": path.read_bytes(),
+                    "size": path.stat().st_size,
+                })
+            set_fileinfo(loaded_files)
+            notify_success("Sample scenario input loaded.")
+        except Exception as exc:
+            notify_error(f"Failed to load sample scenario input: {exc}")
     
     result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
     generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
@@ -2174,6 +2532,7 @@ def ImportDataZone1():
             children=[sample_data()],
             expand=False
             )
+            solara.Button("Load Sample Scenario", on_click=load_sample_scenario, outlined=True, style={"width": "100%"})
         
         with solara.Row(style={"width": "100%"}):
             solara.Button("Clear", on_click=on_clear, text=True, outlined=True, style={"width": "100%"})
@@ -2202,191 +2561,493 @@ def ImportDataZone1():
 
 @solara.component
 def ImportDataZone2():
-    def local_file_open(p):
-        with open(p, 'rb') as fileObj:
-            fileContent = fileObj.read()
-            file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p), 
-                                                             size=len(fileContent),
-                                                             data=fileContent)
-            set_fileinfo([file_info])
-
-    total_progress, set_total_progress = solara.use_state(-1)
-    fileinfo, set_fileinfo = solara.use_state(None)
-    result, set_result = solara.use_state(solara.Result(True))
-
-    generate_message, set_generate_message = solara.use_state("")
+    generation_mode, set_generation_mode = solara.use_state("Expert")
+    basic_country, set_basic_country = solara.use_state("Kenya")
+    parameter_fileinfo, set_parameter_fileinfo = solara.use_state(None)
+    landuse_fileinfo, set_landuse_fileinfo = solara.use_state(None)
+    landuse_file_name, set_landuse_file_name = solara.use_state("")
+    parameter_file_name, set_parameter_file_name = solara.use_state("")
+    constraint_file_names, set_constraint_file_names = solara.use_state([])
     generate_counter, set_generate_counter = solara.use_state(0)
-    generate_btn_disabled, set_generate_btn_disabled = solara.use_state(False)
-    generate_error = solara.reactive("")
+    osm_counter, set_osm_counter = solara.use_state(0)
+    basic_table_df, set_basic_table_df = solara.use_state(None)
+    basic_page, set_basic_page = solara.use_state(0)
+    basic_page_size = 8
+
+    def handle_reset():
+        set_generation_mode("Expert")
+        set_basic_country("Kenya")
+        set_parameter_fileinfo(None)
+        set_landuse_fileinfo(None)
+        set_landuse_file_name("")
+        set_parameter_file_name("")
+        set_constraint_file_names([])
+        set_generate_counter(0)
+        set_osm_counter(0)
+        set_basic_table_df(None)
+        set_basic_page(0)
+    solara.use_effect(handle_reset, [reset_counter.value])
+
+    def sync_basic_mode_state():
+        landuse_gdf = layers.value["layers"]["landuse"]["data"].value
+        if generation_mode == "Basic" and landuse_gdf is not None:
+            if basic_table_df is None or len(basic_table_df) != len(landuse_gdf):
+                set_basic_table_df(create_basic_mapping_table(landuse_gdf))
+                set_basic_page(0)
+        elif generation_mode != "Basic" and basic_table_df is not None:
+            set_basic_table_df(None)
+            set_basic_page(0)
+
+    solara.use_effect(sync_basic_mode_state, [generation_mode, landuse_file_name, layers.value["render_count"].value])
+
+    def load_constraint_bytes(files):
+        constraint_gdf = read_multiple_geospatial_bytes(files)
+        if constraint_gdf is None or constraint_gdf.empty:
+            clear_layer_data("constraint")
+            set_constraint_file_names([])
+            notify_warning("No valid constraint features were found in the uploaded files.")
+            return
+        set_constraint_file_names([fileinfo["name"] for fileinfo in files])
+        set_layer_data("constraint", constraint_gdf)
+        layers.value["render_count"].set(layers.value["render_count"].value + 1)
+        notify_success("Constraint layer loaded.")
+
+    def update_basic_table(column_name, row_index, value):
+        if basic_table_df is None:
+            return
+        updated = basic_table_df.copy()
+        updated.at[row_index, column_name] = value
+        updated = normalize_basic_mapping_table(updated)
+        set_basic_table_df(updated)
+
+    def sync_basic_landuse_preview():
+        if generation_mode != "Basic" or basic_table_df is None:
+            return
+        landuse_gdf = layers.value["layers"]["landuse"]["data"].value
+        if landuse_gdf is None or len(landuse_gdf) != len(basic_table_df):
+            return
+
+        preview_gdf = landuse_gdf.copy()
+        if "mapped_luf" in basic_table_df.columns:
+            preview_luf = basic_table_df["mapped_luf"].where(
+                basic_table_df["mapped_luf"] != BASIC_LUF_PLACEHOLDER,
+                preview_gdf["luf"] if "luf" in preview_gdf.columns else ""
+            )
+            preview_gdf["luf"] = preview_luf.values
+        if "mapped_avgincome" in basic_table_df.columns:
+            preview_income = basic_table_df["mapped_avgincome"].where(
+                basic_table_df["mapped_avgincome"] != BASIC_INCOME_PLACEHOLDER,
+                preview_gdf["avgincome"] if "avgincome" in preview_gdf.columns else ""
+            )
+            preview_gdf["avgincome"] = preview_income.values
+
+        set_layer_data("landuse", preview_gdf, update_center=False)
+        layers.value["render_count"].set(layers.value["render_count"].value + 1)
+
+    solara.use_effect(sync_basic_landuse_preview, [generation_mode, basic_table_df])
+
+    def load_sample_expert():
+        try:
+            parameter_path = EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "sample_distribution_file.xlsx"
+            landuse_path = EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "sample_landuse_file.geojson"
+            constraint_paths = [
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "exclusion_lines.geojson",
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "exclusion_points.geojson",
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "exclusion_polygons.geojson",
+            ]
+
+            parameter_bytes = parameter_path.read_bytes()
+            landuse_bytes = landuse_path.read_bytes()
+            constraint_files = [{"name": path.name, "data": path.read_bytes()} for path in constraint_paths]
+
+            set_generation_mode("Expert")
+            parameter_file = {"name": parameter_path.name, "data": parameter_bytes}
+            landuse_file = {"name": landuse_path.name, "data": landuse_bytes}
+            set_parameter_fileinfo(parameter_file)
+            set_parameter_file_name(parameter_path.name)
+            set_layer_data("parameter", ParameterFile(content=parameter_bytes))
+            on_landuse_file(landuse_file)
+            load_constraint_bytes(constraint_files)
+            notify_success("Expert sample input loaded.")
+        except Exception as exc:
+            notify_error(f"Failed to load Expert sample input: {exc}")
+
+    def load_sample_basic():
+        try:
+            landuse_path = EXPOSURE_DATA_ASSET_DIR / "sample_input_basic_mode" / "sample_landuse_file_basic.geojson"
+            constraint_paths = [
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_basic_mode" / "exclusion_lines.geojson",
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_basic_mode" / "exclusion_points.geojson",
+                EXPOSURE_DATA_ASSET_DIR / "sample_input_basic_mode" / "exclusion_polygons.geojson",
+            ]
+
+            landuse_bytes = landuse_path.read_bytes()
+            constraint_files = [{"name": path.name, "data": path.read_bytes()} for path in constraint_paths]
+
+            set_generation_mode("Basic")
+            set_basic_country("Kenya")
+            set_parameter_fileinfo(None)
+            set_parameter_file_name("")
+            clear_layer_data("parameter")
+            on_landuse_file({"name": landuse_path.name, "data": landuse_bytes})
+            load_constraint_bytes(constraint_files)
+            notify_success("Basic sample input loaded.")
+        except Exception as exc:
+            notify_error(f"Failed to load Basic sample input: {exc}")
+
+    def on_parameter_file(fileinfo):
+        try:
+            parameter_data = fileinfo["data"]
+            set_parameter_fileinfo(fileinfo)
+            set_parameter_file_name(fileinfo["name"])
+            set_layer_data("parameter", ParameterFile(content=parameter_data))
+            notify_success("Parameter file loaded.")
+        except Exception as exc:
+            clear_layer_data("parameter")
+            notify_error(f"Failed to read parameter file: {exc}")
+
+    def on_landuse_file(fileinfo):
+        try:
+            landuse_gdf = read_geospatial_bytes(fileinfo["name"], fileinfo["data"])
+            set_landuse_fileinfo(fileinfo)
+            set_landuse_file_name(fileinfo["name"])
+            set_layer_data("landuse", landuse_gdf, update_center=True)
+            if generation_mode == "Basic":
+                set_basic_table_df(create_basic_mapping_table(landuse_gdf))
+                set_basic_page(0)
+            else:
+                set_basic_table_df(None)
+                set_basic_page(0)
+            layers.value["render_count"].set(layers.value["render_count"].value + 1)
+            notify_success("Land-use layer loaded.")
+        except Exception as exc:
+            clear_layer_data("landuse")
+            set_landuse_fileinfo(None)
+            set_landuse_file_name("")
+            notify_error(f"Failed to read land-use layer: {exc}")
+
+    def on_constraint_files(files):
+        try:
+            load_constraint_bytes(files)
+        except Exception as exc:
+            clear_layer_data("constraint")
+            set_constraint_file_names([])
+            notify_error(f"Failed to read constraint layers: {exc}")
 
     def on_generate():
         set_generate_counter(generate_counter + 1)
-        generate_error.set("")
 
-    def load():
-        if fileinfo is not None:
-            unrecognized_file_exists = False
-            # try not to trigger render inside loop
-            updated_center = None
-            for f in fileinfo:
-                print(f'processing file {f["name"]}')
-                name, data = import_data(f)
-                if name is not None and data is not None:
-                    if isinstance(data, gpd.GeoDataFrame):
-                        data = data.set_crs("epsg:4326",allow_override=True)
-                        layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
-                        layers.value['layers'][name]['data'].set(data)
-                        # centroids in geometric coordinates (3857: Pseuod-Mercator in meters)
-                        # Geographic --> geometric --> calculate centroid --> geographic
-                        centroids = data.to_crs('epsg:3857').centroid.to_crs('epsg:4326')
-                        #centroids = data.centroid
-                        center_y = centroids.y.mean()
-                        center_x = centroids.x.mean()
-                        updated_center = (center_y, center_x)
-                    elif isinstance(data, pd.DataFrame):
-                        layers.value['layers'][name]['df'].set(data)
-                        layers.value['layers'][name]['data'].set(data)
-                    elif isinstance(data, ParameterFile):
-                        layers.value['layers'][name]['data'].set(data)
-                    elif isinstance(data, dict):
-                        layers.value['layers'][name]['data'].set(data)
-                else:
-                    unrecognized_file_exists = True
-            if updated_center:
-                layers.value['center'].set(updated_center)
-            layers.value['render_count'].set(layers.value['render_count'].value + 1)
-
-            if unrecognized_file_exists:
-                return "error"
-            return "success"
-        return "empty"
-    
-    def is_ready_to_generate():
-        if layers.value['layers']['parameter']['data'].value is not None and \
-           layers.value['layers']['landuse']['data'].value is not None:
-            return True
-        return False
-
-    def handle_reset():
-        set_fileinfo(None)
-        set_total_progress(-1)
-        set_generate_message("")
-        set_generate_counter(0)
-    solara.use_effect(handle_reset, [reset_counter.value])
+    def on_fetch_osm():
+        set_osm_counter(osm_counter + 1)
 
     def generate():
-        if generate_counter > 0 :
-            set_generate_message('Generating exposure...')
-            print('Generating exposure...')
-            parameter_file = layers.value['layers']['parameter']['data'].value 
-            land_use_file = layers.value['layers']['landuse']['data'].value 
-            seed = layers.value['seed'].value
-            building, household, individual = generate_exposure(parameter_file, land_use_file,
-                                                                population_calculate=False, seed=seed)
+        if generate_counter <= 0:
+            return None
+        if landuse_fileinfo is None:
+            raise ValueError("Upload a land-use layer before generating data.")
 
-            for name, data in zip(['building','household','individual'],[building, household, individual]):
-                data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
-                print('hkaya',name)
-                #print(data)
-                layers.value['layers'][name]['data'].set(data)
-                if  "geometry" in list(data.columns):
-                    center = (data.geometry.centroid.y.mean(), data.geometry.centroid.x.mean())
-                    layers.value['center'].set(center)
-            set_generate_message(config.get('data_generation_complete_message',
-                                            'Building/household/individual layers are ready! You can now upload hazard and vulnerability data.'))
-            layers.value['render_count'].value += 1
-
-    def progress(x):
-        set_total_progress(x)
-
-    def on_file_deneme(f):
-        set_fileinfo(f)
-        
-    def open_file_dialog():
-        print('entered open file dialog...')    
-    
-    result = solara.use_thread(load, dependencies=[fileinfo], intrusive_cancel=False)
-    generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
-
-    # with solara.Row(justify="center"):
-       # solara.ToggleButtonsSingle(value=layers.value['data_import_method'].value, 
-                               # on_value=layers.value['data_import_method'].set, 
-                               # values=["drag&drop","s3"], 
-                               # style={"align-items": "center"})                                           
-        
-    with solara.Column(style={"width":"100%"}):          
-        solara.Markdown('''<div style="text-align: justify">
-                        First, upload parameter file and land use, then click generate to produce building, household, individual layers. You can download and extract our <a href="https://github.com/TomorrowsCities/tomorrowscities/raw/main/tomorrowcities/public/data_gen_sample_dataset.zip?download=">Sample Exposure Dataset</a> to your local drive and upload to the platform via drag & drop.
-                        </div>
-                        ''')
-                        
-        FileDropMultiple(on_total_progress=progress,
-            on_file=on_file_deneme, 
-            lazy=False,
-            label='Drop files here or click to browse',
-            uid=str(reset_counter.value))
-        solara.Text("Spacer", style={"visibility": "hidden"})
-            
-        with solara.Row():
-            solara.InputInt(label='Random seed',value=layers.value['seed'])
-            solara.Button("Generate", on_click=on_generate, outlined=True,
-                disabled=generate_btn_disabled)
-
-    if total_progress > -1 and total_progress < 100:
-        solara.Text(f"Uploading {total_progress}%")
-        solara.ProgressLinear(value=total_progress)
-    else:
-        if result.state == solara.ResultState.FINISHED:
-            if result.value == "success":
-                solara.Success("Data is successfully loaded and ready for analysis.")
-            elif result.value == "error":
-                solara.Text("Unrecognized file")
-            else:
-                solara.Text("Spacer", style={'visibility':'hidden'})
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.INITIAL:
-            solara.Text("Spacer", style={'visibility':'hidden'})
-            solara.ProgressLinear(value=False)
-        elif result.state == solara.ResultState.ERROR:
-            solara.Text(f'{result.error}')
-            solara.ProgressLinear(value=False)
+        if generation_mode == "Basic":
+            if basic_table_df is None:
+                raise ValueError("Basic Mode mapping table is not ready yet.")
+            parameter_source = BASIC_MODE_CONFIG[basic_country]["file"]
+            landuse_gdf = prepare_basic_landuse(
+                landuse_fileinfo["name"],
+                landuse_fileinfo["data"],
+                basic_country,
+                basic_table_df,
+            )
+            set_layer_data("landuse", landuse_gdf, update_center=True)
         else:
-            solara.Text("Please wait...")
-            solara.ProgressLinear(value=True)
+            if parameter_fileinfo is None:
+                raise ValueError("Upload a parameter file before generating data.")
+            parameter_source = read_excel_bytes(parameter_fileinfo["data"])
+            landuse_gdf = layers.value["layers"]["landuse"]["data"].value
+            if landuse_gdf is None:
+                raise ValueError("Upload a land-use layer before generating data.")
 
-    if generate_result.error is not None:
-        generate_error.set(generate_error.value + str(generate_result.error))
+        clear_log_buffer()
+        set_log_sink(lambda level, message: {
+            "info": notify_info,
+            "warning": notify_warning,
+            "error": notify_error,
+        }.get(level, notify_info)(message))
+        try:
+            final, household, individual = process_generated_exposure(
+                parameter_source,
+                landuse_gdf,
+                layers.value["layers"]["constraint"]["data"].value,
+                seed=layers.value["seed"].value,
+            )
+        finally:
+            set_log_sink(None)
 
-    if generate_error.value != "":
-        solara.Text(f'{generate_error}', style={"color":"red"})
-    else:
-        solara.Text("Spacer", style={"visibility": "hidden", "height": "0.5px"})
+        for name, data in zip(["building", "household", "individual"], [final, household, individual]):
+            prepared = layers.value["layers"][name]["pre_processing"](data, layers.value["layers"][name]["extra_cols"])
+            set_layer_data(name, prepared, update_center=(name == "building"))
+
+        layers.value["render_count"].set(layers.value["render_count"].value + 1)
+        return config.get(
+            "data_generation_complete_message",
+            "Building, household, and individual layers are ready for analysis.",
+        )
+
+    def fetch_and_merge_osm():
+        if osm_counter <= 0:
+            return None
+        landuse_gdf = layers.value["layers"]["landuse"]["data"].value
+        if landuse_gdf is None:
+            raise ValueError("Load a land-use layer before fetching OSM buildings and roads.")
+
+        osm_constraints = fetch_osm_constraints(landuse_gdf)
+        if osm_constraints.empty:
+            return 0
+
+        merged_constraints = merge_constraints(
+            layers.value["layers"]["constraint"]["data"].value,
+            osm_constraints,
+        )
+        set_layer_data("constraint", merged_constraints)
+        layers.value["render_count"].set(layers.value["render_count"].value + 1)
+        return len(osm_constraints)
+
+    generate_result = solara.use_thread(generate, dependencies=[generate_counter], intrusive_cancel=False)
+    osm_result = solara.use_thread(fetch_and_merge_osm, dependencies=[osm_counter], intrusive_cancel=False)
+
+    ready_to_generate = (
+        landuse_fileinfo is not None and
+        ((generation_mode == "Expert" and parameter_fileinfo is not None) or (generation_mode == "Basic" and basic_table_df is not None))
+    )
+    page_count = max(1, int(np.ceil(len(basic_table_df) / basic_page_size))) if basic_table_df is not None and len(basic_table_df) > 0 else 1
+
+    def handle_generate_notifications():
+        if generate_counter <= 0:
+            return
+        if generate_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
+            notify_info("Generating exposure...")
+        elif generate_result.state == solara.ResultState.FINISHED and generate_result.value is not None:
+            notify_success(generate_result.value)
+        elif generate_result.state == solara.ResultState.ERROR and generate_result.error is not None:
+            notify_error(str(generate_result.error))
+
+    def handle_osm_notifications():
+        if osm_counter <= 0:
+            return
+        if osm_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
+            notify_info("Fetching OSM buildings and roads...")
+        elif osm_result.state == solara.ResultState.FINISHED:
+            if osm_result.value == 0:
+                notify_warning("No OSM building or road geometries were found inside the loaded land-use extent.")
+            elif osm_result.value is not None:
+                notify_success(f"Added {osm_result.value} OSM geometries to the constraint layer.")
+        elif osm_result.state == solara.ResultState.ERROR and osm_result.error is not None:
+            notify_error(str(osm_result.error))
+
+    solara.use_effect(handle_generate_notifications, [generate_counter, generate_result.state])
+    solara.use_effect(handle_osm_notifications, [osm_counter, osm_result.state])
+
+    with solara.Column(classes=["generate-data-panel"], style={"width": "100%", "max-width": "100%", "overflow-x": "hidden", "padding": "0 15px", "box-sizing": "border-box"}):
+        solara.Markdown(
+            """
+            <div style="text-align: justify">
+            Switch between Expert and Basic generation modes to produce building, household, and individual data directly inside Engine.
+            You can optionally add exclusion or alignment layers, then enrich them with OSM buildings and roads before generation.
+            </div>
+            """
+        )
+
+        solara.ToggleButtonsSingle(
+            value=generation_mode,
+            on_value=set_generation_mode,
+            values=["Expert", "Basic"],
+            style={"width": "100%"},
+        )
+
+        with solara.Column(classes=["generate-data-actions"], style={"width": "100%", "max-width": "100%", "gap": "8px"}):
+            if generation_mode == "Expert":
+                solara.Button(
+                    "Load Sample Input",
+                    on_click=load_sample_expert,
+                    outlined=True,
+                    classes=["generate-data-action-button"],
+                    style={"width": "100%"},
+                )
+                with solara.FileDownload(
+                    (EXPOSURE_DATA_ASSET_DIR / "sample_input_expert_mode" / "sample_input_expert_mode.zip").read_bytes(),
+                    "sample_input_expert_mode.zip",
+                    mime_type="application/zip",
+                ):
+                    solara.Button(
+                        "Download Sample Input",
+                        outlined=True,
+                        classes=["generate-data-action-button"],
+                        style={"width": "100%"},
+                    )
+            else:
+                solara.Button(
+                    "Load Sample Input",
+                    on_click=load_sample_basic,
+                    outlined=True,
+                    classes=["generate-data-action-button"],
+                    style={"width": "100%"},
+                )
+                with solara.FileDownload(
+                    (EXPOSURE_DATA_ASSET_DIR / "sample_input_basic_mode" / "sample_input_basic_mode.zip").read_bytes(),
+                    "sample_input_basic_mode.zip",
+                    mime_type="application/zip",
+                ):
+                    solara.Button(
+                        "Download Sample Input",
+                        outlined=True,
+                        classes=["generate-data-action-button"],
+                        style={"width": "100%"},
+                    )
+
+        if generation_mode == "Expert":
+            solara.Markdown("**Parameter File (.xlsx)**")
+            FileDrop(
+                on_file=on_parameter_file,
+                lazy=False,
+                label="Drop parameter file here or click to browse",
+                uid=f"parameter-{reset_counter.value}",
+            )
+            if parameter_file_name:
+                solara.Text(f"Loaded: {parameter_file_name}")
+        else:
+            solara.Select(
+                label="Country Distribution",
+                value=basic_country,
+                values=list(BASIC_MODE_CONFIG.keys()),
+                on_value=set_basic_country,
+            )
+            solara.Info("Basic Mode uses predefined distribution catalogues. Upload land-use data and complete the mapping table below.")
+
+        solara.Markdown("**Land-Use Layer (.geojson, .zip, .rar, .kml, .gpkg)**")
+        FileDrop(
+            on_file=on_landuse_file,
+            lazy=False,
+            label="Drop land-use layer here or click to browse",
+            uid=f"landuse-{reset_counter.value}",
+        )
+        if landuse_file_name:
+            solara.Text(f"Loaded: {landuse_file_name}")
+
+        solara.Markdown("**Constraint Layers (optional)**")
+        FileDropMultiple(
+            on_file=on_constraint_files,
+            lazy=False,
+            label="Drop exclusion/alignment layers here or click to browse",
+            uid=f"constraint-{reset_counter.value}",
+        )
+        if constraint_file_names:
+            solara.Text(f"Loaded: {', '.join(constraint_file_names)}")
+
+        with solara.Column(classes=["generate-data-actions"], style={"width": "100%", "max-width": "100%", "gap": "8px"}):
+            solara.Button(
+                "Add OSM Buildings/Roads",
+                on_click=on_fetch_osm,
+                outlined=True,
+                disabled=layers.value["layers"]["landuse"]["data"].value is None,
+                classes=["generate-data-action-button"],
+                style={"width": "100%"},
+            )
+            solara.Button(
+                "Generate",
+                on_click=on_generate,
+                outlined=True,
+                disabled=not ready_to_generate,
+                classes=["generate-data-action-button"],
+                style={"width": "100%"},
+            )
+            solara.Button(
+                "Clear",
+                on_click=reset_session,
+                text=True,
+                outlined=True,
+                classes=["generate-data-action-button"],
+                style={"width": "100%"},
+            )
+
+        if generation_mode == "Basic" and basic_table_df is not None:
+            solara.Markdown("**Land Use Configuration Table**")
+            solara.Markdown(
+                f"Detected **{len(basic_table_df)}** polygons in **{landuse_file_name}**. "
+                "Enter `mapped_luf`, `mapped_avgincome`, `mapped_population`, and `mapped_setback` values."
+            )
+            solara.Markdown(
+                f"`{BASIC_LUF_PLACEHOLDER}` ve `{BASIC_INCOME_PLACEHOLDER}` placeholder olarak kalmamalı."
+            )
+            solara.Markdown(
+                "Allowed `mapped_avgincome` values: "
+                + ", ".join(INCOME_OPTIONS)
+            )
+            with solara.Details(summary="Allowed Land Use Types", expand=False):
+                for idx, label in enumerate(URBAN_ATLAS_CLASSES, start=1):
+                    solara.Markdown(f"{idx}. {label}")
+
+            start = basic_page * basic_page_size
+            end = min(start + basic_page_size, len(basic_table_df))
+            with solara.Row(style={"width": "100%", "flex-wrap": "wrap"}):
+                solara.Button("Previous", on_click=lambda: set_basic_page(max(0, basic_page - 1)), disabled=basic_page == 0, text=True)
+                solara.Text(f"Rows {start + 1}-{end} of {len(basic_table_df)}")
+                solara.Button("Next", on_click=lambda: set_basic_page(min(page_count - 1, basic_page + 1)), disabled=basic_page >= page_count - 1, text=True)
+
+            current_rows = basic_table_df.iloc[start:end]
+            for row_index, row in current_rows.iterrows():
+                with solara.Card(title=f"Polygon {row_index + 1}", elevation=1, classes=["generate-data-card"], style={"width": "100%", "max-width": "100%", "box-sizing": "border-box"}):
+                    preview_cols = [col for col in basic_table_df.columns if col not in ["mapped_luf", "mapped_avgincome", "mapped_population", "mapped_setback"]][:4]
+                    if preview_cols:
+                        preview_parts = [f"{col}: {row[col]}" for col in preview_cols]
+                        solara.Markdown(" | ".join(preview_parts))
+                    with solara.GridFixed(columns=2):
+                        solara.Select(
+                            label="mapped_luf",
+                            value=str(row["mapped_luf"]),
+                            values=[BASIC_LUF_PLACEHOLDER] + URBAN_ATLAS_CLASSES,
+                            on_value=lambda value, idx=row_index: update_basic_table("mapped_luf", idx, value),
+                        )
+                        solara.Select(
+                            label="mapped_avgincome",
+                            value=str(row["mapped_avgincome"]),
+                            values=[BASIC_INCOME_PLACEHOLDER] + INCOME_OPTIONS,
+                            on_value=lambda value, idx=row_index: update_basic_table("mapped_avgincome", idx, value),
+                        )
+                        solara.InputFloat(
+                            label="mapped_population",
+                            value=float(row["mapped_population"]),
+                            on_value=lambda value, idx=row_index: update_basic_table("mapped_population", idx, value),
+                        )
+                        solara.InputFloat(
+                            label="mapped_setback",
+                            value=float(row["mapped_setback"]),
+                            on_value=lambda value, idx=row_index: update_basic_table("mapped_setback", idx, value),
+                        )
+
+    if osm_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
+        solara.ProgressLinear(value=True)
+    elif osm_result.state in [solara.ResultState.FINISHED, solara.ResultState.ERROR]:
+        solara.ProgressLinear(value=False)
 
     if generate_result.state in [solara.ResultState.RUNNING, solara.ResultState.WAITING]:
-        set_generate_btn_disabled(True)
-        solara.Text(generate_message)
         solara.ProgressLinear(value=True)
-    elif generate_result.state == solara.ResultState.FINISHED and generate_message != "":
-        solara.Success(generate_message)
-        set_generate_btn_disabled(not is_ready_to_generate())
-        solara.ProgressLinear(value=False)
-    else:
-        #solara.Text("Spacer", style={"visibility": "hidden"})
-        set_generate_btn_disabled(not is_ready_to_generate())
+    elif generate_result.state in [solara.ResultState.FINISHED, solara.ResultState.ERROR]:
         solara.ProgressLinear(value=False)
 
 @solara.component
 def EngineSidebarContent():
-    with solara.lab.Tabs(grow=True, align="center"):
+    with solara.lab.Tabs(value=selected_tab.value, on_value=selected_tab.set, grow=True, align="center"):
         with solara.lab.Tab("DATA IMPORT"):
             solara.Details(
                 summary="Upload Data",
                 children=[ImportDataZone1()],
-                expand=True
+                expand=False
+            )
+            solara.Details(
+                summary="Generate Data",
+                children=[ImportDataZone2()],
+                expand=False
             )
         with solara.lab.Tab("SETTINGS"):
             ExecutePanel()
-            FilterPanel()
         with solara.lab.Tab("MAP INFO"):
             MapInfo()
 
@@ -2413,6 +3074,8 @@ def WebApp():
         with solara.Column(classes=["d-none", "d-md-block"]):
              EngineSidebarContent()
 
+    NotificationCenter()
+
     # LayerController()
     MapViewer()
     with solara.Row(justify="center"):
@@ -2427,7 +3090,12 @@ def WebApp():
         summary="Layer Details",
         children=[LayerDisplayer()],
         expand=False
-    )    
+    )
+    solara.Details(
+        summary="Generated Data Tables & Charts",
+        children=[GeneratedDataTablesCharts()],
+        expand=False
+    )
     solara.Text("Spacer", style={"visibility": "hidden"})
 
     with ConfirmationDialog(
@@ -2458,12 +3126,129 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         z-index: 1;
     }
 
+    .map-shell {
+        position: relative;
+        width: 100%;
+    }
+
+    .map-filter-overlay {
+        position: absolute;
+        top: 130px;
+        left: 14px;
+        z-index: 1000;
+        width: auto;
+        max-width: calc(100% - 20px);
+        pointer-events: auto;
+    }
+
+    .map-filter-content {
+        max-height: 38vh;
+        overflow-y: auto;
+        padding-top: 8px;
+        padding-right: 4px;
+    }
+
+    .map-filter-toggle,
+    .map-filter-toggle:hover {
+        width: 32px !important;
+        min-width: 32px !important;
+        height: 32px !important;
+        line-height: 32px !important;
+        padding: 0 !important;
+        border-radius: 2px !important;
+        background-color: var(--jp-layout-color1) !important;
+        color: var(--jp-ui-font-color1) !important;
+        border-width: calc(var(--jp-border-width) + 1px) !important;
+        border-color: var(--jp-border-color1) !important;
+        position: relative !important;
+    }
+
+    .map-filter-panel h4 {
+        margin: 0 0 4px 0;
+        font-size: 14px;
+        line-height: 1.2;
+    }
+
+    .map-filter-panel .filter-section-button,
+    .map-filter-panel .filter-section-button .v-btn {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.02em;
+    }
+
+    .filter-menu-body {
+        background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(248,250,252,1) 100%);
+        border: 1px solid rgba(31,42,51,0.08);
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
+    }
+
     .v-tabs-bar {
         height: 36px;
     }
 
     .solara-file-browser {
         overflow: auto;
+    }
+
+    .generate-data-panel {
+        width: 100% !important;
+        max-width: 100% !important;
+        min-width: 0 !important;
+        overflow-x: hidden !important;
+        box-sizing: border-box !important;
+    }
+
+    .generate-data-panel .v-input,
+    .generate-data-panel .v-select,
+    .generate-data-panel .v-text-field,
+    .generate-data-panel .v-btn-toggle,
+    .generate-data-panel .v-card,
+    .generate-data-panel .widget-image,
+    .generate-data-panel .lm-Widget {
+        max-width: 100% !important;
+        min-width: 0 !important;
+        box-sizing: border-box !important;
+    }
+
+    .generate-data-panel .v-card__text,
+    .generate-data-panel .v-card__title,
+    .generate-data-panel .v-card__subtitle {
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
+
+    .generate-data-panel .v-application .row,
+    .generate-data-panel .row,
+    .generate-data-panel .widget-grid,
+    .generate-data-panel .generate-data-grid {
+        max-width: 100% !important;
+        min-width: 0 !important;
+    }
+
+    .generate-data-actions {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .generate-data-action-button,
+    .generate-data-action-button .v-btn {
+        width: 100% !important;
+        max-width: 100% !important;
+    }
+
+    .generate-data-panel .v-btn-toggle {
+        width: 100% !important;
+        display: flex !important;
+    }
+
+    .generate-data-panel .v-btn-toggle .v-btn {
+        flex: 1 1 50% !important;
+        max-width: 50% !important;
     }
 
     @media (max-width: 960px) {

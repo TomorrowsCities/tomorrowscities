@@ -1,0 +1,10 @@
+{
+"type": "FeatureCollection",
+"name": "exclusion_points",
+"crs": { "type": "name", "properties": { "name": "urn:ogc:def:crs:OGC:1.3:CRS84" } },
+"features": [
+{ "type": "Feature", "properties": { "id": 1, "setback": 5 }, "geometry": { "type": "Point", "coordinates": [ 36.77759907514416, -1.295211808274927 ] } },
+{ "type": "Feature", "properties": { "id": 2, "setback": 5 }, "geometry": { "type": "Point", "coordinates": [ 36.780806488101774, -1.295109444031599 ] } },
+{ "type": "Feature", "properties": { "id": 3, "setback": 10 }, "geometry": { "type": "Point", "coordinates": [ 36.784184508131602, -1.29309628057948 ] } }
+]
+}

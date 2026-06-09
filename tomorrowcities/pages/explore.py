@@ -23,6 +23,7 @@ import datetime
 import ipywidgets
 import ipydatagrid
 from solara.lab import task
+from solara.hooks.dataframe import cross_filter_context
 import secrets
 import tempfile
 
@@ -42,6 +43,7 @@ session_name = solara.reactive(None)
 session_list = solara.reactive(get_session_list())
 status_text = solara.reactive("")
 selected_tab = solara.reactive(None)
+MAP_INFO_TAB_INDEX = 2
 render_count = solara.reactive(0)
 zoom = solara.reactive(14)
 tally_counter = solara.reactive(0)
@@ -52,16 +54,45 @@ population_displacement_consensus = solara.reactive(2)
 
 layers = create_new_app_state()
 
+
+def ensure_map_info_state():
+    if 'map_info_detail' not in layers.value:
+        layers.value['map_info_detail'] = solara.reactive({})
+    if 'map_info_button' not in layers.value:
+        layers.value['map_info_button'] = solara.reactive("summary")
+
+def open_map_info(properties):
+    ensure_map_info_state()
+    layers.value['map_info_detail'].set(properties)
+    layers.value['map_info_button'].set("detail")
+    selected_tab.set(MAP_INFO_TAB_INDEX)
+
 def create_map_layer(df, name):
     if name == "intensity":
         # Take the largest 500_000 values to display
         im_col = 'pga' if 'pga' in df.columns else 'im'
         df_non_zero = df[df[im_col] > 0]
-        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000))
+        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000)).copy()
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        map_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name) 
+        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name)
+        clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
+        half_side = 0.00008
+        clickable_df["geometry"] = clickable_df["geometry"].apply(lambda point: Polygon([
+            (point.x - half_side, point.y - half_side),
+            (point.x + half_side, point.y - half_side),
+            (point.x + half_side, point.y + half_side),
+            (point.x - half_side, point.y + half_side),
+        ]))
+        info_layer = ipyleaflet.GeoJSON(
+            data=json.loads(clickable_df.to_json()),
+            name=f"{name}-info",
+            style={"opacity": 0, "fillOpacity": 0, "weight": 0},
+            hover_style={"opacity": 0.15, "fillOpacity": 0.15, "weight": 1, "color": "#ffffff"},
+        )
+        info_layer.on_click(intensity_click_handler)
+        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name)
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
@@ -124,36 +155,28 @@ def create_map_layer(df, name):
     return map_layer
 
 def road_node_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def power_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def landuse_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def building_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def generic_layer_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
+
+def intensity_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
+    open_map_info(properties)
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None):
-    #print(properties)
-    layers.value['map_info_detail'].set(properties)
-    layers.value['map_info_button'].set("detail")  
+    open_map_info(properties)
 
 def revive_storage():
     if storage.value is None:
@@ -184,13 +207,12 @@ def assign_nested_value(dictionary, keys, value):
 
 def get_nested_value(dictionary, keys):
     for key in keys[:-1]:
+        if not isinstance(dictionary, dict) or key not in dictionary:
+            return (None, False)
         dictionary = dictionary[key]
-    if keys[-1] in dictionary.keys():
-        is_available = True
-        return (dictionary[keys[-1]], is_available)
-    else:
-        is_available = False
-        return (None, is_available)
+    if isinstance(dictionary, dict) and keys[-1] in dictionary:
+        return (dictionary[keys[-1]], True)
+    return (None, False)
 
 def load_from_state(source_dict):
     stack = [((), layers.value)]
@@ -287,6 +309,7 @@ def MetaDataViewer(session_name):
         
         # Define display mapping and order
         display_map = {
+            'scenario_name': 'Scenario Name:',
             'hazard': 'Hazard Type:',
             'infra': 'Analysed Structure(s):',
             'datetime_analysis': 'Analysis Time:',
@@ -323,15 +346,15 @@ def force_render():
 
 @solara.component
 def StorageViewer():
-    with solara.Card(title='Load Session', subtitle='Choose a session from storage'):
-        solara.Select(label='Choose session',value=session_name.value, values=session_list.value,
+    with solara.Card(title='Load Scenario', subtitle='Choose a scenario from storage'):
+        solara.Select(label='Choose scenario',value=session_name.value, values=session_list.value,
                     on_value=session_name.set)
         solara.Button(style={"width":"48%","margin":"1%"},label="Refresh List", on_click=lambda: refresh_session_list(),
                       disabled = True if storage.value is None else False)
         solara.Button(style={"width":"48%","margin":"1%"},label="Revive Storage", on_click=lambda: revive_storage())
-        solara.Button(style={"width":"48%","margin":"1%"},label="Load session", on_click = load_session, 
+        solara.Button(style={"width":"48%","margin":"1%"},label="Load Scenario", on_click = load_session, 
                       disabled=True if session_name.value is None else False)
-        solara.Button(style={"width":"48%","margin":"1%"},label='Clear Session', on_click=lambda: clear_session())
+        solara.Button(style={"width":"48%","margin":"1%"},label='Clear Scenario', on_click=lambda: clear_session())
     solara.ProgressLinear(load_session.pending)
     solara.Text(text=status_text.value)
     MetaDataViewer(session_name)
@@ -339,6 +362,7 @@ def StorageViewer():
 @solara.component
 def MapViewer():
     print('rendering mapviewer')
+    filters_open, set_filters_open = solara.use_state(False)
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -362,8 +386,12 @@ def MapViewer():
 
     def create_layers():
         map_layers = []
-        for l in layers.value['layers'].keys():
-            df = layers.value['layers'][l]['data'].value
+        sorted_layers = sorted(
+            layers.value['layers'].items(),
+            key=lambda item: item[1].get('render_order', 0)
+        )
+        for l, layer_config in sorted_layers:
+            df = layer_config['data'].value
             if df is not None and isinstance(df, gpd.GeoDataFrame):
                 df_filtered = df
                 if l == 'building':
@@ -451,23 +479,38 @@ def MapViewer():
     if legend_control is not None:
         controls.append(legend_control)
 
-    ipyleaflet.Map.element(
-        zoom=zoom.value,
-        max_zoom=23,
-        on_zoom=zoom.set,
-        on_bounds=layers.value['bounds'].set,
-        center=layers.value['center'].value,
-        on_center=layers.value['center'].set,
-        scroll_wheel_zoom=True,
-        dragging=True,
-        double_click_zoom=True,
-        touch_zoom=True,
-        box_zoom=True,
-        keyboard=True if random.random() > 0.5 else False,
-        layers=base_layers + map_layers,
-        controls = controls,
-        layout = layout
-        )
+    with solara.Div(classes=["map-shell"]):
+        ipyleaflet.Map.element(
+            zoom=zoom.value,
+            max_zoom=23,
+            on_zoom=zoom.set,
+            on_bounds=layers.value['bounds'].set,
+            center=layers.value['center'].value,
+            on_center=layers.value['center'].set,
+            scroll_wheel_zoom=True,
+            dragging=True,
+            double_click_zoom=True,
+            touch_zoom=True,
+            box_zoom=True,
+            keyboard=True if random.random() > 0.5 else False,
+            layers=base_layers + map_layers,
+            controls = controls,
+            layout = layout
+            )
+        with solara.Div(classes=["map-filter-overlay"]):
+            with solara.Tooltip("Show filters"):
+                solara.Button(
+                    icon_name="mdi-filter-variant",
+                    icon=True,
+                    on_click=lambda: set_filters_open(not filters_open),
+                    outlined=True,
+                    classes=["map-filter-toggle"],
+                    style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                )
+            if filters_open:
+                with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "10px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
+                    with solara.Div(classes=["map-filter-content"]):
+                        FilterPanel()
     print(f"MapViewer render count {render_count.value}")
 
 metric_update_pending = solara.reactive(False)
@@ -516,7 +559,7 @@ def MetricPanel():
     with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
         solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
         with solara.Link("/docs/metrics"):
-             with solara.Tooltip('Metric definitions. Click for more info.'):
+             with solara.Tooltip('Click for impact metric definitions'):
                 solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
     if metric_update_pending.value:
         solara.ProgressLinear(metric_update_pending.value)
@@ -574,75 +617,84 @@ def MapInfo():
     
 @solara.component
 def FilterPanel():
-    # preserve_edge_directions is only used for graph-based inputs (power and road)
-    solara.Text("Spacer", style={'visibility':'hidden'})
+    cross_filter_store = solara.use_context(cross_filter_context)
+    with solara.Column(classes=["map-filter-panel"], gap="8px"):
+        solara.Markdown("#### Filters")
+
+        landuse = layers.value['layers']['landuse']['df'].value
+        landuse_filter.value, set_landuse_cross_filter = solara.use_cross_filter(id(landuse), "landuse_filter")
+        building = layers.value['layers']['building']['df'].value
+        tc = tally_counter.value
+        print('tally_counter', tc)
+        tally_minimal = read_from_session_storage('explore_tally_minimal')
+        tally_filter.value, set_tally_cross_filter = solara.use_cross_filter(id(tally_minimal), "tally_filter")
+        if landuse is None and building is None and tally_minimal is None:
+            solara.Text("Filters become available when analysis results are ready.")
+
+        if landuse is not None:
+            btn = solara.Button("LANDUSE FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Land Use Filters**")
+                        solara.CrossFilterReport(landuse)
+                        solara.CrossFilterSelect(landuse, "zoneid", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(landuse, "luf", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(landuse, "avgincome", multiple=True, max_unique=5000)
+
+        building_filter.value, set_building_cross_filter = solara.use_cross_filter(id(building), "building_filter")
+        if building is not None:
+            btn = solara.Button("BUILDING FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Building Filters**")
+                        solara.CrossFilterReport(building)
+                        solara.CrossFilterSelect(building, "zoneid", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "ds", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "specialfac", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "nhouse", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "residents", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "occupancy", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "storeys", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "code_level", multiple=True, max_unique=5000)
+                        solara.CrossFilterSelect(building, "material", multiple=True, max_unique=5000)
+
+        if tally_minimal is not None:
+            btn = solara.Button("METRIC FILTERS", classes=["filter-section-button"], style={"width":"100%"})
+            with solara.Column(align="stretch"):
+                with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"320px"}):
+                    with solara.Div(classes=["filter-menu-body"]):
+                        solara.Markdown("**Metric Filters**")
+                        solara.CrossFilterReport(tally_minimal)
+                        for col in layers.value['tally_filter_cols']:
+                            solara.CrossFilterSelect(tally_minimal, col, multiple=True, max_unique=5000)
+        def reset_filters():
+            for data_key in [id(landuse), id(building), id(tally_minimal)]:
+                if data_key in cross_filter_store.filters:
+                    for key in list(cross_filter_store.filters[data_key].keys()):
+                        cross_filter_store.filters[data_key][key] = None
+            for listener in list(cross_filter_store.listeners):
+                listener()
+        solara.Button("Reset Filters", on_click=reset_filters, text=True, outlined=True, style={"width": "100%"})
+    print(f"fiter panel render count {render_count.value}")
+
+
+@solara.component
+def ExploreSettingsPanel():
     with solara.Row(justify="left", style="min-height: 0px"):
         solara.Select(label='population displacement consensus (default:2)', values=[1,2,3,4], value=population_displacement_consensus)
         with solara.Tooltip('Minimum number of conditions to claim a population displacement. Click for more info.'):
             solara.Button(icon_name="mdi-help-box", attributes={"href": "https://github.com/TomorrowsCities/tomorrowscities/wiki/4%E2%80%90Engine#parameters", "target": "_blank"}, text=True, outlined=False)
 
-    lbl = {'ds': 'Damage State',
-           'material': 'Load-Resisting System (Material)',
-            'code_level': 'Code Level',
-            'storeys': 'Number of Floors',
-            'occupancy': 'Occupancy Type',
-            'specialfac': 'Special Facility'}
-    building = layers.value['layers']['building']['df'].value
-    building_filter.value, _ = solara.use_cross_filter(id(building), "building_filter")
-    if building is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("BUILDING FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"
-                solara.CrossFilterReport(building)
-                solara.CrossFilterSelect(building, "zoneid", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "ds", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "specialfac", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "nhouse", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "residents", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "occupancy", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "storeys", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "code_level", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(building, "material", multiple=True, max_unique=5000)
-
-    landuse = layers.value['layers']['landuse']['df'].value
-    landuse_filter.value, _ = solara.use_cross_filter(id(landuse), "landuse_filter")
-    if landuse is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("LANDUSE FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
-                solara.CrossFilterReport(landuse)
-                solara.CrossFilterSelect(landuse, "zoneid", multiple=True, max_unique=5000)   
-                solara.CrossFilterSelect(landuse, "luf", multiple=True, max_unique=5000)
-                solara.CrossFilterSelect(landuse, "avgincome", multiple=True, max_unique=5000)
-
-
-    tc = tally_counter.value
-    print('tally_counter', tc)
-    tally_minimal = read_from_session_storage('explore_tally_minimal')
-    tally_filter.value, _ = solara.use_cross_filter(id(tally_minimal), "tally_filter")
-    if tally_minimal is not None:
-        with solara.Row(): #spacer
-            solara.Markdown('''<h5 style=""></h5>''') 
-        btn = solara.Button("METRIC FILTERS")
-        with solara.Column(align="stretch"):
-            with solara.lab.Menu(activator=btn, close_on_content_click=False, style={"width":"300px"}): #"height":"60vh"   
-                solara.CrossFilterReport(tally_minimal)
-                for col in layers.value['tally_filter_cols']:
-                    solara.CrossFilterSelect(tally_minimal, col, multiple=True, max_unique=5000)    
-    print(f"fiter panel render count {render_count.value}")
-
 
 @solara.component
 def ExploreSidebarContent():
     with solara.lab.Tabs(value=selected_tab.value, on_value=selected_tab.set, grow=True, align="center"):
-        with solara.lab.Tab("SESSIONS"):
+        with solara.lab.Tab("SCENARIOS"):
             StorageViewer()
         with solara.lab.Tab("SETTINGS"):              
-            FilterPanel()
+            ExploreSettingsPanel()
         with solara.lab.Tab("MAP INFO"):
             MapInfo()
 
@@ -664,6 +716,67 @@ def Page():
 
     .leaflet-container {
         z-index: 1;
+    }
+
+    .map-shell {
+        position: relative;
+        width: 100%;
+    }
+
+    .map-filter-overlay {
+        position: absolute;
+        top: 130px;
+        left: 14px;
+        z-index: 1000;
+        width: auto;
+        max-width: calc(100% - 20px);
+        pointer-events: auto;
+    }
+
+    .map-filter-content {
+        max-height: 38vh;
+        overflow-y: auto;
+        padding-top: 8px;
+        padding-right: 4px;
+    }
+
+    .map-filter-toggle,
+    .map-filter-toggle:hover {
+        width: 32px !important;
+        min-width: 32px !important;
+        height: 32px !important;
+        line-height: 32px !important;
+        padding: 0 !important;
+        border-radius: 2px !important;
+        background-color: var(--jp-layout-color1) !important;
+        color: var(--jp-ui-font-color1) !important;
+        border-width: calc(var(--jp-border-width) + 1px) !important;
+        border-color: var(--jp-border-color1) !important;
+        position: relative !important;
+    }
+
+    .map-filter-panel h4 {
+        margin: 0 0 4px 0;
+        font-size: 14px;
+        line-height: 1.2;
+    }
+
+    .map-filter-panel .filter-section-button,
+    .map-filter-panel .filter-section-button .v-btn {
+        width: 100% !important;
+        justify-content: flex-start !important;
+        text-align: left !important;
+        border-radius: 8px !important;
+        font-weight: 700 !important;
+        letter-spacing: 0.02em;
+    }
+
+    .filter-menu-body {
+        background: linear-gradient(180deg, rgba(255,255,255,1) 0%, rgba(248,250,252,1) 100%);
+        border: 1px solid rgba(31,42,51,0.08);
+        border-radius: 10px;
+        padding: 10px;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.7);
     }
 
     .v-tabs-bar {
