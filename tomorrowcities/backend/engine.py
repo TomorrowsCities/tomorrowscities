@@ -988,14 +988,30 @@ def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
     number_of_individuals = len(t_full)
     number_of_households = len(t_full['hhid'].unique())
 
-    new_metrics = {"metric1": {"desc": "Number of workers unemployed", "value": metric1, "max_value": number_of_workers},
-                "metric2": {"desc": "Number of children with no access to education", "value": metric2, "max_value": number_of_students},
-                "metric3": {"desc": "Number of households with no access to hospital", "value": metric3, "max_value": number_of_households},
-                "metric4": {"desc": "Number of individuals with no access to hospital", "value": metric4, "max_value": number_of_individuals},
-                "metric5": {"desc": "Number of households displaced", "value": metric5, "max_value": number_of_households},
-                "metric6": {"desc": "Number of homeless individuals", "value": metric6, "max_value": number_of_individuals},
-                "metric7": {"desc": "Population displacement", "value": metric7, "max_value": number_of_individuals},
-                "metric8": {"desc": "Number of casualties", "value": metric8, "max_value": number_of_individuals},
+    ds_cols = {
+        'metric1': t[is_unemployed]['ds_facility'],
+        'metric2': t[lost_school]['ds_facility'],
+        'metric3': t[household_lost_hospital].drop_duplicates(subset=['hhid'])['ds_hospital'],
+        'metric4': t[lost_hospital]['ds_hospital'],
+        'metric5': t[lost_household].drop_duplicates(subset=['hhid'])['ds'],
+        'metric6': t[is_homeless]['ds'],
+        'metric7': t[is_displaced]['ds'],
+        'metric8': t[is_casualty]['ds']
+    }
+    
+    ds_breakdowns = {}
+    for m_id, ds_series in ds_cols.items():
+        counts = ds_series.value_counts().to_dict()
+        ds_breakdowns[m_id] = {ds: counts.get(ds, 0) for ds in [0, 1, 2, 3, 4]}
+
+    new_metrics = {"metric1": {"desc": "Number of workers unemployed", "value": metric1, "max_value": number_of_workers, "ds_breakdown": ds_breakdowns['metric1']},
+                "metric2": {"desc": "Number of children with no access to education", "value": metric2, "max_value": number_of_students, "ds_breakdown": ds_breakdowns['metric2']},
+                "metric3": {"desc": "Number of households with no access to hospital", "value": metric3, "max_value": number_of_households, "ds_breakdown": ds_breakdowns['metric3']},
+                "metric4": {"desc": "Number of individuals with no access to hospital", "value": metric4, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric4']},
+                "metric5": {"desc": "Number of households displaced", "value": metric5, "max_value": number_of_households, "ds_breakdown": ds_breakdowns['metric5']},
+                "metric6": {"desc": "Number of homeless individuals", "value": metric6, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric6']},
+                "metric7": {"desc": "Population displacement", "value": metric7, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric7']},
+                "metric8": {"desc": "Number of casualties", "value": metric8, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric8']},
                 }
 
     return new_metrics

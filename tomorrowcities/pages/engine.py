@@ -20,6 +20,8 @@ import xml
 import xml.etree.ElementTree as ET
 import logging, sys
 import re
+import textwrap
+from html import escape
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
@@ -682,20 +684,14 @@ def create_map_layer(df, name):
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 5, blur = 1, name = name)
+        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name)
         clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
-        half_side = 0.00008
-        clickable_df["geometry"] = clickable_df["geometry"].apply(lambda point: Polygon([
-            (point.x - half_side, point.y - half_side),
-            (point.x + half_side, point.y - half_side),
-            (point.x + half_side, point.y + half_side),
-            (point.x - half_side, point.y + half_side),
-        ]))
         info_layer = ipyleaflet.GeoJSON(
             data=json.loads(clickable_df.to_json()),
             name=f"{name}-info",
-            style={"opacity": 0, "fillOpacity": 0, "weight": 0},
-            hover_style={"opacity": 0.15, "fillOpacity": 0.15, "weight": 1, "color": "#ffffff"},
+            point_style={'radius': 5, 'color': 'white', 'fillOpacity': 0.2, 'opacity': 0, 'weight': 15},
+            style={"opacity": 0, "fillOpacity": 0.2, "weight": 0},
+            hover_style={"opacity": 0.8, "fillOpacity": 0.8, "weight": 1, "color": "#ffffff"},
         )
         info_layer.on_click(intensity_click_handler)
         map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name)
@@ -706,12 +702,14 @@ def create_map_layer(df, name):
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=style_callback)
         map_layer.on_click(landuse_click_handler)
+        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=building_colors)
         map_layer.on_click(building_click_handler)
+        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "road edges":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             hover_style={'color': 'orange'},
@@ -1602,56 +1600,232 @@ def MetricStatistics():
     
     # get the metric names from the first measurement
     metric_names = metrics[0].keys()
+    metric_labels = {
+        metric_name: metrics[0][metric_name].get('desc', metric_name)
+        for metric_name in metric_names
+    }
+
+    def render_metric_table(table_df, first_column_left=False):
+        headers = [escape(str(col)) for col in table_df.columns]
+        rows = []
+        for row in table_df.itertuples(index=False):
+            cells = []
+            for idx, value in enumerate(row):
+                align = "left" if first_column_left and idx == 0 else "center"
+                display_value = "" if pd.isna(value) else str(value)
+                cells.append(
+                    f'<td style="text-align:{align};">{escape(display_value)}</td>'
+                )
+            rows.append(f"<tr>{''.join(cells)}</tr>")
+        header_html = "".join(f"<th>{header}</th>" for header in headers)
+        table_classes = "metric-stats-table"
+        if first_column_left:
+            table_classes += " first-column-left"
+        table_html = f"""
+            <div class="{table_classes}">
+                <table>
+                    <thead>
+                        <tr>{header_html}</tr>
+                    </thead>
+                    <tbody>
+                        {''.join(rows)}
+                    </tbody>
+                </table>
+            </div>
+        """
+        solara.Markdown(table_html, unsafe_solara_execute=True)
 
     metric_dict = {}
     for metric_name in metric_names:
         metric_values = [m[metric_name]['value'] for m in metrics]
         metric_dict[metric_name] = metric_values
-    df = pd.DataFrame.from_dict(metric_dict)
+    df = pd.DataFrame.from_dict(metric_dict).rename(columns=metric_labels)
     summary = df.describe()
+    if 'std' in summary.index:
+        summary.loc['std'] = summary.loc['std'].fillna(0)
 
-    data = []
+    chart_categories = []
+    chart_values = []
     for metric_name in metric_names:
-        value = [float(summary[metric_name][k]) for k in ['min','25%','50%','75%','max']]
-        data.append({"name":metric_name, "value": value})
+        metric_label = metric_labels[metric_name]
+        chart_categories.append("\n".join(textwrap.wrap(metric_label, width=18)))
+        total_value = sum(float(m[metric_name].get('value', 0)) for m in metrics) / max(len(metrics), 1)
+        chart_values.append(total_value)
 
     options = { 
-        "title": [{"text": 'Impact Metrics of Different Realizations', "left": 'center' },],
-        "tooltip": {
-            "trigger": 'item',
-            "axisPointer": {
-            "type": 'shadow'
+        "backgroundColor": "transparent",
+        "title": [{
+            "text": 'Total Impact Metrics',
+            "left": 'center',
+            "textStyle": {
+                "fontSize": 16,
+                "fontWeight": 700,
+                "color": "#1f2933"
             }
+        }],
+        "legend": {
+            "top": 32,
+            "left": "center",
+            "textStyle": {
+                "fontSize": 11,
+                "color": "#3e4c59"
+            }
+        },
+        "tooltip": {
+            "trigger": 'axis',
+            "axisPointer": {
+                "type": 'shadow'
+            }
+        },
+        "grid": {
+            "top": 90,
+            "left": 60,
+            "right": 24,
+            "bottom": 110,
+            "containLabel": True
         },
         "xAxis": {
             "type": 'category',
-            "data": ['metric1', 'metric2', 'metric3', 'metric4','metric5', 'metric6', 'metric7', 'metric8'],
+            "data": chart_categories,
+            "axisLabel": {
+                "interval": 0,
+                "fontSize": 10,
+                "lineHeight": 12,
+                "color": "#3e4c59",
+                "margin": 14
+            },
+            "axisLine": {
+                "lineStyle": {
+                    "color": "#9fb3c8"
+                }
+            },
+            "axisTick": {
+                "alignWithLabel": True
+            }
         },
         "yAxis": {
             "type": 'value',
+            "name": "Value",
+            "nameLocation": "middle",
+            "nameGap": 45,
+            "nameTextStyle": {
+                "fontSize": 11,
+                "fontWeight": 600,
+                "color": "#3e4c59"
+            },
+            "axisLabel": {
+                "fontSize": 10,
+                "color": "#52606d"
+            },
+            "axisLine": {
+                "show": False
+            },
+            "axisTick": {
+                "show": False
+            },
             "splitArea": {
-            "show": True
+                "show": False
+            },
+            "splitLine": {
+                "lineStyle": {
+                    "color": "rgba(15, 23, 42, 0.08)"
+                }
             }
         },
         "series": [
             {
-            "name": 'boxplot',
-            "type": 'boxplot',
-            "itemStyle": {
-                "color": '#b8c5f2'
-            },
-            "data": data
-            },
+                "name": "Total Value",
+                "type": "bar",
+                "data": chart_values,
+                "barMaxWidth": 34,
+                "itemStyle": {"color": "#3b82f6", "borderRadius": [6, 6, 0, 0]},
+                "label": {
+                    "show": True,
+                    "position": "top",
+                    "color": "#1f2933",
+                    "fontSize": 10,
+                    "formatter": "{c}"
+                }
+            }
         ]
     }
+    solara.Style('''
+        .metric-stats-table {
+            width: 100%;
+            overflow-x: auto;
+        }
+        .metric-stats-table table {
+            width: 100% !important;
+            max-width: 100% !important;
+            table-layout: fixed !important;
+            border-collapse: collapse;
+        }
+        .metric-stats-table th,
+        .metric-stats-table td {
+            border: 1px solid rgba(0, 0, 0, 0.12);
+            padding: 6px 8px;
+            font-size: 11px;
+            line-height: 1.25;
+            white-space: normal !important;
+            word-break: break-word !important;
+            overflow-wrap: anywhere !important;
+            vertical-align: middle;
+            text-align: center;
+        }
+        .metric-stats-table th {
+            font-weight: bold;
+            text-align: center !important;
+            vertical-align: middle;
+        }
+        .metric-stats-table th:first-child {
+            text-align: center !important;
+        }
+        .metric-stats-table.first-column-left th:first-child,
+        .metric-stats-table.first-column-left td:first-child {
+            width: 160px !important;
+            min-width: 160px !important;
+        }
+        .metric-stats-table.first-column-left td:first-child {
+            text-align: left !important;
+        }
+    ''')
     with solara.lab.Tabs():
         with solara.lab.Tab("Boxplot"):
             with solara.GridFixed(columns=1):
-                solara.FigureEcharts(option=options, attributes={"style": "height:400%; width:100%"})
+                solara.FigureEcharts(option=options, attributes={"style": "height:520px; width:100%"})
         with solara.lab.Tab("Data"): 
-            solara.DataFrame(df)
+            render_metric_table(df)
         with solara.lab.Tab("Stats"): 
-            solara.DataFrame(summary.reset_index())
+            stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
+            render_metric_table(stats_df, first_column_left=True)
+        with solara.lab.Tab("DS Breakdown"):
+            ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
+            for m in metrics:
+                for m_name in metric_names:
+                    if 'ds_breakdown' in m[m_name]:
+                        for ds, count in m[m_name]['ds_breakdown'].items():
+                            ds_avg_dict[m_name][ds] += count / len(metrics)
+                            
+            ds_labels = {
+                0: 'DS0 (No Damage)',
+                1: 'DS1 (Slight)',
+                2: 'DS2 (Moderate)',
+                3: 'DS3 (Extensive)',
+                4: 'DS4 (Complete)'
+            }
+            ds_records = []
+            for ds in [0, 1, 2, 3, 4]:
+                record = {'Damage State': ds_labels[ds]}
+                for m_name in metric_names:
+                    desc = metric_labels[m_name]
+                    if 'ds_breakdown' in metrics[0][m_name]:
+                        record[desc] = int(round(ds_avg_dict[m_name][ds]))
+                    else:
+                        record[desc] = 'N/A'
+                ds_records.append(record)
+            
+            ds_df = pd.DataFrame(ds_records)
+            render_metric_table(ds_df, first_column_left=True)
 
 @solara.component
 def MapViewer():
