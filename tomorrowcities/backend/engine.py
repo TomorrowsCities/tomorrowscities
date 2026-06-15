@@ -596,8 +596,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             gdf_building_intensity['storeys'] = gdf_building_intensity['height'].apply(lambda h: str(h)+'s')
 
     if 18 in policies:
-        idx = ((gdf_building_intensity['avgincome'] == 'lowIncomeA') |\
-                (gdf_building_intensity['avgincome'] == 'lowIncomeA') &\
+        idx = ((gdf_building_intensity['avgincome'] == 'veryLowIncome') |\
+                (gdf_building_intensity['avgincome'] == 'lowIncome') &\
                 (gdf_building_intensity['rnd'] < 0.50))
         gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'MC'), 'code_level'] = 'HC'
         gdf_building_intensity.loc[idx & (gdf_building_intensity['code_level'] == 'LC'), 'code_level'] = 'MC'
@@ -639,7 +639,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                         ( 1 + cdf_median_increase_in_percent )
             if 2 in policies:
                 # Increase medians *cdf_median_increase_in_percent* percent for residential buildings
-                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
+                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'veryLowIncome') | (bld_eq['freqincome'] == 'lowIncome'))
                 bld_eq.loc[applied_to, med_cols] = bld_eq.loc[applied_to, med_cols] * \
                         ( 1 + cdf_median_increase_in_percent ) 
             if 5 in policies:
@@ -704,7 +704,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
                         ( 1 - cdf_median_increase_in_percent )
             if 2 in policies:
-                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'lowIncomeA') | (bld_eq['freqincome'] == 'lowIncomeB'))
+                applied_to = (bld_eq['occupancy'] == 'Res') & ((bld_eq['freqincome'] == 'veryLowIncome') | (bld_eq['freqincome'] == 'lowIncome'))
                 bld_eq.loc[applied_to, imt_cols] = bld_eq.loc[applied_to, imt_cols] * \
                         ( 1 - cdf_median_increase_in_percent )
             if 5 in policies:
@@ -757,7 +757,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         if 1 in policies:
             bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
         if 2 in policies:
-            applied_to = (bld_flood['occupancy'] == 'Res') & ((bld_flood['freqincome'] == 'lowIncomeA') | (bld_flood['freqincome'] == 'lowIncomeB'))
+            applied_to = (bld_flood['occupancy'] == 'Res') & ((bld_flood['freqincome'] == 'veryLowIncome') | (bld_flood['freqincome'] == 'lowIncome'))
             bld_flood.loc[applied_to, 'im'] = bld_flood.loc[applied_to, 'im'] - flood_depth_reduction
         if 3 in policies:
             bld_flood['im'] = bld_flood['im'] - flood_depth_reduction
@@ -1093,14 +1093,14 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     opfile_landuse =  'landuse_layer_'+str(uuid.uuid4())+'.xlsx'
               
     # Income types is hardcoded
-    avg_income_types =np.array(['lowIncomeA','lowIncomeB','midIncome','highIncome'])
+    avg_income_types =np.array(['veryLowIncome','lowIncome','midIncome','highIncome'])
 
     # Extract average dwelling area and footprint area             
     average_dwelling_area = np.array([ipdf.iloc[13,2],ipdf.iloc[13,3],\
                                       ipdf.iloc[13,4],ipdf.iloc[13,5]])
 
-    fpt_area = {'lowIncomeA':np.fromstring(ipdf.iloc[14,2],dtype=float,sep=','),
-                'lowIncomeB':np.fromstring(ipdf.iloc[14,3],dtype=float,sep=','),
+    fpt_area = {'veryLowIncome':np.fromstring(ipdf.iloc[14,2],dtype=float,sep=','),
+                'lowIncome':np.fromstring(ipdf.iloc[14,3],dtype=float,sep=','),
                 'midIncome':np.fromstring(ipdf.iloc[14,4],dtype=float,sep=','),
                 'highIncome':np.fromstring(ipdf.iloc[14,5],dtype=float,sep=',')}
 
@@ -1173,9 +1173,13 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     landuse_shp_cartesian = landuse_shp_cartesian.drop(columns=['geometry'])
     landuse = landuse_shp_cartesian.copy()
         
-    # In the landuse shape file, if avgincome = lowIncome, replace it by lowIncomeA
+    # Map legacy lowIncome and lowIncomeA to veryLowIncome, and lowIncomeB to lowIncome
     lowIncome_mask = landuse['avgincome'] == 'lowIncome'
-    landuse.loc[lowIncome_mask,'avgincome'] = 'lowIncomeA'
+    lowIncomeA_mask = landuse['avgincome'] == 'lowIncomeA'
+    lowIncomeB_mask = landuse['avgincome'] == 'lowIncomeB'
+    landuse.loc[lowIncome_mask, 'avgincome'] = 'veryLowIncome'
+    landuse.loc[lowIncomeA_mask, 'avgincome'] = 'veryLowIncome'
+    landuse.loc[lowIncomeB_mask, 'avgincome'] = 'lowIncome'
 
     # Typecast the various fields in landuse shapefile
     landuse['population'] = landuse['population'].astype(int)
@@ -1543,7 +1547,7 @@ def generate_exposure(parameter_file: ParameterFile, land_use_file: gpd.GeoDataF
     head4school_df_edus_list = list(head4school_df['eduAttStat'])
     school_df_edu_list = np.ones(len(school_df_hhid_list))*np.nan
 
-    # Label 'lowIncomeA' and 'lowIncomeB' = 1, 'midIncome' =2, 'highIncome' =3
+    # Label 'veryLowIncome' and 'lowIncome' = 1, 'midIncome' =2, 'highIncome' =3
     household_df_hhid_list = list(household_df['hhID'])
     #Use .copy() to avoid SettingwithCopyWarning
     income4school_df=household_df[household_df['hhID'].\

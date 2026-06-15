@@ -1,7 +1,8 @@
-from typing import Optional, cast
+from typing import Optional, cast, Union, Dict
 import solara
 from solara.alias import rv
 import dataclasses
+from solara.lab import Menu
 import boto3
 import os
 import pickle
@@ -10,7 +11,6 @@ from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 import secrets
 from requests_oauthlib import OAuth2Session
-from typing import Dict
 from ..data import articles
 
 config = {
@@ -82,6 +82,54 @@ class User:
 
 user = solara.reactive(cast(Optional[User], None))
 
+from solara.components.component_vue import component_vue
+from typing import List, Callable
+
+@component_vue("custom_menu.vue")
+def CustomMenuWidget(
+    activator: List[solara.Element],
+    show_menu: bool,
+    on_show_menu: Optional[Callable] = None,
+    close_on_content_click: bool = True,
+    children: List[solara.Element] = [],
+    style: Optional[str] = None,
+    context: bool = False,
+    use_absolute: bool = True,
+    use_activator_width: bool = True,
+    left: bool = False,
+):
+    pass
+
+@solara.component
+def CustomMenu(
+    activator: Union[solara.Element, List[solara.Element]],
+    open_value: Union[solara.Reactive[bool], bool] = False,
+    on_open_value: Optional[Callable] = None,
+    close_on_content_click: bool = True,
+    children: List[solara.Element] = [],
+    style: Optional[Union[str, Dict[str, str]]] = None,
+    use_activator_width: bool = True,
+    left: bool = False,
+):
+    open_reactive = solara.use_reactive(open_value, on_open_value)
+    style_flat = solara.util._flatten_style(style)
+
+    if not isinstance(activator, list):
+        activator = [activator]
+
+    return CustomMenuWidget(
+        activator=activator,
+        children=children,
+        show_menu=open_reactive.value,
+        on_show_menu=open_reactive.set,
+        close_on_content_click=close_on_content_click,
+        style=style_flat,
+        use_absolute=False,
+        use_activator_width=use_activator_width,
+        left=left,
+    )
+
+
 def test_logon():
     test_user = User(username="test", admin=False)
     store_in_session_storage('user', test_user)
@@ -127,7 +175,12 @@ mobile_menu_open = solara.reactive(False)
 
 @solara.component
 def Layout(children=[]):
-    user.value = read_from_session_storage('user')
+    def load_user():
+        stored_user = read_from_session_storage('user')
+        if stored_user != user.value:
+            user.set(stored_user)
+            
+    solara.use_effect(load_user, [])
 
     router = solara.use_context(solara.routing.router_context)
     route, routes = solara.use_route(peek=True)
@@ -171,7 +224,10 @@ def Layout(children=[]):
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
                             elif route_entry.path == "account":
-                                name = "➜] LOGIN"
+                                if user.value is not None:
+                                    name = f"👤 {user.value.username.upper()}"
+                                else:
+                                    name = "➜] LOGIN"
                             else:
                                 name = route_entry.path.upper()
 
@@ -225,6 +281,8 @@ def Layout(children=[]):
                         if index is None or index < 0 or index >= len(filtered_routes):
                             return
                         target_route = filtered_routes[index]
+                        if target_route.path == "account" and user.value is not None:
+                            return
                         router.push(target_route.path)
 
                     with rv.Tabs(v_model=current_route_index, on_v_model=on_tab_change, right=True, optional=True, background_color="transparent"):
@@ -240,12 +298,23 @@ def Layout(children=[]):
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
                             elif route_entry.path == "account":
-                                name = "➜] LOGIN"
+                                if user.value is not None:
+                                    name = f"👤 {user.value.username.upper()}"
+                                else:
+                                    name = "➜] LOGIN"
                             else:
                                 name = route_entry.path.upper()
                             
                             with rv.Tab():
-                                solara.Text(name)
+                                if route_entry.path == "account" and user.value is not None:
+                                    user_btn = solara.Button(label=name, text=True, style={"text-transform": "none", "padding": "0", "height": "100%", "color": "inherit", "font-weight": "inherit"})
+                                    with CustomMenu(activator=user_btn, use_activator_width=False, left=True):
+                                        with solara.Card(style={"min-width": "220px", "padding": "12px", "border-radius": "10px"}):
+                                            solara.Text(f"Logged in as {user.value.username}", style={"font-weight": "bold", "margin-bottom": "8px"})
+                                            solara.Button(label="Profile Info", icon_name="mdi-account", on_click=lambda: router.push("/account"), text=True, style={"justify-content": "flex-start", "width": "100%"})
+                                            solara.Button(label="Logout", icon_name="mdi-logout", on_click=logout, text=True, style={"justify-content": "flex-start", "width": "100%", "color": "red"})
+                                else:
+                                    solara.Text(name)
 
                 
                 # Hamburger Button (Mobile Only)
@@ -340,7 +409,38 @@ class S3Storage(dict):
     
     def list_sessions(self):
         objects = self.list_objects()
-        return [o for o in objects if "TCDSE_SESSION" in o]
+        if objects is None:
+            return []
+        all_sessions = [o for o in objects if o.startswith("PUBLIC_") or o.startswith("PRIVATE_") or "TCDSE_SESSION" in o]
+        
+        # Determine current user ID
+        current_user_id = None
+        if user.value is not None:
+            raw_id = user.value.get_unique_id()
+            import re
+            current_user_id = re.sub(r"[^A-Za-z0-9_-]+", "_", raw_id)
+
+        filtered = []
+        for s in all_sessions:
+            if s.startswith("PRIVATE_"):
+                # Format: PRIVATE_{date_string}_{user_id_slug}_{slug}
+                parts = s.split("_")
+                if len(parts) >= 3:
+                    prefix_len = len("PRIVATE_") + len(parts[1]) + 1
+                    user_suffix = s[prefix_len:]
+                    if current_user_id and user_suffix.startswith(current_user_id + "_"):
+                        filtered.append(s)
+            elif "_PRIVATE_" in s:
+                # Format: TCDSE_SESSION_PRIVATE_{user_id}_{slug}_{date}_PKL
+                parts = s.split("_PRIVATE_")
+                if len(parts) > 1:
+                    suffix = parts[1]
+                    if current_user_id and suffix.startswith(current_user_id + "_"):
+                        filtered.append(s)
+            else:
+                # PUBLIC or legacy session
+                filtered.append(s)
+        return filtered
 
 def connect_storage():
     print('reviving storage from env')

@@ -120,6 +120,8 @@ landuse_filter = solara.reactive(None)
 selected_tab = solara.reactive(None)
 MAP_INFO_TAB_INDEX = 2
 scenario_name = solara.reactive("")
+is_public = solara.reactive(True)
+save_status = solara.reactive("")
 center_default = (41.01,28.98)
 population_displacement_consensus = solara.reactive(2)
 def create_new_app_state():
@@ -414,6 +416,8 @@ def clone_app_state(dictionary):
     while stack:
         path, current_dict = stack.pop()
         for key, value in current_dict.items():
+            if str(key).startswith('_'):
+                continue
             if isinstance(value, dict):
                 stack.append((path + (key,), value))
             else:
@@ -482,6 +486,8 @@ def reset_session():
     reset_counter.value += 1
     clear_notifications()
     scenario_name.set("")
+    is_public.set(True)
+    save_status.set("")
     store_in_session_storage('population_displacement_consensus', None)
     for layer_name in layers.value['layers'].keys():
         store_in_session_storage(layer_name, None)
@@ -506,6 +512,7 @@ def create_metadata(data):
     m['scenario_name'] = cleaned_name if cleaned_name else None
     m['datetime_analysis'] = data['datetime_analysis']
     m['datetime_upload'] = datetime.datetime.utcnow()
+    m['is_public'] = is_public.value
     if user.value:
         m['user_id'] = user.value.get_unique_id()
     else:
@@ -518,23 +525,36 @@ def build_scenario_basename(metadata):
     slug = re.sub(r"[^A-Za-z0-9]+", "_", cleaned_name).strip("_")
     if not slug:
         slug = "SCENARIO"
-    return f'TCDSE_SESSION_{slug}_{date_string}_PKL'
+    
+    is_pub = metadata.get('is_public', True)
+    if is_pub:
+        return f'PUBLIC_{date_string}_{slug}'
+    else:
+        user_id = metadata.get('user_id') or "anonymous"
+        user_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", user_id)
+        return f'PRIVATE_{date_string}_{user_id_slug}_{slug}'
 
 @task 
 def save_app_state():
-    data = clone_app_state(layers.value)
-    metadata = create_metadata(data)
-    print('metadata', metadata)
-    basename = build_scenario_basename(metadata)
-    for ext, var in zip(['data','metadata'],[data,metadata]):
-        filename = f'{basename}.{ext}'
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with open(os.path.join(temp_dir,filename), 'wb') as fileObj:
-                pickle.dump(var, fileObj)
-            if storage.value is not None:
-                print('uploading file', filename)
-                storage.value.upload_file(os.path.join(temp_dir,filename), filename)
-                os.unlink(os.path.join(temp_dir, filename))
+    save_status.set("")
+    try:
+        data = clone_app_state(layers.value)
+        metadata = create_metadata(data)
+        print('metadata', metadata)
+        basename = build_scenario_basename(metadata)
+        for ext, var in zip(['data','metadata'],[data,metadata]):
+            filename = f'{basename}.{ext}'
+            with tempfile.TemporaryDirectory() as temp_dir:
+                with open(os.path.join(temp_dir,filename), 'wb') as fileObj:
+                    pickle.dump(var, fileObj)
+                if storage.value is not None:
+                    print('uploading file', filename)
+                    storage.value.upload_file(os.path.join(temp_dir,filename), filename)
+                    os.unlink(os.path.join(temp_dir, filename))
+        save_status.set("success")
+    except Exception as e:
+        save_status.set(f"error: {str(e)}")
+        raise e
 
 def generic_layer_colors(feature):
     return None
@@ -1074,9 +1094,36 @@ def MetricWidget(name, description, value, max_value, render_count, icon=None):
 
 
 def create_distribution_chart(dataframe: pd.DataFrame, column_name: str, title: str, sort_order=None):
-    if dataframe is None or column_name not in dataframe.columns:
+    if dataframe is None:
         return None
 
+    # Case-insensitive column search with common aliases
+    target_col = None
+    aliases = {
+        'occbld': ['occbld', 'occ_bld', 'occupancy', 'occupancy_type'],
+        'codelevel': ['codelevel', 'code_level', 'codelevel_type'],
+        'nstoreys': ['nstoreys', 'storeys', 'number_of_storeys', 'stories', 'nstories'],
+        'lrstype': ['lrstype', 'lrs_type', 'lrstype_type', 'material'],
+        'nind': ['nind', 'household_size', 'size', 'members'],
+        'income': ['income', 'income_level', 'income_type'],
+        'gender': ['gender', 'sex'],
+        'age': ['age', 'age_group'],
+        'education': ['education', 'edu'],
+        'employment': ['employment', 'job', 'work']
+    }
+    
+    col_lower = column_name.lower()
+    search_names = [col_lower] + aliases.get(col_lower, [])
+    
+    for col in dataframe.columns:
+        if col.lower() in search_names:
+            target_col = col
+            break
+            
+    if target_col is None:
+        return None
+
+    column_name = target_col
     series = dataframe[column_name].dropna()
     if series.empty:
         return None
@@ -1151,7 +1198,7 @@ def ChartCard(option):
 
 
 @solara.component
-def GeneratedDataTablesCharts():
+def GeneratedDataTablesCharts(layers=layers):
     buildings = layers.value["layers"]["building"]["data"].value
     households = layers.value["layers"]["household"]["data"].value
     individuals = layers.value["layers"]["individual"]["data"].value
@@ -1200,7 +1247,7 @@ def GeneratedDataTablesCharts():
                 with solara.GridFixed(columns=2):
                     for option in [
                         create_distribution_chart(household_df, "nind", "Household Size Distribution"),
-                        create_distribution_chart(household_df, "income", "Income Level Distribution", sort_order=["lowIncomeA", "lowIncomeB", "midIncome", "highIncome"]),
+                        create_distribution_chart(household_df, "income", "Income Level Distribution", sort_order=["veryLowIncome", "lowIncome", "midIncome", "highIncome"]),
                     ]:
                         if option is not None:
                             ChartCard(option)
@@ -1654,6 +1701,14 @@ def MetricStatistics():
 
     options = { 
         "backgroundColor": "transparent",
+        "toolbox": {
+            "feature": {
+                "saveAsImage": {
+                    "title": "Save as PNG",
+                    "pixelRatio": 2
+                }
+            }
+        },
         "title": [{
             "text": 'Total Impact Metrics',
             "left": 'center',
@@ -1794,9 +1849,13 @@ def MetricStatistics():
             with solara.GridFixed(columns=1):
                 solara.FigureEcharts(option=options, attributes={"style": "height:520px; width:100%"})
         with solara.lab.Tab("Data"): 
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: df.to_csv(index=False), filename="Metric_Data.csv", label="Export CSV")
             render_metric_table(df)
         with solara.lab.Tab("Stats"): 
             stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: stats_df.to_csv(index=False), filename="Metric_Stats.csv", label="Export CSV")
             render_metric_table(stats_df, first_column_left=True)
         with solara.lab.Tab("DS Breakdown"):
             ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
@@ -1825,6 +1884,8 @@ def MetricStatistics():
                 ds_records.append(record)
             
             ds_df = pd.DataFrame(ds_records)
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: ds_df.to_csv(index=False), filename="Metric_DS_Breakdown.csv", label="Export CSV")
             render_metric_table(ds_df, first_column_left=True)
 
 @solara.component
@@ -1833,6 +1894,21 @@ def MapViewer():
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
     filters_open, set_filters_open = solara.use_state(False)
+
+    def zoom_to_landuse():
+        l = layers.value['layers']['landuse']['data'].value
+        if l is not None:
+            import math
+            bounds = l.total_bounds
+            minx, miny, maxx, maxy = bounds
+            center_x = (minx + maxx) / 2
+            center_y = (miny + maxy) / 2
+            layers.value['center'].set((center_y, center_x))
+            max_diff = max(maxx - minx, maxy - miny)
+            if max_diff > 0:
+                calculated_zoom = int(math.floor(math.log2(360 / max_diff)))
+                calculated_zoom = max(1, min(calculated_zoom, 18))
+                set_zoom(calculated_zoom)
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -1986,19 +2062,30 @@ def MapViewer():
             layout = layout
             )
         with solara.Div(classes=["map-filter-overlay"]):
-            with solara.Tooltip("Show filters"):
-                solara.Button(
-                    icon_name="mdi-filter-variant",
-                    icon=True,
-                    on_click=lambda: set_filters_open(not filters_open),
-                    outlined=True,
-                    classes=["map-filter-toggle"],
-                    style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
-                )
-            if filters_open:
-                with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "10px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
-                    with solara.Div(classes=["map-filter-content"]):
-                        FilterPanel()
+            with solara.Div(style={"display": "flex", "flex-direction": "column", "gap": "8px", "align-items": "flex-start"}):
+                with solara.Tooltip("Zoom to Land-use Layer"):
+                    solara.Button(
+                        icon_name="mdi-crosshairs-gps",
+                        icon=True,
+                        on_click=zoom_to_landuse,
+                        outlined=True,
+                        classes=["map-filter-toggle"],
+                        style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                        disabled=layers.value['layers']['landuse']['data'].value is None
+                    )
+                with solara.Tooltip("Show filters"):
+                    solara.Button(
+                        icon_name="mdi-filter-variant",
+                        icon=True,
+                        on_click=lambda: set_filters_open(not filters_open),
+                        outlined=True,
+                        classes=["map-filter-toggle"],
+                        style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                    )
+                if filters_open:
+                    with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "2px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
+                        with solara.Div(classes=["map-filter-content"]):
+                            FilterPanel()
         
 @solara.component
 def ExecutePanel(): 
@@ -2011,6 +2098,7 @@ def ExecutePanel():
     def on_click():
         set_execute_counter(execute_counter + 1)
         execute_error.set("")
+        save_status.set("")
 
     def on_reset():
         reset_session()
@@ -2455,13 +2543,21 @@ def ExecutePanel():
             disabled=execute_btn_disabled, style={"width": "100%"})
         solara.Button("Reset", on_click=on_reset, outlined=True,
             disabled=False, style={"width": "100%"})
+    solara.use_effect(lambda: save_status.set(""), [scenario_name.value])
+
     if storage.value is not None:        
         solara.InputText(label="Scenario name", value=scenario_name, continuous_update=True)
         if layers.value['tally_is_available'].value and user.value is not None:
+            solara.Checkbox(label="Public Scenario", value=is_public)
             solara.Button("Save Scenario",on_click=save_app_state, disabled=False)
         else:
             solara.Button("Save Scenario", disabled=True)
         solara.ProgressLinear(save_app_state.pending)
+        if save_status.value == "success":
+            solara.Success("Scenario saved successfully!")
+        elif save_status.value.startswith("error:"):
+            err_msg = save_status.value[len("error:"):].strip()
+            solara.Error(f"Failed to save scenario: {err_msg}")
     # The statements in this block are passed several times during thread execution
     # The statements in this block are passed several times during thread execution
     # if result.error is not None:
@@ -3266,7 +3362,7 @@ def WebApp():
         expand=False
     )
     solara.Details(
-        summary="Generated Data Tables & Charts",
+        summary="Data Tables & Charts",
         children=[GeneratedDataTablesCharts()],
         expand=False
     )
@@ -3283,6 +3379,10 @@ def WebApp():
 @solara.component
 def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     css = """
+    .v-menu__content {
+        z-index: 2000 !important;
+    }
+
     .v-application {
         line-height: 1;
     }
@@ -3335,6 +3435,14 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
         border-width: calc(var(--jp-border-width) + 1px) !important;
         border-color: var(--jp-border-color1) !important;
         position: relative !important;
+    }
+
+    .map-filter-toggle.v-btn--disabled {
+        opacity: 0.55 !important;
+        pointer-events: none !important;
+        background-color: var(--jp-layout-color1) !important;
+        color: var(--jp-ui-font-color1) !important;
+        border-color: var(--jp-border-color1) !important;
     }
 
     .map-filter-panel h4 {

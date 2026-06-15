@@ -29,11 +29,11 @@ import secrets
 import tempfile
 from html import escape
 
-from . import storage, connect_storage, read_from_session_storage, store_in_session_storage
+from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors,\
                     power_edge_colors, ds_to_color, ds_to_color_approx, create_tally
-from .engine import MetricWidget, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer
+from .engine import MetricWidget, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer, GeneratedDataTablesCharts
 from .utilities import PowerFragilityDisplayer
 from ..backend.engine import generate_metrics
 
@@ -364,6 +364,7 @@ def force_render():
 
 @solara.component
 def StorageViewer():
+    solara.use_effect(lambda: refresh_session_list(), [user.value])
     with solara.Card(title='Load Scenario', subtitle='Choose a scenario from storage'):
         solara.Select(label='Choose scenario',value=session_name.value, values=session_list.value,
                     on_value=session_name.set)
@@ -381,6 +382,21 @@ def StorageViewer():
 def MapViewer():
     print('rendering mapviewer')
     filters_open, set_filters_open = solara.use_state(False)
+
+    def zoom_to_landuse():
+        l = layers.value['layers']['landuse']['data'].value
+        if l is not None:
+            import math
+            bounds = l.total_bounds
+            minx, miny, maxx, maxy = bounds
+            center_x = (minx + maxx) / 2
+            center_y = (miny + maxy) / 2
+            layers.value['center'].set((center_y, center_x))
+            max_diff = max(maxx - minx, maxy - miny)
+            if max_diff > 0:
+                calculated_zoom = int(math.floor(math.log2(360 / max_diff)))
+                calculated_zoom = max(1, min(calculated_zoom, 18))
+                zoom.set(calculated_zoom)
     def create_base_layers():
         base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
         base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
@@ -516,19 +532,30 @@ def MapViewer():
             layout = layout
             )
         with solara.Div(classes=["map-filter-overlay"]):
-            with solara.Tooltip("Show filters"):
-                solara.Button(
-                    icon_name="mdi-filter-variant",
-                    icon=True,
-                    on_click=lambda: set_filters_open(not filters_open),
-                    outlined=True,
-                    classes=["map-filter-toggle"],
-                    style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
-                )
-            if filters_open:
-                with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "10px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
-                    with solara.Div(classes=["map-filter-content"]):
-                        FilterPanel()
+            with solara.Div(style={"display": "flex", "flex-direction": "column", "gap": "8px", "align-items": "flex-start"}):
+                with solara.Tooltip("Zoom to Land-use Layer"):
+                    solara.Button(
+                        icon_name="mdi-crosshairs-gps",
+                        icon=True,
+                        on_click=zoom_to_landuse,
+                        outlined=True,
+                        classes=["map-filter-toggle"],
+                        style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                        disabled=layers.value['layers']['landuse']['data'].value is None
+                    )
+                with solara.Tooltip("Show filters"):
+                    solara.Button(
+                        icon_name="mdi-filter-variant",
+                        icon=True,
+                        on_click=lambda: set_filters_open(not filters_open),
+                        outlined=True,
+                        classes=["map-filter-toggle"],
+                        style={"width": "32px", "min-width": "32px", "height": "32px", "padding": "0"},
+                    )
+                if filters_open:
+                    with solara.Card(elevation=2, style={"padding": "0", "border-radius": "12px", "background": "rgba(255,255,255,0.98)", "min-width": "260px", "margin-top": "2px", "border": "1px solid rgba(0,0,0,0.08)", "box-shadow": "0 10px 26px rgba(0,0,0,0.16)"}):
+                        with solara.Div(classes=["map-filter-content"]):
+                            FilterPanel()
     print(f"MapViewer render count {render_count.value}")
 
 metric_update_pending = solara.reactive(False)
@@ -863,6 +890,14 @@ def MetricStatistics():
 
     options = {
         "backgroundColor": "transparent",
+        "toolbox": {
+            "feature": {
+                "saveAsImage": {
+                    "title": "Save as PNG",
+                    "pixelRatio": 2
+                }
+            }
+        },
         "title": [{
             "text": 'Total Impact Metrics',
             "left": 'center',
@@ -1003,9 +1038,13 @@ def MetricStatistics():
             with solara.GridFixed(columns=1):
                 solara.FigureEcharts(option=options, attributes={"style": "height:520px; width:100%"})
         with solara.lab.Tab("Data"):
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: df.to_csv(index=False), filename="Metric_Data.csv", label="Export CSV")
             render_metric_table(df)
         with solara.lab.Tab("Stats"):
             stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: stats_df.to_csv(index=False), filename="Metric_Stats.csv", label="Export CSV")
             render_metric_table(stats_df, first_column_left=True)
         with solara.lab.Tab("DS Breakdown"):
             ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
@@ -1034,6 +1073,8 @@ def MetricStatistics():
                 ds_records.append(record)
 
             ds_df = pd.DataFrame(ds_records)
+            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
+                solara.FileDownload(data=lambda: ds_df.to_csv(index=False), filename="Metric_DS_Breakdown.csv", label="Export CSV")
             render_metric_table(ds_df, first_column_left=True)
 
 
@@ -1058,6 +1099,10 @@ def ExploreSidebarContent():
 @solara.component
 def Page():    
     css = """
+    .v-menu__content {
+        z-index: 2000 !important;
+    }
+
     .v-application {
         line-height: 1;
     }
@@ -1110,6 +1155,14 @@ def Page():
         border-width: calc(var(--jp-border-width) + 1px) !important;
         border-color: var(--jp-border-color1) !important;
         position: relative !important;
+    }
+
+    .map-filter-toggle.v-btn--disabled {
+        opacity: 0.55 !important;
+        pointer-events: none !important;
+        background-color: var(--jp-layout-color1) !important;
+        color: var(--jp-ui-font-color1) !important;
+        border-color: var(--jp-border-color1) !important;
     }
 
     .map-filter-panel h4 {
@@ -1202,5 +1255,10 @@ def Page():
     solara.Details(
         summary="Layer Details",
         children=[LayerDisplayer()],
+        expand=False
+    )
+    solara.Details(
+        summary="Data Tables & Charts",
+        children=[GeneratedDataTablesCharts(layers=layers)],
         expand=False
     )

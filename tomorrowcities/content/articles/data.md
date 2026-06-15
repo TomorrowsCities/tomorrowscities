@@ -88,7 +88,7 @@ Households are defined in a tabular format whose attributes are shown below:
 
 |bldid|hhid|income|nind|commfacid|
 |-----|----|------|----|---------|
-|17   |12  |lowIncomeA|3|3643|
+|17   |12  |veryLowIncome|3|3643|
 
 where
 

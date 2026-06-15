@@ -182,14 +182,14 @@ def process_data(input_spreadsheet, ipfile_landuse, constraint_gdf=None, seed=No
     opfile_landuse =  'landuse_layer_'+str(uuid.uuid4())+'.xlsx'
               
     # Income types is hardcoded
-    avg_income_types =np.array(['lowIncomeA','lowIncomeB','midIncome','highIncome'])
+    avg_income_types =np.array(['veryLowIncome','lowIncome','midIncome','highIncome'])
     
     # Extract average dwelling area and footprint area             
     average_dwelling_area = np.array([ipdf.iloc[13,2],ipdf.iloc[13,3],\
                                       ipdf.iloc[13,4],ipdf.iloc[13,5]])
     
-    fpt_area = {'lowIncomeA':np.fromstring(str(ipdf.iloc[14,2]),dtype=float,sep=','),
-                'lowIncomeB':np.fromstring(str(ipdf.iloc[14,3]),dtype=float,sep=','),
+    fpt_area = {'veryLowIncome':np.fromstring(str(ipdf.iloc[14,2]),dtype=float,sep=','),
+                'lowIncome':np.fromstring(str(ipdf.iloc[14,3]),dtype=float,sep=','),
                 'midIncome':np.fromstring(str(ipdf.iloc[14,4]),dtype=float,sep=','),
                 'highIncome':np.fromstring(str(ipdf.iloc[14,5]),dtype=float,sep=',')}
     
@@ -314,8 +314,13 @@ def process_data(input_spreadsheet, ipfile_landuse, constraint_gdf=None, seed=No
         landuse_shp['setback'] = 0.0
     else:
         landuse_shp['setback'] = pd.to_numeric(landuse_shp['setback'], errors='coerce').fillna(0.0)
+    # Map legacy lowIncome and lowIncomeA to veryLowIncome, and lowIncomeB to lowIncome
     lowIncome_mask = landuse['avgincome'] == 'lowIncome'
-    landuse.loc[lowIncome_mask,'avgincome'] = 'lowIncomeA'
+    lowIncomeA_mask = landuse['avgincome'] == 'lowIncomeA'
+    lowIncomeB_mask = landuse['avgincome'] == 'lowIncomeB'
+    landuse.loc[lowIncome_mask, 'avgincome'] = 'veryLowIncome'
+    landuse.loc[lowIncomeA_mask, 'avgincome'] = 'veryLowIncome'
+    landuse.loc[lowIncomeB_mask, 'avgincome'] = 'lowIncome'
     
     # Validate avgincome values if densitycap > 0
     # Because densitycap might not be numeric yet, cast safely for checking
@@ -1030,7 +1035,7 @@ def process_data(input_spreadsheet, ipfile_landuse, constraint_gdf=None, seed=No
     head4school_df_edus_list = list(head4school_df['eduAttStat'])
     school_df_edu_list = np.ones(len(school_df_hhid_list))*np.nan
     
-    # Label 'lowIncomeA' and 'lowIncomeB' = 1, 'midIncome' =2, 'highIncome' =3
+    # Label 'veryLowIncome' and 'lowIncome' = 1, 'midIncome' =2, 'highIncome' =3
     household_df_hhid_list = list(household_df['hhID'])
     #Use .copy() to avoid SettingwithCopyWarning
     income4school_df=household_df[household_df['hhID'].\

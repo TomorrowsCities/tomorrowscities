@@ -58,7 +58,7 @@ BASIC_MODE_CONFIG = {
 }
 
 
-INCOME_OPTIONS = ["lowIncomeA", "lowIncomeB", "midIncome", "highIncome", "None"]
+INCOME_OPTIONS = ["veryLowIncome", "lowIncome", "midIncome", "highIncome", "None"]
 RESIDENTIAL_CLASSES = set(URBAN_ATLAS_CLASSES[:5])
 
 

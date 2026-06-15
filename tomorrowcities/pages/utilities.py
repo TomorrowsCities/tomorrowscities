@@ -415,7 +415,7 @@ def LanduseExposureCheck():
                 else:
                     msgs.append(("success", "Landuse 'densitycap' >= 0 verified."))
                     
-                valid_incomes = {"lowIncomeA", "lowIncomeB", "midIncome", "highIncome"}
+                valid_incomes = {"veryLowIncome", "lowIncome", "midIncome", "highIncome"}
                 mask = lu_df['densitycap'] > 0
                 if mask.any():
                     invalid_incomes = lu_df[mask & (~lu_df['avgincome'].isin(valid_incomes))]
@@ -1101,7 +1101,7 @@ lbl_2_str = {
         'luf': {'name': 'Land Use Type',
                 'mapping': {}},
         'avgincome': {'name': 'Average Income',
-                'mapping': {'highIncome': 'High Income', 'lowIncomeA': 'Low Income', 'lowIncomeB': 'Low Income', 'midIncome': 'Moderate Income'}},
+                'mapping': {'highIncome': 'High Income', 'veryLowIncome': 'Very Low Income', 'lowIncome': 'Low Income', 'midIncome': 'Moderate Income'}},
         },
     'building': {
         'zoneid': {'name': 'Zone ID',
@@ -1129,7 +1129,7 @@ lbl_2_str = {
         'ds': {'name': 'Damage State',
                 'mapping': {0: '0-No',1: '1-Slight', 2:'2-Moderate',3:'3-Extensive',4:'4-Complete'}},
         'income': {'name': 'Income Level',
-                   'mapping': {'highIncome': 'High Income', 'lowIncomeA': 'Low Income A', 'lowIncomeB': 'Low Income', 'midIncome': 'Moderate Income'}},
+                   'mapping': {'highIncome': 'High Income', 'veryLowIncome': 'Very Low Income', 'lowIncome': 'Low Income', 'midIncome': 'Moderate Income'}},
         'material': {'name': 'Material',
                    'mapping': {}},
         'gender': {'name': 'Gender',
