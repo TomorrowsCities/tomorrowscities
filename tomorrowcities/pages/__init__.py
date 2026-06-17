@@ -7,6 +7,7 @@ import boto3
 import os
 import pickle
 import pprint
+import tempfile
 from cryptography.fernet import Fernet
 from dotenv import dotenv_values
 import secrets
@@ -100,6 +101,38 @@ def CustomMenuWidget(
 ):
     pass
 
+
+@component_vue("resize_trigger.vue")
+def ResizeTriggerWidget(
+    children: List[solara.Element] = [],
+    trigger_key: str = "",
+):
+    pass
+
+
+@component_vue("metric_gauge.vue")
+def MetricGaugeWidget(
+    progress_ratio: float = 0.0,
+    value_text: str = "0",
+):
+    pass
+
+
+@component_vue("leaflet_initial_order_fix.vue")
+def LeafletInitialOrderFixWidget(
+    trigger_key: str = "",
+):
+    pass
+
+
+@component_vue("viewport_observer.vue")
+def ViewportObserverWidget(
+    width: int = 0,
+    on_width: Optional[Callable] = None,
+):
+    pass
+
+
 @solara.component
 def CustomMenu(
     activator: Union[solara.Element, List[solara.Element]],
@@ -128,6 +161,32 @@ def CustomMenu(
         use_activator_width=use_activator_width,
         left=left,
     )
+
+
+@solara.component
+def ClientResizeTrigger(
+    children: Union[solara.Element, List[solara.Element]],
+    trigger_key: str = "",
+):
+    if not isinstance(children, list):
+        children = [children]
+    return ResizeTriggerWidget(children=children, trigger_key=trigger_key)
+
+
+@solara.component
+def MetricGauge(progress_ratio: float, value_text: str):
+    return MetricGaugeWidget(progress_ratio=progress_ratio, value_text=value_text)
+
+
+@solara.component
+def ClientLeafletInitialOrderFix(trigger_key: str = ""):
+    return LeafletInitialOrderFixWidget(trigger_key=trigger_key)
+
+
+@solara.component
+def ViewportObserver(width: Union[solara.Reactive[int], int] = 0, on_width: Optional[Callable] = None):
+    width_reactive = solara.use_reactive(width, on_width)
+    return ViewportObserverWidget(width=width_reactive.value, on_width=width_reactive.set)
 
 
 def test_logon():
@@ -368,18 +427,16 @@ class S3Storage(dict):
             return f"https://{self.bucket_name}.s3.amazonaws.com/{object_name}"
         return f"Upload to bucket:{self.bucket_name} failed file_name:{file_name} object_name:{object_name}"
     def load_metadata(self, session_name):
-        # Use the get_object method to read the file        
         if self.is_alive():
             client = self.get_client()
-            client.download_file(self.bucket_name, f'{session_name}.metadata', f'/tmp/{session_name}.metadata')
-
-            with open(f'/tmp/{session_name}.metadata', 'rb') as fileObj:
-                # Access the content of the file from the response
+            tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
+            tmp_file.close()
+            client.download_file(self.bucket_name, f'{session_name}.metadata', tmp_file.name)
+            with open(tmp_file.name, 'rb') as fileObj:
                 metadata = pickle.load(fileObj)
-
-            print(type(metadata))
-
-        return metadata
+            os.unlink(tmp_file.name)
+            return metadata
+        return None
     
     def load_object(self, object_name):
         # Use the get_object method to read the file
@@ -423,13 +480,25 @@ class S3Storage(dict):
         filtered = []
         for s in all_sessions:
             if s.startswith("PRIVATE_"):
-                # Format: PRIVATE_{date_string}_{user_id_slug}_{slug}
-                parts = s.split("_")
-                if len(parts) >= 3:
-                    prefix_len = len("PRIVATE_") + len(parts[1]) + 1
-                    user_suffix = s[prefix_len:]
-                    if current_user_id and user_suffix.startswith(current_user_id + "_"):
+                try:
+                    metadata = self.load_metadata(s)
+                except Exception:
+                    metadata = None
+
+                metadata_user_id = metadata.get('user_id') if isinstance(metadata, dict) else None
+                if current_user_id and metadata_user_id:
+                    import re
+                    metadata_user_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", metadata_user_id)
+                    if metadata_user_slug == current_user_id:
                         filtered.append(s)
+                else:
+                    # Legacy fallback: PRIVATE_{date_string}_{user_id_slug}_{slug}
+                    parts = s.split("_")
+                    if len(parts) >= 3:
+                        prefix_len = len("PRIVATE_") + len(parts[1]) + 1
+                        user_suffix = s[prefix_len:]
+                        if current_user_id and user_suffix.startswith(current_user_id + "_"):
+                            filtered.append(s)
             elif "_PRIVATE_" in s:
                 # Format: TCDSE_SESSION_PRIVATE_{user_id}_{slug}_{date}_PKL
                 parts = s.split("_PRIVATE_")

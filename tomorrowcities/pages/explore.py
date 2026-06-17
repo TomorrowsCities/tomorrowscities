@@ -29,11 +29,11 @@ import secrets
 import tempfile
 from html import escape
 
-from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user
+from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user, ClientResizeTrigger, ClientLeafletInitialOrderFix, ViewportObserver
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
-from .engine import landuse_colors, generic_layer_colors, building_colors, road_edge_colors,\
-                    power_edge_colors, ds_to_color, ds_to_color_approx, create_tally
-from .engine import MetricWidget, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer, GeneratedDataTablesCharts
+from .engine import landuse_colors, generic_layer_colors, constraint_layer_colors, building_colors, road_edge_colors,\
+                    power_edge_colors, ds_to_color, ds_to_color_approx, create_tally, MAP_PANES
+from .engine import MetricWidget, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer, GeneratedDataTablesCharts, create_road_edges_layer, build_building_damage_state_chart_options
 from .utilities import PowerFragilityDisplayer
 from ..backend.engine import generate_metrics
 
@@ -92,39 +92,50 @@ def create_map_layer(df, name):
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name)
+        heatmap_layer = ipyleaflet.Heatmap(
+            locations=locs,
+            radius=3,
+            blur=2,
+            name=name,
+            pane="intensityPane",
+            options=["pane"],
+            bottom=True,
+        )
         clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
         info_layer = ipyleaflet.GeoJSON(
             data=json.loads(clickable_df.to_json()),
             name=f"{name}-info",
+            pane="intensityPane",
+            options=["pane"],
+            bottom=True,
             point_style={'radius': 5, 'color': 'white', 'fillOpacity': 0.2, 'opacity': 0, 'weight': 15},
             style={"opacity": 0, "fillOpacity": 0.2, "weight": 0},
             hover_style={"opacity": 0.8, "fillOpacity": 0.8, "weight": 1, "color": "#ffffff"},
         )
         info_layer.on_click(intensity_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name)
+        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name, bottom=True)
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="landusePane",
+            options=["pane"],
+            bottom=True,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=landuse_colors)
         map_layer.on_click(landuse_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="buildingPane",
+            options=["pane"],
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=building_colors)
         map_layer.on_click(building_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "road edges":
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            hover_style={'color': 'orange'},
-            style_callback=road_edge_colors)
-        map_layer.on_click(road_edge_click_handler)
+        map_layer = create_road_edges_layer(df, name, road_edge_click_handler)
     elif name == "road nodes":
         df_squares = df.copy()
-        half_side = 0.00005
+        half_side = 0.00003
         df_squares['geometry']  = df['geometry'].apply(lambda point: Polygon([
                     (point.x - half_side, point.y - half_side),
                     (point.x + half_side, point.y - half_side),
@@ -132,8 +143,10 @@ def create_map_layer(df, name):
                     (point.x - half_side, point.y + half_side)
                 ]))
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df_squares.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 0.8, 'weight': 1},
-            hover_style={'color': 'orange', 'dashArray': '0', 'fillOpacity': 0.5})
+            pane="infrastructureNodePane",
+            options=["pane"],
+            style={'color': 'black', 'fillColor': 'black', 'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'orange', 'fillColor': 'black', 'dashArray': '0', 'fillOpacity': 1, 'weight': 1.5})
         map_layer.on_click(road_node_click_handler)
     elif name == "power nodes":
         markers = []
@@ -152,17 +165,26 @@ def create_map_layer(df, name):
 
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
+                                                   pane="infrastructureNodePane",
+                                                   options=["pane"],
                                                    disable_clustering_at_zoom=5)
     elif name == 'power edges':
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="infrastructurePane",
+            options=["pane"],
             hover_style={'color': 'orange'},
             style_callback=power_edge_colors)
         map_layer.on_click(power_edge_click_handler)
     else:
+        target_pane = "markerPane" if name == "constraint" else "overlayPane"
+        style_callback = constraint_layer_colors if name == "constraint" else generic_layer_colors
+        base_style = constraint_layer_colors({"geometry": {"type": "Polygon"}}) if name == "constraint" else {'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1}
+        hover_style = {'color': '#1d4ed8', 'dashArray': '0', 'fillOpacity': 0.6, 'weight': 4} if name == "constraint" else {'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5}
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
-            style_callback=generic_layer_colors)
+            pane=target_pane,
+            style=base_style,
+            hover_style=hover_style,
+            style_callback=style_callback)
         map_layer.on_click(generic_layer_click_handler)
     return map_layer
 
@@ -329,14 +351,14 @@ def MetaDataViewer(session_name):
         display_map = {
             'scenario_name': 'Scenario Name:',
             'hazard': 'Hazard Type:',
-            'infra': 'Analysed Structure(s):',
+            'infra': 'Assets at Risk:',
             'datetime_analysis': 'Analysis Time:',
             'datetime_upload': 'Analysis Upload Time:',
             'user_id': 'Uploader User ID:'
         }
 
         with solara.Column(style={"margin-top": "10px"}):
-            with solara.GridFixed(columns=2, row_gap="1px"):
+            with solara.GridFixed(columns=2, row_gap="6px"):
                 for key, label in display_map.items():
                     if key in metadata:
                         value = metadata[key]
@@ -350,9 +372,9 @@ def MetaDataViewer(session_name):
                             display_value = f'{value}'
                         
                         # Row with bold label and left-aligned value
-                        solara.Text(f"{label}", style={"font-weight": "bold"})
-                        with solara.Row(justify="start"):
-                            solara.Text(display_value)
+                        solara.Text(f"{label}", style={"font-weight": "bold", "line-height": "1.35", "padding-right": "8px"})
+                        with solara.Div(classes=["metadata-value-wrap"]):
+                            solara.Text(display_value, style={"line-height": "1.35"})
         # print(metadata)
 
 def clear_session():
@@ -419,7 +441,9 @@ def MapViewer():
     # Removed cleanup_cache as we no longer cache map layers
 
     def create_layers():
-        map_layers = []
+        regular_layers = []
+        infrastructure_layers = []
+        priority_layers = []
         sorted_layers = sorted(
             layers.value['layers'].items(),
             key=lambda item: item[1].get('render_order', 0)
@@ -436,10 +460,15 @@ def MapViewer():
                         df_filtered = df[landuse_filter.value]
 
                 print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
-                map_layer = create_map_layer(df_filtered, l)
-                map_layers.append(map_layer)
+                map_layer = create_map_layer(df_filtered, l) if l == "constraint" else create_map_layer(df_filtered, l)
+                if l in {"road edges", "road nodes", "power edges", "power nodes"}:
+                    infrastructure_layers.append(map_layer)
+                elif l == "constraint":
+                    priority_layers.append(map_layer)
+                else:
+                    regular_layers.append(map_layer)
 
-        return map_layers
+        return regular_layers + infrastructure_layers + priority_layers
 
     map_layers = solara.use_memo(create_layers,
                     [building_filter.value, landuse_filter.value] +
@@ -514,6 +543,7 @@ def MapViewer():
         controls.append(legend_control)
 
     with solara.Div(classes=["map-shell"]):
+        ClientLeafletInitialOrderFix(trigger_key=f"{render_count.value}")
         ipyleaflet.Map.element(
             zoom=zoom.value,
             max_zoom=23,
@@ -527,6 +557,7 @@ def MapViewer():
             touch_zoom=True,
             box_zoom=True,
             keyboard=True if random.random() > 0.5 else False,
+            panes=MAP_PANES,
             layers=base_layers + map_layers,
             controls = controls,
             layout = layout
@@ -609,12 +640,11 @@ def MetricPanel():
     if metric_update_pending.value:
         solara.ProgressLinear(metric_update_pending.value)
 
-    with solara.v.Row(justify="space-around", style_="margin-top: 0px; padding-top: 0px;"):
+    with solara.v.Row(justify="center", style_="margin-top: 0px; padding-top: 0px;"):
         for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
             # Responsive grid:
-            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md=3 (Small Desktop 4/row)
-            # class_="col-lg-custom-8" (Large Desktop 8/row via custom CSS)
-            with solara.v.Col(cols=6, sm=4, md=3, class_="col-lg-custom-8", style_="padding: 5px;"):
+            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md/lg=3 (Desktop 4/row), xl=2 (Wide Desktop 6/row)
+            with solara.v.Col(cols=6, sm=4, md=3, lg=3, xl=2, class_="metric-card-col", style_="padding: 5px;"):
                 MetricWidget(name, metric['desc'], 
                             metric['value'],
                             metric['max_value'],
@@ -744,10 +774,48 @@ def LayerDisplayer():
     def set_selected(s):
         layers.value['selected_layer'].set(s)
 
-    solara.ToggleButtonsSingle(value=selected, on_value=set_selected, values=nonempty_layer_names)
-    if selected is None and len(nonempty_layer_names) > 0:
-        set_selected(nonempty_layer_names[0])
-    if selected is not None:
+    def render_layer_dataframe(dataframe, card_title=None):
+        with solara.Column(classes=["layer-details-desktop"], style={"width": "100%", "minWidth": "0"}):
+            solara.DataFrame(dataframe, items_per_page=5)
+
+    solara.Style("""
+        .scrollable-tabs {
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+        }
+        .layer-table-wrapper {
+            width: 100% !important;
+            overflow-x: auto !important;
+        }
+        .scrollable-tabs > div {
+            display: inline-flex !important;
+            flex-wrap: nowrap !important;
+        }
+        .layer-details-desktop {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        .layer-download-row {
+            width: 100%;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        @media (max-width: 600px) {
+            .layer-download-row .v-btn {
+                width: 100% !important;
+            }
+        }
+    """)
+    with solara.Row(classes=["scrollable-tabs"]):
+        solara.ToggleButtonsSingle(value=selected, on_value=set_selected, values=nonempty_layer_names)
+    if selected not in nonempty_layers and len(nonempty_layer_names) > 0:
+        selected = nonempty_layer_names[0]
+        set_selected(selected)
+    if selected in nonempty_layers:
         data = nonempty_layers[selected]['data'].value
         fallback_df = nonempty_layers[selected]['df'].value
         if data is None:
@@ -761,14 +829,14 @@ def LayerDisplayer():
                         df_filtered = data.drop(columns='geometry')
                 else:
                     df_filtered = data.drop(columns='geometry')
-                solara.DataFrame(df_filtered, items_per_page=5)
+                render_layer_dataframe(df_filtered, card_title=selected)
             else:
                 if selected == "power fragility":
                     PowerFragilityDisplayer(data, items_per_page=5)
                 else:
-                    solara.DataFrame(data, items_per_page=5)
+                    render_layer_dataframe(data, card_title=selected)
             if selected in ["landuse", "building", "road edges", "road nodes", "power nodes", "power edges", "intensity"]:
-                with solara.Row():
+                with solara.Row(classes=["layer-download-row"]):
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -776,7 +844,7 @@ def LayerDisplayer():
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
             elif selected in ['household', 'individual', 'fragility', 'landslide fragility', 'vulnerability', 'power fragility', 'road fragility']:
-                with solara.Row():
+                with solara.Row(classes=["layer-download-row"]):
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                         solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -790,7 +858,7 @@ def LayerDisplayer():
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return str(obj)
-            with solara.Row():
+            with solara.Row(classes=["layer-download-row"]):
                 file_object = json.dumps(data, default=default)
                 with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                     solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -801,7 +869,7 @@ def LayerDisplayer():
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return str(obj)
-            with solara.Row():
+            with solara.Row(classes=["layer-download-row"]):
                 file_object = json.dumps(data, default=default)
                 with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                     solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -842,31 +910,63 @@ def MetricStatistics():
         metric_name: metrics[0][metric_name].get('desc', metric_name)
         for metric_name in metric_names
     }
+    building_data = layers.value['layers']['building']['data'].value
 
     def render_metric_table(table_df, first_column_left=False):
         headers = [escape(str(col)) for col in table_df.columns]
         rows = []
-        for row in table_df.itertuples(index=False):
+        mobile_cards = []
+        for row_index, row in enumerate(table_df.itertuples(index=False), start=1):
             cells = []
+            card_fields = []
+            card_title = None
             for idx, value in enumerate(row):
                 align = "left" if first_column_left and idx == 0 else "center"
                 display_value = "" if pd.isna(value) else str(value)
                 cells.append(f'<td style="text-align:{align};">{escape(display_value)}</td>')
+                if idx == 0 and first_column_left:
+                    card_title = escape(display_value)
+                    continue
+                card_fields.append(
+                    f'''
+                    <div class="metric-stats-mobile-field">
+                        <div class="metric-stats-mobile-label">{headers[idx]}</div>
+                        <div class="metric-stats-mobile-value">{escape(display_value)}</div>
+                    </div>
+                    '''
+                )
             rows.append(f"<tr>{''.join(cells)}</tr>")
+            if not card_title:
+                card_title = f"Record {row_index}"
+            mobile_cards.append(
+                f'''
+                <article class="metric-stats-mobile-card">
+                    <div class="metric-stats-mobile-card-title">{card_title}</div>
+                    <div class="metric-stats-mobile-card-body">
+                        {''.join(card_fields)}
+                    </div>
+                </article>
+                '''
+            )
         header_html = "".join(f"<th>{header}</th>" for header in headers)
         table_classes = "metric-stats-table"
         if first_column_left:
             table_classes += " first-column-left"
         table_html = f"""
-            <div class="{table_classes}">
-                <table>
-                    <thead>
-                        <tr>{header_html}</tr>
-                    </thead>
-                    <tbody>
-                        {''.join(rows)}
-                    </tbody>
-                </table>
+            <div class="metric-stats-data-view">
+                <div class="{table_classes}">
+                    <table>
+                        <thead>
+                            <tr>{header_html}</tr>
+                        </thead>
+                        <tbody>
+                            {''.join(rows)}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="metric-stats-mobile-list">
+                    {''.join(mobile_cards)}
+                </div>
             </div>
         """
         solara.Markdown(table_html, unsafe_solara_execute=True)
@@ -887,6 +987,7 @@ def MetricStatistics():
         chart_categories.append("\n".join(textwrap.wrap(metric_label, width=18)))
         total_value = sum(float(m[metric_name].get('value', 0)) for m in metrics) / max(len(metrics), 1)
         chart_values.append(total_value)
+    mobile_chart_categories = ["\n".join(textwrap.wrap(label, width=22)) for label in metric_labels.values()]
 
     options = {
         "backgroundColor": "transparent",
@@ -991,25 +1092,201 @@ def MetricStatistics():
                     "formatter": "{c}"
                 }
             }
+        ],
+        "media": [
+            {
+                "query": {"maxWidth": 640},
+                "option": {
+                    "tooltip": {
+                        "trigger": "axis",
+                        "axisPointer": {
+                            "type": "shadow"
+                        }
+                    },
+                    "grid": {
+                        "top": 72,
+                        "left": 18,
+                        "right": 18,
+                        "bottom": 40,
+                        "containLabel": True
+                    },
+                    "xAxis": {
+                        "type": "value",
+                        "name": "Value",
+                        "nameLocation": "middle",
+                        "nameGap": 34,
+                        "nameTextStyle": {
+                            "fontSize": 10,
+                            "fontWeight": 600,
+                            "color": "#3e4c59"
+                        },
+                        "axisLabel": {
+                            "fontSize": 9,
+                            "color": "#52606d"
+                        },
+                        "splitLine": {
+                            "lineStyle": {
+                                "color": "rgba(15, 23, 42, 0.08)"
+                            }
+                        }
+                    },
+                    "yAxis": {
+                        "type": "category",
+                        "data": mobile_chart_categories,
+                        "axisLabel": {
+                            "interval": 0,
+                            "fontSize": 9,
+                            "lineHeight": 11,
+                            "color": "#3e4c59",
+                            "width": 112,
+                            "overflow": "break"
+                        },
+                        "axisTick": {
+                            "show": False
+                        },
+                        "axisLine": {
+                            "lineStyle": {
+                                "color": "#9fb3c8"
+                            }
+                        }
+                    },
+                    "series": [
+                        {
+                            "type": "bar",
+                            "data": chart_values,
+                            "barMaxWidth": 18,
+                            "label": {
+                                "show": True,
+                                "position": "right",
+                                "fontSize": 9,
+                                "color": "#1f2933"
+                            }
+                        }
+                    ]
+                }
+            }
         ]
     }
+    stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
+    ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
+    for m in metrics:
+        for m_name in metric_names:
+            if 'ds_breakdown' in m[m_name]:
+                for ds, count in m[m_name]['ds_breakdown'].items():
+                    ds_avg_dict[m_name][ds] += count / len(metrics)
+
+    ds_labels = {
+        0: 'DS0 (No Damage)',
+        1: 'DS1 (Slight)',
+        2: 'DS2 (Moderate)',
+        3: 'DS3 (Extensive)',
+        4: 'DS4 (Complete)'
+    }
+    ds_records = []
+    for ds in [0, 1, 2, 3, 4]:
+        record = {'Damage State': ds_labels[ds]}
+        for m_name in metric_names:
+            desc = metric_labels[m_name]
+            if 'ds_breakdown' in metrics[0][m_name]:
+                record[desc] = int(round(ds_avg_dict[m_name][ds]))
+            else:
+                record[desc] = 'N/A'
+        ds_records.append(record)
+    ds_df = pd.DataFrame(ds_records)
+    building_ds_counts = {ds: 0 for ds in range(5)}
+    if isinstance(building_data, gpd.GeoDataFrame) and 'ds' in building_data.columns:
+        building_ds_series = pd.to_numeric(building_data['ds'], errors='coerce').dropna().astype(int)
+        building_ds_series = building_ds_series[building_ds_series.isin(range(5))]
+        building_ds_counts.update({int(ds): int(count) for ds, count in building_ds_series.value_counts().to_dict().items()})
+    building_ds_chart_options = build_building_damage_state_chart_options(building_ds_counts)
+
+    selected_metric_tab, set_selected_metric_tab = solara.use_state("Chart")
+    tab_details = {
+        "Chart": ("Boxplot", "Average impact values across simulations"),
+        "Data": ("Data", "Raw simulation output for each metric"),
+        "Stats": ("Stats", "Distribution summary for the current run set"),
+        "DS Breakdown": ("DS Breakdown", "Average damage-state counts by metric"),
+    }
+
+    def render_export(filename, export_df):
+        with solara.Row(justify="start", classes=["metric-stats-toolbar"], style={"margin-bottom": "8px", "width": "100%"}):
+            with solara.FileDownload(data=lambda: export_df.to_csv(index=False), filename=filename, mime_type="text/csv"):
+                solara.Button(
+                    "Export CSV",
+                    icon_name="mdi-cloud-download-outline",
+                    outlined=True,
+                    color="primary",
+                    classes=["metric-stats-download-button"],
+                    style={},
+                )
+
     solara.Style('''
+        .metric-stats-shell {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            padding: 0;
+            overflow-x: hidden;
+            box-sizing: border-box;
+        }
+        .metric-stats-tabbar {
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+        }
+        .metric-stats-tabbar > div {
+            display: inline-flex !important;
+            flex-wrap: nowrap !important;
+        }
+        .metric-stats-panel {
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+        .metric-stats-data-view {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        .metric-stats-heading {
+            margin-bottom: 4px;
+        }
+        .metric-stats-heading-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .metric-stats-heading-subtitle {
+            font-size: 0.88rem;
+            color: #64748b;
+            line-height: 1.4;
+            margin-top: 2px;
+        }
         .metric-stats-table {
             width: 100%;
-            overflow-x: auto;
+            max-width: 100%;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 16px;
+            background: #ffffff;
+            box-sizing: border-box;
         }
         .metric-stats-table table {
             width: 100% !important;
-            max-width: 100% !important;
-            table-layout: fixed !important;
+            min-width: 0 !important;
             border-collapse: collapse;
+            table-layout: fixed;
         }
         .metric-stats-table th,
         .metric-stats-table td {
-            border: 1px solid rgba(0, 0, 0, 0.12);
-            padding: 6px 8px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            padding: 8px 10px;
             font-size: 11px;
-            line-height: 1.25;
+            line-height: 1.35;
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: anywhere !important;
@@ -1017,9 +1294,10 @@ def MetricStatistics():
             text-align: center;
         }
         .metric-stats-table th {
-            font-weight: bold;
+            font-weight: 700;
             text-align: center !important;
             vertical-align: middle;
+            background: rgba(248, 250, 252, 0.98);
         }
         .metric-stats-table th:first-child {
             text-align: center !important;
@@ -1032,50 +1310,138 @@ def MetricStatistics():
         .metric-stats-table.first-column-left td:first-child {
             text-align: left !important;
         }
-    ''')
-    with solara.lab.Tabs():
-        with solara.lab.Tab("Boxplot"):
-            with solara.GridFixed(columns=1):
-                solara.FigureEcharts(option=options, attributes={"style": "height:520px; width:100%"})
-        with solara.lab.Tab("Data"):
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: df.to_csv(index=False), filename="Metric_Data.csv", label="Export CSV")
-            render_metric_table(df)
-        with solara.lab.Tab("Stats"):
-            stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: stats_df.to_csv(index=False), filename="Metric_Stats.csv", label="Export CSV")
-            render_metric_table(stats_df, first_column_left=True)
-        with solara.lab.Tab("DS Breakdown"):
-            ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
-            for m in metrics:
-                for m_name in metric_names:
-                    if 'ds_breakdown' in m[m_name]:
-                        for ds, count in m[m_name]['ds_breakdown'].items():
-                            ds_avg_dict[m_name][ds] += count / len(metrics)
-
-            ds_labels = {
-                0: 'DS0 (No Damage)',
-                1: 'DS1 (Slight)',
-                2: 'DS2 (Moderate)',
-                3: 'DS3 (Extensive)',
-                4: 'DS4 (Complete)'
+        .metric-stats-mobile-list {
+            display: none;
+        }
+        .metric-stats-mobile-card {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 16px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        }
+        .metric-stats-mobile-card:last-child {
+            margin-bottom: 0;
+        }
+        .metric-stats-mobile-card-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+        .metric-stats-mobile-card-body {
+            display: grid;
+            gap: 10px;
+        }
+        .metric-stats-mobile-field {
+            display: grid;
+            gap: 4px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+        }
+        .metric-stats-mobile-field:first-child {
+            padding-top: 0;
+            border-top: 0;
+        }
+        .metric-stats-mobile-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+        .metric-stats-mobile-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1e293b;
+            line-height: 1.35;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 960px) {
+            .metric-stats-table table {
+                min-width: 560px !important;
             }
-            ds_records = []
-            for ds in [0, 1, 2, 3, 4]:
-                record = {'Damage State': ds_labels[ds]}
-                for m_name in metric_names:
-                    desc = metric_labels[m_name]
-                    if 'ds_breakdown' in metrics[0][m_name]:
-                        record[desc] = int(round(ds_avg_dict[m_name][ds]))
-                    else:
-                        record[desc] = 'N/A'
-                ds_records.append(record)
+        }
+        @media (max-width: 600px) {
+            .metric-stats-heading-title {
+                font-size: 0.98rem;
+            }
+            .metric-stats-heading-subtitle {
+                font-size: 0.82rem;
+            }
+            .metric-stats-toolbar {
+                justify-content: stretch !important;
+            }
+            .metric-stats-download-button,
+            .metric-stats-download-button .v-btn {
+                width: 100% !important;
+            }
+            .metric-stats-table {
+                display: none;
+            }
+            .metric-stats-mobile-list {
+                display: block;
+            }
+        }
+    ''')
+    with solara.Column(classes=["metric-stats-shell"], gap="12px", style={"width": "100%", "padding": "0"}):
+        with solara.Row(classes=["metric-stats-tabbar"], style={"width": "100%", "margin": "0"}):
+            solara.ToggleButtonsSingle(
+                value=selected_metric_tab,
+                on_value=set_selected_metric_tab,
+                values=list(tab_details.keys()),
+                style={"width": "100%"},
+            )
 
-            ds_df = pd.DataFrame(ds_records)
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: ds_df.to_csv(index=False), filename="Metric_DS_Breakdown.csv", label="Export CSV")
-            render_metric_table(ds_df, first_column_left=True)
+        title, subtitle = tab_details[selected_metric_tab]
+        with solara.Column(classes=["metric-stats-panel"], gap="8px", style={"width": "100%", "minWidth": "0"}):
+            solara.Markdown(
+                f"""
+                <div class="metric-stats-heading">
+                    <div class="metric-stats-heading-title">{escape(title)}</div>
+                    <div class="metric-stats-heading-subtitle">{escape(subtitle)}</div>
+                </div>
+                """,
+                unsafe_solara_execute=True,
+            )
+            if selected_metric_tab == "Chart":
+                with solara.GridFixed(columns=1):
+                    ClientResizeTrigger(
+                        children=solara.FigureEcharts(
+                            option=options,
+                            attributes={"style": "height:clamp(360px, 60vw, 520px); width:100%; min-width:0;"},
+                        ),
+                        trigger_key=f"explore-metric-stats:{selected_metric_tab}:{hash(json.dumps(options, sort_keys=True, default=str))}",
+                    )
+            elif selected_metric_tab == "Data":
+                render_export("Metric_Data.csv", df)
+                render_metric_table(df)
+            elif selected_metric_tab == "Stats":
+                render_export("Metric_Stats.csv", stats_df)
+                render_metric_table(stats_df, first_column_left=True)
+            else:
+                render_export("Metric_DS_Breakdown.csv", ds_df)
+                render_metric_table(ds_df, first_column_left=True)
+
+            solara.Markdown(
+                """
+                <div class="metric-stats-heading" style="margin-top: 16px;">
+                    <div class="metric-stats-heading-title">Building Damage State Distribution</div>
+                    <div class="metric-stats-heading-subtitle">Counts of buildings by damage state for the current scenario.</div>
+                </div>
+                """,
+                unsafe_solara_execute=True,
+            )
+            ClientResizeTrigger(
+                children=solara.FigureEcharts(
+                    option=building_ds_chart_options,
+                    attributes={"style": "height:clamp(300px, 46vw, 420px); width:100%; min-width:0;"},
+                ),
+                trigger_key=f"explore-building-ds-chart:{hash(json.dumps(building_ds_chart_options, sort_keys=True, default=str))}",
+            )
 
 
 @solara.component
@@ -1123,13 +1489,15 @@ def Page():
     .map-shell {
         position: relative;
         width: 100%;
+        isolation: isolate;
+        overflow: hidden;
     }
 
     .map-filter-overlay {
         position: absolute;
         top: 130px;
         left: 14px;
-        z-index: 1000;
+        z-index: 20;
         width: auto;
         max-width: calc(100% - 20px);
         pointer-events: auto;
@@ -1197,6 +1565,51 @@ def Page():
         overflow: auto;
     }
 
+    .explore-layout {
+        width: 100%;
+        align-items: flex-start;
+        gap: 16px;
+    }
+
+    .explore-desktop-sidebar {
+        flex: 0 0 min(420px, 32vw);
+        width: min(420px, 32vw);
+        min-width: 320px;
+        max-width: 420px;
+        overflow-x: hidden;
+    }
+
+    .explore-desktop-map {
+        flex: 1 1 0;
+        min-width: 0;
+    }
+
+    .explore-desktop-sidebar .v-input,
+    .explore-desktop-sidebar .v-input__control,
+    .explore-desktop-sidebar .v-input__slot,
+    .explore-desktop-sidebar .v-select__slot,
+    .explore-desktop-sidebar .v-select__selections {
+        min-width: 0 !important;
+        max-width: 100% !important;
+    }
+
+    .explore-desktop-sidebar .v-select__selection,
+    .explore-desktop-sidebar .v-select__selection--comma {
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        display: inline-block;
+    }
+
+    .metadata-value-wrap {
+        min-width: 0;
+        max-width: 100%;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+        white-space: normal;
+    }
+
     @media (max-width: 960px) {
         .v-app-bar__nav-icon {
             display: none !important;
@@ -1226,6 +1639,8 @@ def Page():
     """
     solara.Style(value=css)
     solara.Title(" ")
+    viewport_width = solara.use_reactive(0)
+    ViewportObserver(width=viewport_width)
     
     def on_load():
         session_data = read_from_session_storage('explore_initialized')
@@ -1235,30 +1650,37 @@ def Page():
             
     solara.use_effect(on_load, [])
 
-    # Mobile View: Content at the top
-    with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):
-        ExploreSidebarContent()
+    def render_main_content():
+        MapViewer()
+        with solara.Row(justify="center"):
+            MetricPanel()
+        solara.Details(
+            summary="Metric Statistics",
+            children=[MetricStatistics()],
+            expand=False
+        )
+        solara.Details(
+            summary="Layer Details",
+            children=[LayerDisplayer()],
+            expand=False
+        )
+        solara.Details(
+            summary="Data Tables & Charts",
+            children=[GeneratedDataTablesCharts(layers=layers, scenario_label=session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)],
+            expand=False
+        )
 
-    # Desktop View: Content in Sidebar
-    with solara.Sidebar():
-        with solara.Column(classes=["d-none", "d-md-block"]):
-             ExploreSidebarContent()
-      
-    MapViewer()
-    with solara.Row(justify="center"):
-        MetricPanel()
-    solara.Details(
-        summary="Metric Statistics",
-        children=[MetricStatistics()],
-        expand=False
-    )
-    solara.Details(
-        summary="Layer Details",
-        children=[LayerDisplayer()],
-        expand=False
-    )
-    solara.Details(
-        summary="Data Tables & Charts",
-        children=[GeneratedDataTablesCharts(layers=layers)],
-        expand=False
-    )
+    # Default to mobile until the client reports its true viewport width, so
+    # we never instantiate the desktop map/sidebar layout on phones first.
+    is_mobile = viewport_width.value == 0 or viewport_width.value < 960
+
+    if is_mobile:
+        with solara.Column(style={"width": "100%"}):
+            ExploreSidebarContent()
+            render_main_content()
+    else:
+        with solara.Row(classes=["explore-layout"], style={"width": "100%"}):
+            with solara.Column(classes=["explore-desktop-sidebar"]):
+                ExploreSidebarContent()
+            with solara.Column(classes=["explore-desktop-map"]):
+                render_main_content()

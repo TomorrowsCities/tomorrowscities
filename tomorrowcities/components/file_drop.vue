@@ -3,12 +3,14 @@
     <input type="file" ref="fileInput" :multiple="multiple" style="display: none;" @change="onFileChange" />
     <template v-if="file_info && file_info.length > 0">
       <template v-if="multiple">
-        <div v-for="file in file_info">
+        <div v-for="file in file_info" class="solara-file-drop__filename">
           {{ file.name }}
         </div>
       </template>
       <template v-else>
-        {{ file_info[0].name }}
+        <div class="solara-file-drop__filename">
+          {{ file_info[0].name }}
+        </div>
       </template>
     </template>
     <template v-else>
@@ -101,8 +103,19 @@ module.exports = {
   padding: 8px;
   overflow: auto;
   cursor: pointer;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 .solara-file-drop:hover {
   background-color: rgba(0, 0, 0, 0.05);
+}
+.solara-file-drop__filename {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 </style>

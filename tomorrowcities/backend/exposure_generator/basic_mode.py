@@ -37,23 +37,31 @@ URBAN_ATLAS_CLASSES = [
 BASIC_MODE_CONFIG = {
     "Kenya": {
         "file": "tomorrowcities/assets/data/distribution_catalogues/kenya_distribution_file.xlsx",
-        "density_caps": [200, 150, 100, 50, 30] + [0] * 21,
+        "density_caps": [220, 160, 100, 55, 30] + [0] * 21,
     },
     "Tanzania": {
         "file": "tomorrowcities/assets/data/distribution_catalogues/tanzania_distribution_file.xlsx",
-        "density_caps": [180, 130, 80, 30, 10] + [0] * 21,
-    },
-    "Turkiye": {
-        "file": "tomorrowcities/assets/data/distribution_catalogues/turkiye_distribution_file.xlsx",
-        "density_caps": [200, 150, 100, 50, 30] + [0] * 21,
+        "density_caps": [210, 150, 95, 50, 28] + [0] * 21,
     },
     "Nepal": {
         "file": "tomorrowcities/assets/data/distribution_catalogues/nepal_distribution_file.xlsx",
-        "density_caps": [200, 150, 100, 50, 30] + [0] * 21,
+        "density_caps": [220, 150, 90, 50, 30] + [0] * 21,
     },
     "Bangladesh": {
         "file": "tomorrowcities/assets/data/distribution_catalogues/bangladesh_distribution_file.xlsx",
-        "density_caps": [200, 150, 100, 50, 30] + [0] * 21,
+        "density_caps": [450, 320, 200, 120, 70] + [0] * 21,
+    },
+    "Brazil": {
+        "file": "tomorrowcities/assets/data/distribution_catalogues/brazil_distribution_file.xlsx",
+        "density_caps": [260, 180, 110, 60, 30] + [0] * 21,
+    },
+    "Canada": {
+        "file": "tomorrowcities/assets/data/distribution_catalogues/canada_distribution_file.xlsx",
+        "density_caps": [180, 110, 65, 35, 18] + [0] * 21,
+    },
+    "United Kingdom": {
+        "file": "tomorrowcities/assets/data/distribution_catalogues/united_kingdom_distribution_file.xlsx",
+        "density_caps": [170, 115, 75, 40, 22] + [0] * 21,
     },
 }
 

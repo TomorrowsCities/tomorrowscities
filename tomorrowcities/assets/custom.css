@@ -170,6 +170,48 @@ header .v-tabs-bar {
     }
 }
 
+/*
+Lock the Leaflet pane stack so the intensity heatmap stays beneath polygon and
+vector overlays without any runtime DOM observers.
+*/
+.leaflet-pane.leaflet-intensityPane-pane {
+    z-index: 250 !important;
+}
+
+.leaflet-pane.leaflet-overlay-pane {
+    z-index: 410 !important;
+}
+
+.leaflet-pane.leaflet-buildingPane-pane {
+    z-index: 450 !important;
+}
+
+.leaflet-pane.leaflet-infrastructurePane-pane {
+    z-index: 650 !important;
+}
+
+.leaflet-pane.leaflet-infrastructureNodePane-pane {
+    z-index: 660 !important;
+}
+
+.leaflet-pane .leaflet-heatmap-layer {
+    position: relative;
+    z-index: 100 !important;
+}
+
+.leaflet-pane svg,
+.leaflet-pane canvas:not(.leaflet-heatmap-layer) {
+    position: relative;
+    z-index: 200 !important;
+}
+
+@media (min-width: 1800px) {
+    .metric-card-col {
+        flex: 0 0 12.5% !important;
+        max-width: 12.5% !important;
+    }
+}
+
 @media (max-width: 960px) {
     .mobile-hide {
         display: none !important;
@@ -179,11 +221,5 @@ header .v-tabs-bar {
 @media (min-width: 961px) {
     .mobile-show {
         display: none !important;
-    }
-}
-@media (min-width: 1264px) {
-    .col-lg-custom-8 {
-        flex: 0 0 12.5% !important;
-        max-width: 12.5% !important;
     }
 }

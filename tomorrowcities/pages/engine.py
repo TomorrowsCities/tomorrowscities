@@ -21,12 +21,13 @@ import xml.etree.ElementTree as ET
 import logging, sys
 import re
 import textwrap
+from functools import lru_cache
 from html import escape
 #logging.basicConfig(stream=sys.stderr, level=logging.INFO)
 import pickle
 import datetime
 from solara.hooks.dataframe import cross_filter_context
-from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config
+from . import storage, user, session_storage, store_in_session_storage, read_from_session_storage, config, ClientResizeTrigger, MetricGauge, ClientLeafletInitialOrderFix
 # from .settings import landslide_max_trials
 # from .settings import threshold_flood_ds2, threshold_flood_ds3, threshold_flood_ds4, threshold_flood_distance, threshold_road_water_height, threshold_culvert_water_height
 
@@ -78,6 +79,7 @@ EXPOSURE_DATA_ASSET_DIR = Path(__file__).resolve().parents[1] / "assets" / "data
 BASIC_SYMBOLOGY_SLD_PATH = Path(__file__).resolve().parents[1] / "assets" / "symbology" / "Urban_Atlas_2018_Legend.sld"
 BASIC_LUF_PLACEHOLDER = "Select appropriate class..."
 BASIC_INCOME_PLACEHOLDER = "Select average income..."
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
 def get_sld_color_map():
@@ -111,7 +113,55 @@ SLD_COLOR_MAP = get_sld_color_map()
 
 
 def landuse_style(fill_color: str):
-    return {"color": "#666666", "fillColor": fill_color, "weight": 1, "fillOpacity": 0.7}
+    return {"color": "#666666", "fillColor": fill_color, "weight": 1, "fillOpacity": 1}
+
+
+def format_file_size(num_bytes: int) -> str:
+    for unit in ["B", "KB", "MB", "GB"]:
+        if num_bytes < 1024 or unit == "GB":
+            return f"{num_bytes:.1f} {unit}" if unit != "B" else f"{num_bytes} {unit}"
+        num_bytes /= 1024
+    return f"{num_bytes:.1f} GB"
+
+
+def JustifiedMarkdown(text: str):
+    formatted = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+    solara.Markdown(f"<div style='text-align: justify'>{formatted}</div>")
+
+
+def get_basic_catalogue_path(country: str) -> Path:
+    configured_path = Path(BASIC_MODE_CONFIG[country]["file"])
+    return configured_path if configured_path.is_absolute() else PROJECT_ROOT / configured_path
+
+
+def get_density_cap_table() -> pd.DataFrame:
+    table = {"Country": list(BASIC_MODE_CONFIG.keys())}
+    class_labels = [
+        "Continuous",
+        "Dense",
+        "Medium",
+        "Low",
+        "Very Low",
+    ]
+    for idx, label in enumerate(class_labels):
+        table[label] = [BASIC_MODE_CONFIG[country]["density_caps"][idx] for country in BASIC_MODE_CONFIG.keys()]
+    return pd.DataFrame(table)
+
+
+@lru_cache(maxsize=None)
+def get_basic_catalogue_preview(country: str):
+    catalogue_path = get_basic_catalogue_path(country)
+    workbook = pd.ExcelFile(catalogue_path)
+    sheet_names = workbook.sheet_names
+    preview_sheet = sheet_names[0] if sheet_names else None
+    preview_df = workbook.parse(preview_sheet).head(6).fillna("") if preview_sheet else pd.DataFrame()
+    return {
+        "path": catalogue_path,
+        "sheet_names": sheet_names,
+        "preview_sheet": preview_sheet,
+        "preview_df": preview_df,
+        "size_label": format_file_size(catalogue_path.stat().st_size),
+    }
 
 tally_counter = solara.reactive(0)
 tally_filter = solara.reactive(None)
@@ -123,6 +173,16 @@ scenario_name = solara.reactive("")
 is_public = solara.reactive(True)
 save_status = solara.reactive("")
 center_default = (41.01,28.98)
+
+MAP_PANES = {
+    "intensityPane": {"zIndex": 250, "pointerEvents": "auto"},
+    # Keep land use above the default Leaflet overlay pane because the heatmap
+    # plugin can still render there on first paint.
+    "landusePane": {"zIndex": 410, "pointerEvents": "auto"},
+    "buildingPane": {"zIndex": 450, "pointerEvents": "auto"},
+    "infrastructurePane": {"zIndex": 650, "pointerEvents": "auto"},
+    "infrastructureNodePane": {"zIndex": 660, "pointerEvents": "auto"},
+}
 population_displacement_consensus = solara.reactive(2)
 def create_new_app_state():
     return solara.reactive({
@@ -394,6 +454,129 @@ metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
 ds_to_color = {0: '#2c7bb6', 1: '#abd9e9', 2:'#ffffbf', 3:'#fdae61', 4: '#d7191c'}
 # approximate color names when hex codes can't be used
 ds_to_color_approx = {0: 'darkblue', 1: 'lightblue', 2:'beige', 3:'orange', 4: 'red'}
+
+
+def build_building_damage_state_chart_options(ds_counts, title="Building Damage State Distribution"):
+    categories = [f"DS{ds}" for ds in range(5)]
+    series_data = [
+        {
+            "value": int(ds_counts.get(ds, 0)),
+            "itemStyle": {"color": ds_to_color[ds], "borderRadius": [6, 6, 0, 0]},
+        }
+        for ds in range(5)
+    ]
+    return {
+        "backgroundColor": "transparent",
+        "toolbox": {
+            "feature": {
+                "saveAsImage": {
+                    "title": "Save as PNG",
+                    "pixelRatio": 2,
+                }
+            }
+        },
+        "title": [{
+            "text": title,
+            "left": "center",
+            "textStyle": {
+                "fontSize": 16,
+                "fontWeight": 700,
+                "color": "#1f2933",
+            },
+        }],
+        "tooltip": {
+            "trigger": "axis",
+            "axisPointer": {
+                "type": "shadow",
+            },
+        },
+        "grid": {
+            "top": 80,
+            "left": 32,
+            "right": 24,
+            "bottom": 40,
+            "containLabel": True,
+        },
+        "xAxis": {
+            "type": "category",
+            "data": categories,
+            "axisLabel": {
+                "interval": 0,
+                "fontSize": 10,
+                "color": "#3e4c59",
+            },
+            "axisLine": {
+                "lineStyle": {
+                    "color": "#9fb3c8",
+                }
+            },
+            "axisTick": {
+                "alignWithLabel": True,
+            },
+        },
+        "yAxis": {
+            "type": "value",
+            "name": "Count",
+            "nameLocation": "middle",
+            "nameGap": 42,
+            "nameTextStyle": {
+                "fontSize": 11,
+                "fontWeight": 600,
+                "color": "#3e4c59",
+            },
+            "axisLabel": {
+                "fontSize": 10,
+                "color": "#52606d",
+            },
+            "axisLine": {
+                "show": False,
+            },
+            "axisTick": {
+                "show": False,
+            },
+            "splitLine": {
+                "lineStyle": {
+                    "color": "rgba(15, 23, 42, 0.08)",
+                }
+            },
+        },
+        "series": [
+            {
+                "type": "bar",
+                "data": series_data,
+                "barMaxWidth": 42,
+                "label": {
+                    "show": True,
+                    "position": "top",
+                    "color": "#1f2933",
+                    "fontSize": 10,
+                    "formatter": "{c}",
+                },
+            }
+        ],
+        "media": [
+            {
+                "query": {"maxWidth": 640},
+                "option": {
+                    "grid": {
+                        "top": 72,
+                        "left": 18,
+                        "right": 18,
+                        "bottom": 32,
+                        "containLabel": True,
+                    },
+                    "series": [
+                        {
+                            "barMaxWidth": 26,
+                            "label": {
+                                "fontSize": 9,
+                            },
+                        }
+                    ],
+                },
+            }
+        ],
+    }
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
 
@@ -530,9 +713,7 @@ def build_scenario_basename(metadata):
     if is_pub:
         return f'PUBLIC_{date_string}_{slug}'
     else:
-        user_id = metadata.get('user_id') or "anonymous"
-        user_id_slug = re.sub(r"[^A-Za-z0-9_-]+", "_", user_id)
-        return f'PRIVATE_{date_string}_{user_id_slug}_{slug}'
+        return f'PRIVATE_{date_string}_{slug}'
 
 @task 
 def save_app_state():
@@ -558,6 +739,38 @@ def save_app_state():
 
 def generic_layer_colors(feature):
     return None
+
+
+def constraint_layer_colors(feature):
+    geometry = (feature or {}).get("geometry", {}) or {}
+    geometry_type = geometry.get("type", "")
+    if geometry_type in {"Polygon", "MultiPolygon"}:
+        return {
+            "color": "#2b82cb",
+            "weight": 3,
+            "opacity": 1,
+            "fillColor": "#2b82cb",
+            "fillOpacity": 0.5,
+            "dashArray": "8 6",
+            "pane": "markerPane",
+        }
+    if geometry_type in {"LineString", "MultiLineString"}:
+        return {
+            "color": "#2b82cb",
+            "weight": 4,
+            "opacity": 1,
+            "dashArray": "10 6",
+            "pane": "markerPane",
+        }
+    return {
+        "color": "#2b82cb",
+        "weight": 3,
+        "opacity": 1,
+        "fillColor": "#2b82cb",
+        "fillOpacity": 0.9,
+        "radius": 6,
+        "pane": "markerPane",
+    }
 
 def ensure_map_info_state():
     if 'map_info_detail' not in layers.value:
@@ -587,9 +800,60 @@ def road_node_click_handler(event=None, feature=None, id=None, properties=None, 
 def road_edge_colors(feature):
     is_damaged = feature['properties']['is_damaged']
     if is_damaged:
-        return {'color': 'black',  'dashArray': '8'}
+        return {'color': 'black', 'weight': 6}
     else:
-        return {'color': 'black',  'dashArray': '0'}
+        return {'color': 'black', 'weight': 3}
+
+
+def create_road_edges_layer(df, name, click_handler):
+    if df is None or len(df) == 0:
+        return ipyleaflet.LayerGroup(layers=(), name=name)
+
+    if "is_damaged" in df.columns:
+        damaged_mask = df["is_damaged"].fillna(False).astype(bool)
+    else:
+        damaged_mask = pd.Series(False, index=df.index)
+
+    undamaged_df = df[~damaged_mask]
+    damaged_df = df[damaged_mask]
+    sub_layers = []
+
+    if len(undamaged_df) > 0:
+        undamaged_layer = ipyleaflet.GeoJSON(
+            data=json.loads(undamaged_df.to_json()),
+            name=f"{name}-undamaged",
+            pane="infrastructurePane",
+            options=["pane"],
+            style={"color": "black", "weight": 3, "opacity": 1},
+            hover_style={"color": "orange", "weight": 4, "opacity": 1},
+        )
+        undamaged_layer.on_click(click_handler)
+        sub_layers.append(undamaged_layer)
+
+    if len(damaged_df) > 0:
+        damaged_outline_layer = ipyleaflet.GeoJSON(
+            data=json.loads(damaged_df.to_json()),
+            name=f"{name}-damaged-outline",
+            pane="infrastructurePane",
+            options=["pane"],
+            style={"color": "black", "weight": 6, "opacity": 1},
+            hover_style={"color": "black", "weight": 6, "opacity": 1},
+        )
+        damaged_outline_layer.on_click(click_handler)
+        sub_layers.append(damaged_outline_layer)
+
+        damaged_core_layer = ipyleaflet.GeoJSON(
+            data=json.loads(damaged_df.to_json()),
+            name=f"{name}-damaged-core",
+            pane="infrastructurePane",
+            options=["pane"],
+            style={"color": ds_to_color[4], "weight": 3, "opacity": 1},
+            hover_style={"color": "#ff8c00", "weight": 4, "opacity": 1},
+        )
+        damaged_core_layer.on_click(click_handler)
+        sub_layers.append(damaged_core_layer)
+
+    return ipyleaflet.LayerGroup(layers=tuple(sub_layers), name=name)
 
 def road_edge_click_handler(event=None, feature=None, id=None, properties=None, **kwargs):
     open_map_info(properties)
@@ -704,40 +968,51 @@ def create_map_layer(df, name):
         df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
         #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
         locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        heatmap_layer = ipyleaflet.Heatmap(locations=locs, radius = 3, blur = 2, name = name)
+        heatmap_layer = ipyleaflet.Heatmap(
+            locations=locs,
+            radius=3,
+            blur=2,
+            name=name,
+            pane="intensityPane",
+            options=["pane"],
+            bottom=True,
+        )
         clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
         info_layer = ipyleaflet.GeoJSON(
             data=json.loads(clickable_df.to_json()),
             name=f"{name}-info",
+            pane="intensityPane",
+            options=["pane"],
+            bottom=True,
             point_style={'radius': 5, 'color': 'white', 'fillOpacity': 0.2, 'opacity': 0, 'weight': 15},
             style={"opacity": 0, "fillOpacity": 0.2, "weight": 0},
             hover_style={"opacity": 0.8, "fillOpacity": 0.8, "weight": 1, "color": "#ffffff"},
         )
         info_layer.on_click(intensity_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name)
+        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name, bottom=True)
     elif name == "landuse":
         style_callback = landuse_colors if "luf" in df.columns else generic_layer_colors
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="landusePane",
+            options=["pane"],
+            bottom=True,
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=style_callback)
         map_layer.on_click(landuse_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "building":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="buildingPane",
+            options=["pane"],
             style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
             hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 1},
             style_callback=building_colors)
         map_layer.on_click(building_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(map_layer,), name=name)
     elif name == "road edges":
-        map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            hover_style={'color': 'orange'},
-            style_callback=road_edge_colors)
-        map_layer.on_click(road_edge_click_handler)
+        map_layer = create_road_edges_layer(df, name, road_edge_click_handler)
     elif name == "road nodes":
         df_squares = df.copy()
-        half_side = 0.00005
+        half_side = 0.00003
         df_squares['geometry']  = df['geometry'].apply(lambda point: Polygon([
                     (point.x - half_side, point.y - half_side),
                     (point.x + half_side, point.y - half_side),
@@ -745,8 +1020,10 @@ def create_map_layer(df, name):
                     (point.x - half_side, point.y + half_side)
                 ]))
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df_squares.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '0', 'fillOpacity': 0.8, 'weight': 1},
-            hover_style={'color': 'orange', 'dashArray': '0', 'fillOpacity': 0.5})
+            pane="infrastructureNodePane",
+            options=["pane"],
+            style={'color': 'black', 'fillColor': 'black', 'opacity': 1, 'dashArray': '0', 'fillOpacity': 1, 'weight': 1},
+            hover_style={'color': 'orange', 'fillColor': 'black', 'dashArray': '0', 'fillOpacity': 1, 'weight': 1.5})
         map_layer.on_click(road_node_click_handler)
     elif name == "power nodes":
         markers = []
@@ -776,17 +1053,26 @@ def create_map_layer(df, name):
                 
             markers.append(marker)
         map_layer= ipyleaflet.MarkerCluster(markers=markers, name = name,
+                                                   pane="infrastructureNodePane",
+                                                   options=["pane"],
                                                    disable_clustering_at_zoom=5)
     elif name == 'power edges':
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
+            pane="infrastructurePane",
+            options=["pane"],
             hover_style={'color': 'orange'},
             style_callback=power_edge_colors)
         map_layer.on_click(power_edge_click_handler)
     else:
+        target_pane = "markerPane" if name == "constraint" else "overlayPane"
+        style_callback = constraint_layer_colors if name == "constraint" else generic_layer_colors
+        base_style = constraint_layer_colors({"geometry": {"type": "Polygon"}}) if name == "constraint" else {'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1}
+        hover_style = {'color': '#1d4ed8', 'dashArray': '0', 'fillOpacity': 0.6, 'weight': 4} if name == "constraint" else {'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5}
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
-            style={'opacity': 1, 'dashArray': '9', 'fillOpacity': 0.5, 'weight': 1},
-            hover_style={'color': 'white', 'dashArray': '0', 'fillOpacity': 0.5},
-            style_callback=generic_layer_colors)
+            pane=target_pane,
+            style=base_style,
+            hover_style=hover_style,
+            style_callback=style_callback)
         map_layer.on_click(generic_layer_click_handler)
     return map_layer
 
@@ -934,7 +1220,14 @@ def VulnerabilityFunctionDisplayer(vuln_func):
             },
         ],
     }
-    solara.FigureEcharts(option=options) 
+    chart_key = f"vulnerability:{vuln_func['id']}:{vuln_func['imt']}"
+    ClientResizeTrigger(
+        children=solara.FigureEcharts(
+            option=options,
+            attributes={"style": "height:320px; width:100%; min-width:0;"},
+        ),
+        trigger_key=chart_key,
+    )
 
 
 @solara.component
@@ -1050,47 +1343,19 @@ def MetricParameters():
 
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count, icon=None):
-    value, set_value = solara.use_state_or_update(value)
-    max_value, set_max_value = solara.use_state_or_update(max_value)
-    options = { 
-        "series": [ {
-                "type": 'gauge',  
-                "min": 0,
-                "name": description,
-                "radius": '90%', # Reduce radius slightly to accommodate lower value
-                "center": ['50%', '65%'], # Move up closer to text
-                "max": max(1,max_value), # workaround when max_value = 0
-                "startAngle": 180,
-                "endAngle": 0,
-                "progress": {"show": True, "width": 8}, # Thinner line
-                "pointer": { "show": False},
-                "axisLine": {"lineStyle": {"width": 8, "color": [ # Thinner line
-                    #[0.25, 'hotpink'],
-                    #[0.5, 'red'],
-                    #[0.75, 'brown'],
-                    [1, '#ADADAD']
-                ]}},
-                "axisTick": {"show": False},
-                "splitLine": {"show": False},            
-                "axisLabel": {"show": False},
-                "anchor": {"show": False},
-                "title": {"show": False},
-                "detail": {
-                    "valueAnimation": True,
-                    "offsetCenter": [0, '50%'], # Move value below the arc
-                    "fontSize": 20,
-                    "color": 'inherit'},
-                #"title": {"fontSize": 12},
-                "data": [{"value": value, "name": name}]}]}
-    print(f'value/max_value {value}:{max_value}')
+    _ = render_count
+    safe_value = 0 if value is None else value
+    safe_max_value = max(1, 0 if max_value is None else max_value)
+    progress_ratio = min(max(safe_value / safe_max_value, 0), 1)
+    print(f'value/max_value {safe_value}:{safe_max_value}')
 
-    with solara.Card(elevation=2, style={"height": "240px", "padding": "2px", "text-align": "center", "border-radius": "8px"}):
+    with solara.Card(elevation=2, style={"height": "240px", "padding": "2px", "text-align": "center", "border-radius": "8px", "overflow": "hidden"}):
         with solara.Column(align="center", gap="0px"): # Center stack, tight gap
             if icon:
                 solara.Image(icon, width="75px") 
             # Visible Label, Fixed Height for Alignment, vertically centered
             solara.Text(description, style={"font-weight": "bold", "font-size": "14px", "height": "55px", "display": "flex", "align-items": "center", "justify-content": "center", "margin-top": "4px", "line-height": "1.2"})
-            solara.FigureEcharts(option=options, attributes={"style": "height:100px; width:100%; display: flex; justify-content: center; align-items: center;"}) #min-width: 80px;
+            MetricGauge(progress_ratio=progress_ratio, value_text=str(safe_value))
 
 
 def create_distribution_chart(dataframe: pd.DataFrame, column_name: str, title: str, sort_order=None):
@@ -1187,32 +1452,142 @@ def create_distribution_chart(dataframe: pd.DataFrame, column_name: str, title: 
 def ChartCard(option):
     with solara.Card(
         elevation=1,
+        classes=["generated-chart-card"],
         style={
-            "padding": "8px",
-            "borderRadius": "14px",
+            "padding": "2px",
+            "borderRadius": "12px",
             "border": "1px solid rgba(31, 42, 51, 0.08)",
             "background": "#fcfdff",
+            "overflow": "hidden",
+            "width": "100%",
+            "maxWidth": "100%",
         },
     ):
-        solara.FigureEcharts(option=option, attributes={"style": "height:340px; width:100%;"})
+        with solara.Column(classes=["generated-chart-card-body"], style={"padding": "0", "margin": "0", "width": "100%", "maxWidth": "100%", "overflow": "hidden"}):
+            ClientResizeTrigger(
+                children=solara.FigureEcharts(
+                    option=option,
+                    attributes={"style": "height:clamp(260px, 72vw, 340px); width:100%; max-width:100%; min-width:0; overflow:hidden;"},
+                ),
+                trigger_key=f"chart-card:{hash(json.dumps(option, sort_keys=True, default=str))}",
+            )
 
 
 @solara.component
-def GeneratedDataTablesCharts(layers=layers):
-    buildings = layers.value["layers"]["building"]["data"].value
-    households = layers.value["layers"]["household"]["data"].value
-    individuals = layers.value["layers"]["individual"]["data"].value
+def GeneratedDataTablesCharts(layers=layers, scenario_label=None, source_label=None, refresh_key=None):
+    _ = refresh_key
+
+    def get_layer_table_data(layer_name):
+        layer = layers.value["layers"][layer_name]
+        data_value = layer["data"].value
+        if data_value is not None:
+            return data_value
+        return layer["df"].value
+
+    buildings = get_layer_table_data("building")
+    households = get_layer_table_data("household")
+    individuals = get_layer_table_data("individual")
 
     if buildings is None:
-        solara.Info("There is no generated exposure data yet.")
+        solara.Info("There is no exposure data yet.")
         return
+
+    def render_generated_data_table(dataframe, card_title):
+        with solara.Column(classes=["generated-data-desktop"], style={"width": "100%", "minWidth": "0"}):
+            solara.DataFrame(dataframe, items_per_page=10)
+
+    solara.Style("""
+        .responsive-chart-container {
+            display: flex !important;
+            flex-wrap: wrap !important;
+            gap: 16px !important;
+            width: 100% !important;
+            padding: 0 !important;
+            margin: 0 !important;
+        }
+        .generated-chart-card {
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        .generated-chart-card .v-card__text,
+        .generated-chart-card-body {
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+        .responsive-chart-container > div {
+            flex: 0 0 calc(50% - 8px) !important;
+            max-width: calc(50% - 8px) !important;
+            min-width: 0 !important;
+            margin: 0 !important;
+            box-sizing: border-box !important;
+        }
+        .generated-data-desktop {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        @media (max-width: 768px) {
+            .responsive-chart-container {
+                gap: 10px !important;
+                padding: 0 4px !important;
+            }
+            .responsive-chart-container > div {
+                flex: 0 0 calc(100% - 8px) !important;
+                max-width: calc(100% - 8px) !important;
+                min-width: 0 !important;
+                margin: 0 auto !important;
+            }
+            .generated-chart-card {
+                border-radius: 10px !important;
+            }
+            .generated-chart-card .v-sheet,
+            .generated-chart-card .echarts-for-react,
+            .generated-chart-card canvas {
+                max-width: 100% !important;
+            }
+        }
+        @media (max-width: 600px) {
+            .responsive-chart-container {
+                gap: 8px !important;
+                padding: 0 6px !important;
+            }
+            .responsive-chart-container > div {
+                flex: 0 0 calc(100% - 12px) !important;
+                max-width: calc(100% - 12px) !important;
+            }
+            .generated-chart-card {
+                padding: 0 !important;
+                border-radius: 8px !important;
+            }
+            .generated-chart-card-body .widget-image,
+            .generated-chart-card-body .js-plotly-plot,
+            .generated-chart-card-body > div {
+                max-width: 100% !important;
+            }
+        }
+    """)
 
     building_df = pd.DataFrame(buildings.drop(columns="geometry", errors="ignore")) if isinstance(buildings, gpd.GeoDataFrame) else pd.DataFrame(buildings)
     household_df = pd.DataFrame(households) if households is not None else None
     individual_df = pd.DataFrame(individuals) if individuals is not None else None
+    scenario_items = []
+    if scenario_label:
+        scenario_items.append(("Scenario", scenario_label))
+    if source_label:
+        scenario_items.append(("Source", source_label))
 
     with solara.lab.Tabs():
         with solara.lab.Tab("Statistics"):
+            if scenario_items:
+                solara.Markdown("Scenario overview for the currently loaded analysis.")
+                with solara.Row(gap="16px", style={"flexWrap": "wrap", "margin-bottom": "8px"}):
+                    for label, value in scenario_items:
+                        with solara.Card(title=label, elevation=1, style={"minWidth": "180px", "maxWidth": "100%"}):
+                            solara.Text(str(value), style={"font-size": "1rem", "font-weight": "700", "line-height": "1.4"})
             with solara.Row(gap="16px", style={"flexWrap": "wrap"}):
                 with solara.Card(title="Buildings", elevation=1, style={"minWidth": "180px"}):
                     solara.Text(f"{len(building_df):,}", style={"font-size": "1.6rem", "font-weight": "800"})
@@ -1223,11 +1598,11 @@ def GeneratedDataTablesCharts(layers=layers):
 
         with solara.lab.Tab("Building Data"):
             solara.Markdown("Generated building attributes.")
-            solara.DataFrame(building_df, items_per_page=10)
+            render_generated_data_table(building_df, "Building")
 
         with solara.lab.Tab("Building Charts"):
             solara.Markdown("Distribution views for the generated building stock.")
-            with solara.GridFixed(columns=2):
+            with solara.Row(classes=["responsive-chart-container"]):
                 for option in [
                     create_distribution_chart(building_df, "lrstype", "LRS Distribution"),
                     create_distribution_chart(building_df, "occbld", "Occupancy Distribution"),
@@ -1240,11 +1615,11 @@ def GeneratedDataTablesCharts(layers=layers):
         if household_df is not None:
             with solara.lab.Tab("Household Data"):
                 solara.Markdown("Generated household attributes.")
-                solara.DataFrame(household_df, items_per_page=10)
+                render_generated_data_table(household_df, "Household")
 
             with solara.lab.Tab("Household Charts"):
                 solara.Markdown("Distribution views for household composition.")
-                with solara.GridFixed(columns=2):
+                with solara.Row(classes=["responsive-chart-container"]):
                     for option in [
                         create_distribution_chart(household_df, "nind", "Household Size Distribution"),
                         create_distribution_chart(household_df, "income", "Income Level Distribution", sort_order=["veryLowIncome", "lowIncome", "midIncome", "highIncome"]),
@@ -1255,11 +1630,11 @@ def GeneratedDataTablesCharts(layers=layers):
         if individual_df is not None:
             with solara.lab.Tab("Individual Data"):
                 solara.Markdown("Generated individual attributes.")
-                solara.DataFrame(individual_df, items_per_page=10)
+                render_generated_data_table(individual_df, "Individual")
 
             with solara.lab.Tab("Individual Charts"):
                 solara.Markdown("Distribution views for individual demographics.")
-                with solara.GridFixed(columns=2):
+                with solara.Row(classes=["responsive-chart-container"]):
                     for option in [
                         create_distribution_chart(individual_df, "gender", "Gender Distribution"),
                         create_distribution_chart(individual_df, "eduattstat", "Education Status Distribution"),
@@ -1508,11 +1883,49 @@ def LayerDisplayer():
     def set_selected(s):
         layers.value['selected_layer'].set(s)
 
-    solara.ToggleButtonsSingle(value=selected, on_value=set_selected,
-                               values=nonempty_layer_names)
-    if selected is None and len(nonempty_layer_names) > 0:
-        set_selected(nonempty_layer_names[0])
-    if selected is not None:
+    def render_layer_dataframe(dataframe, card_title=None):
+        with solara.Column(classes=["layer-details-desktop"], style={"width": "100%", "minWidth": "0"}):
+            solara.DataFrame(dataframe, items_per_page=5)
+
+    solara.Style("""
+        .scrollable-tabs {
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+        }
+        .layer-table-wrapper {
+            width: 100% !important;
+            overflow-x: auto !important;
+        }
+        .scrollable-tabs > div {
+            display: inline-flex !important;
+            flex-wrap: nowrap !important;
+        }
+        .layer-details-desktop {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        .layer-download-row {
+            width: 100%;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        @media (max-width: 600px) {
+            .layer-download-row .v-btn {
+                width: 100% !important;
+            }
+        }
+    """)
+    with solara.Row(classes=["scrollable-tabs"]):
+        solara.ToggleButtonsSingle(value=selected, on_value=set_selected,
+                                   values=nonempty_layer_names)
+    if selected not in nonempty_layers and len(nonempty_layer_names) > 0:
+        selected = nonempty_layer_names[0]
+        set_selected(selected)
+    if selected in nonempty_layers:
         data = nonempty_layers[selected]['data'].value
         if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
             if "geometry" in data.columns:
@@ -1520,14 +1933,14 @@ def LayerDisplayer():
                 df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
                 if df_filtered.empty:
                     df_filtered = data.drop(columns='geometry')
-                solara.DataFrame(df_filtered, items_per_page=5)
+                render_layer_dataframe(df_filtered, card_title=selected)
             else:
                 if selected == "power fragility":
                     PowerFragilityDisplayer(data, items_per_page=5)
                 else:
-                    solara.DataFrame(data, items_per_page=5)
+                    render_layer_dataframe(data, card_title=selected)
             if selected in ["landuse","building","road edges","road nodes","power nodes","power edges","intensity"] :
-                with solara.Row():
+                with solara.Row(classes=["layer-download-row"]):
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -1535,7 +1948,7 @@ def LayerDisplayer():
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
             elif selected in ['household', 'individual', 'fragility', 'landslide fragility', 'vulnerability', 'power fragility', 'road fragility']:
-                 with solara.Row():
+                 with solara.Row(classes=["layer-download-row"]):
                     file_object = data.to_json()
                     with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                         solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -1549,7 +1962,7 @@ def LayerDisplayer():
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return str(obj)
-            with solara.Row():
+            with solara.Row(classes=["layer-download-row"]):
                 file_object = json.dumps(data, default=default)
                 with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                     solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -1560,7 +1973,7 @@ def LayerDisplayer():
                 if isinstance(obj, np.ndarray):
                     return obj.tolist()
                 return str(obj)
-            with solara.Row():
+            with solara.Row(classes=["layer-download-row"]):
                 file_object = json.dumps(data, default=default)
                 with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
                     solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
@@ -1624,12 +2037,11 @@ def MetricPanel():
     if metric_update_pending.value:
         solara.ProgressLinear(metric_update_pending.value)
     
-    with solara.v.Row(justify="space-around", style_="margin-top: 0px; padding-top: 0px;"):
+    with solara.v.Row(justify="center", style_="margin-top: 0px; padding-top: 0px;"):
         for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
-            # Responsive grid: 
-            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md=3 (Small Desktop 4/row)
-            # class_="col-lg-custom-8" (Large Desktop 8/row via custom CSS)
-            with solara.v.Col(cols=6, sm=4, md=3, class_="col-lg-custom-8", style_="padding: 5px;"):
+            # Responsive grid:
+            # cols=6 (Mobile 2/row), sm=4 (Tablet 3/row), md/lg=3 (Desktop 4/row), xl=2 (Wide Desktop 6/row)
+            with solara.v.Col(cols=6, sm=4, md=3, lg=3, xl=2, class_="metric-card-col", style_="padding: 5px;"):
                 MetricWidget(name, metric['desc'], 
                             metric['value'], 
                             metric['max_value'],
@@ -1651,33 +2063,65 @@ def MetricStatistics():
         metric_name: metrics[0][metric_name].get('desc', metric_name)
         for metric_name in metric_names
     }
+    building_data = layers.value['layers']['building']['data'].value
 
     def render_metric_table(table_df, first_column_left=False):
         headers = [escape(str(col)) for col in table_df.columns]
         rows = []
-        for row in table_df.itertuples(index=False):
+        mobile_cards = []
+        for row_index, row in enumerate(table_df.itertuples(index=False), start=1):
             cells = []
+            card_fields = []
+            card_title = None
             for idx, value in enumerate(row):
                 align = "left" if first_column_left and idx == 0 else "center"
                 display_value = "" if pd.isna(value) else str(value)
                 cells.append(
                     f'<td style="text-align:{align};">{escape(display_value)}</td>'
                 )
+                if idx == 0 and first_column_left:
+                    card_title = escape(display_value)
+                    continue
+                card_fields.append(
+                    f'''
+                    <div class="metric-stats-mobile-field">
+                        <div class="metric-stats-mobile-label">{headers[idx]}</div>
+                        <div class="metric-stats-mobile-value">{escape(display_value)}</div>
+                    </div>
+                    '''
+                )
             rows.append(f"<tr>{''.join(cells)}</tr>")
+            if not card_title:
+                card_title = f"Record {row_index}"
+            mobile_cards.append(
+                f'''
+                <article class="metric-stats-mobile-card">
+                    <div class="metric-stats-mobile-card-title">{card_title}</div>
+                    <div class="metric-stats-mobile-card-body">
+                        {''.join(card_fields)}
+                    </div>
+                </article>
+                '''
+            )
         header_html = "".join(f"<th>{header}</th>" for header in headers)
         table_classes = "metric-stats-table"
         if first_column_left:
             table_classes += " first-column-left"
         table_html = f"""
-            <div class="{table_classes}">
-                <table>
-                    <thead>
-                        <tr>{header_html}</tr>
-                    </thead>
-                    <tbody>
-                        {''.join(rows)}
-                    </tbody>
-                </table>
+            <div class="metric-stats-data-view">
+                <div class="{table_classes}">
+                    <table>
+                        <thead>
+                            <tr>{header_html}</tr>
+                        </thead>
+                        <tbody>
+                            {''.join(rows)}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="metric-stats-mobile-list">
+                    {''.join(mobile_cards)}
+                </div>
             </div>
         """
         solara.Markdown(table_html, unsafe_solara_execute=True)
@@ -1698,6 +2142,7 @@ def MetricStatistics():
         chart_categories.append("\n".join(textwrap.wrap(metric_label, width=18)))
         total_value = sum(float(m[metric_name].get('value', 0)) for m in metrics) / max(len(metrics), 1)
         chart_values.append(total_value)
+    mobile_chart_categories = ["\n".join(textwrap.wrap(label, width=22)) for label in metric_labels.values()]
 
     options = { 
         "backgroundColor": "transparent",
@@ -1802,25 +2247,201 @@ def MetricStatistics():
                     "formatter": "{c}"
                 }
             }
+        ],
+        "media": [
+            {
+                "query": {"maxWidth": 640},
+                "option": {
+                    "tooltip": {
+                        "trigger": "axis",
+                        "axisPointer": {
+                            "type": "shadow"
+                        }
+                    },
+                    "grid": {
+                        "top": 72,
+                        "left": 18,
+                        "right": 18,
+                        "bottom": 40,
+                        "containLabel": True
+                    },
+                    "xAxis": {
+                        "type": "value",
+                        "name": "Value",
+                        "nameLocation": "middle",
+                        "nameGap": 34,
+                        "nameTextStyle": {
+                            "fontSize": 10,
+                            "fontWeight": 600,
+                            "color": "#3e4c59"
+                        },
+                        "axisLabel": {
+                            "fontSize": 9,
+                            "color": "#52606d"
+                        },
+                        "splitLine": {
+                            "lineStyle": {
+                                "color": "rgba(15, 23, 42, 0.08)"
+                            }
+                        }
+                    },
+                    "yAxis": {
+                        "type": "category",
+                        "data": mobile_chart_categories,
+                        "axisLabel": {
+                            "interval": 0,
+                            "fontSize": 9,
+                            "lineHeight": 11,
+                            "color": "#3e4c59",
+                            "width": 112,
+                            "overflow": "break"
+                        },
+                        "axisTick": {
+                            "show": False
+                        },
+                        "axisLine": {
+                            "lineStyle": {
+                                "color": "#9fb3c8"
+                            }
+                        }
+                    },
+                    "series": [
+                        {
+                            "type": "bar",
+                            "data": chart_values,
+                            "barMaxWidth": 18,
+                            "label": {
+                                "show": True,
+                                "position": "right",
+                                "fontSize": 9,
+                                "color": "#1f2933"
+                            }
+                        }
+                    ]
+                }
+            }
         ]
     }
+    stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
+    ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
+    for m in metrics:
+        for m_name in metric_names:
+            if 'ds_breakdown' in m[m_name]:
+                for ds, count in m[m_name]['ds_breakdown'].items():
+                    ds_avg_dict[m_name][ds] += count / len(metrics)
+
+    ds_labels = {
+        0: 'DS0 (No Damage)',
+        1: 'DS1 (Slight)',
+        2: 'DS2 (Moderate)',
+        3: 'DS3 (Extensive)',
+        4: 'DS4 (Complete)'
+    }
+    ds_records = []
+    for ds in [0, 1, 2, 3, 4]:
+        record = {'Damage State': ds_labels[ds]}
+        for m_name in metric_names:
+            desc = metric_labels[m_name]
+            if 'ds_breakdown' in metrics[0][m_name]:
+                record[desc] = int(round(ds_avg_dict[m_name][ds]))
+            else:
+                record[desc] = 'N/A'
+        ds_records.append(record)
+    ds_df = pd.DataFrame(ds_records)
+    building_ds_counts = {ds: 0 for ds in range(5)}
+    if isinstance(building_data, gpd.GeoDataFrame) and 'ds' in building_data.columns:
+        building_ds_series = pd.to_numeric(building_data['ds'], errors='coerce').dropna().astype(int)
+        building_ds_series = building_ds_series[building_ds_series.isin(range(5))]
+        building_ds_counts.update({int(ds): int(count) for ds, count in building_ds_series.value_counts().to_dict().items()})
+    building_ds_chart_options = build_building_damage_state_chart_options(building_ds_counts)
+
+    selected_metric_tab, set_selected_metric_tab = solara.use_state("Chart")
+    tab_details = {
+        "Chart": ("Boxplot", "Average impact values across simulations"),
+        "Data": ("Data", "Raw simulation output for each metric"),
+        "Stats": ("Stats", "Distribution summary for the current run set"),
+        "DS Breakdown": ("DS Breakdown", "Average damage-state counts by metric"),
+    }
+
+    def render_export(filename, export_df):
+        with solara.Row(justify="start", classes=["metric-stats-toolbar"], style={"margin-bottom": "8px", "width": "100%"}):
+            with solara.FileDownload(data=lambda: export_df.to_csv(index=False), filename=filename, mime_type="text/csv"):
+                solara.Button(
+                    "Export CSV",
+                    icon_name="mdi-cloud-download-outline",
+                    outlined=True,
+                    color="primary",
+                    classes=["metric-stats-download-button"],
+                    style={},
+                )
+
     solara.Style('''
+        .metric-stats-shell {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+            padding: 0;
+            overflow-x: hidden;
+            box-sizing: border-box;
+        }
+        .metric-stats-tabbar {
+            width: 100% !important;
+            max-width: 100vw !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            padding-bottom: 4px;
+        }
+        .metric-stats-tabbar > div {
+            display: inline-flex !important;
+            flex-wrap: nowrap !important;
+        }
+        .metric-stats-panel {
+            max-width: 100%;
+            min-width: 0;
+            box-sizing: border-box;
+        }
+        .metric-stats-data-view {
+            width: 100%;
+            max-width: 100%;
+            min-width: 0;
+        }
+        .metric-stats-heading {
+            margin-bottom: 4px;
+        }
+        .metric-stats-heading-title {
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: #0f172a;
+            line-height: 1.3;
+        }
+        .metric-stats-heading-subtitle {
+            font-size: 0.88rem;
+            color: #64748b;
+            line-height: 1.4;
+            margin-top: 2px;
+        }
         .metric-stats-table {
             width: 100%;
-            overflow-x: auto;
+            max-width: 100%;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch;
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 16px;
+            background: #ffffff;
+            box-sizing: border-box;
         }
         .metric-stats-table table {
             width: 100% !important;
-            max-width: 100% !important;
-            table-layout: fixed !important;
+            min-width: 0 !important;
             border-collapse: collapse;
+            table-layout: fixed;
         }
         .metric-stats-table th,
         .metric-stats-table td {
-            border: 1px solid rgba(0, 0, 0, 0.12);
-            padding: 6px 8px;
+            border: 1px solid rgba(148, 163, 184, 0.18);
+            padding: 8px 10px;
             font-size: 11px;
-            line-height: 1.25;
+            line-height: 1.35;
             white-space: normal !important;
             word-break: break-word !important;
             overflow-wrap: anywhere !important;
@@ -1828,9 +2449,10 @@ def MetricStatistics():
             text-align: center;
         }
         .metric-stats-table th {
-            font-weight: bold;
+            font-weight: 700;
             text-align: center !important;
             vertical-align: middle;
+            background: rgba(248, 250, 252, 0.98);
         }
         .metric-stats-table th:first-child {
             text-align: center !important;
@@ -1843,50 +2465,138 @@ def MetricStatistics():
         .metric-stats-table.first-column-left td:first-child {
             text-align: left !important;
         }
-    ''')
-    with solara.lab.Tabs():
-        with solara.lab.Tab("Boxplot"):
-            with solara.GridFixed(columns=1):
-                solara.FigureEcharts(option=options, attributes={"style": "height:520px; width:100%"})
-        with solara.lab.Tab("Data"): 
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: df.to_csv(index=False), filename="Metric_Data.csv", label="Export CSV")
-            render_metric_table(df)
-        with solara.lab.Tab("Stats"): 
-            stats_df = summary.reset_index().rename(columns={'index': 'Statistic'})
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: stats_df.to_csv(index=False), filename="Metric_Stats.csv", label="Export CSV")
-            render_metric_table(stats_df, first_column_left=True)
-        with solara.lab.Tab("DS Breakdown"):
-            ds_avg_dict = {m_name: {ds: 0.0 for ds in [0, 1, 2, 3, 4]} for m_name in metric_names}
-            for m in metrics:
-                for m_name in metric_names:
-                    if 'ds_breakdown' in m[m_name]:
-                        for ds, count in m[m_name]['ds_breakdown'].items():
-                            ds_avg_dict[m_name][ds] += count / len(metrics)
-                            
-            ds_labels = {
-                0: 'DS0 (No Damage)',
-                1: 'DS1 (Slight)',
-                2: 'DS2 (Moderate)',
-                3: 'DS3 (Extensive)',
-                4: 'DS4 (Complete)'
+        .metric-stats-mobile-list {
+            display: none;
+        }
+        .metric-stats-mobile-card {
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            border-radius: 16px;
+            background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+            padding: 14px;
+            margin-bottom: 12px;
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
+        }
+        .metric-stats-mobile-card:last-child {
+            margin-bottom: 0;
+        }
+        .metric-stats-mobile-card-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 10px;
+            line-height: 1.3;
+        }
+        .metric-stats-mobile-card-body {
+            display: grid;
+            gap: 10px;
+        }
+        .metric-stats-mobile-field {
+            display: grid;
+            gap: 4px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(148, 163, 184, 0.18);
+        }
+        .metric-stats-mobile-field:first-child {
+            padding-top: 0;
+            border-top: 0;
+        }
+        .metric-stats-mobile-label {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #64748b;
+        }
+        .metric-stats-mobile-value {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #1e293b;
+            line-height: 1.35;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
+        @media (max-width: 960px) {
+            .metric-stats-table table {
+                min-width: 560px !important;
             }
-            ds_records = []
-            for ds in [0, 1, 2, 3, 4]:
-                record = {'Damage State': ds_labels[ds]}
-                for m_name in metric_names:
-                    desc = metric_labels[m_name]
-                    if 'ds_breakdown' in metrics[0][m_name]:
-                        record[desc] = int(round(ds_avg_dict[m_name][ds]))
-                    else:
-                        record[desc] = 'N/A'
-                ds_records.append(record)
-            
-            ds_df = pd.DataFrame(ds_records)
-            with solara.Row(justify="end", style={"margin-bottom": "8px", "padding-right": "8px", "margin-top": "8px"}):
-                solara.FileDownload(data=lambda: ds_df.to_csv(index=False), filename="Metric_DS_Breakdown.csv", label="Export CSV")
-            render_metric_table(ds_df, first_column_left=True)
+        }
+        @media (max-width: 600px) {
+            .metric-stats-heading-title {
+                font-size: 0.98rem;
+            }
+            .metric-stats-heading-subtitle {
+                font-size: 0.82rem;
+            }
+            .metric-stats-toolbar {
+                justify-content: stretch !important;
+            }
+            .metric-stats-download-button,
+            .metric-stats-download-button .v-btn {
+                width: 100% !important;
+            }
+            .metric-stats-table {
+                display: none;
+            }
+            .metric-stats-mobile-list {
+                display: block;
+            }
+        }
+    ''')
+    with solara.Column(classes=["metric-stats-shell"], gap="12px", style={"width": "100%", "padding": "0"}):
+        with solara.Row(classes=["metric-stats-tabbar"], style={"width": "100%", "margin": "0"}):
+            solara.ToggleButtonsSingle(
+                value=selected_metric_tab,
+                on_value=set_selected_metric_tab,
+                values=list(tab_details.keys()),
+                style={"width": "100%"},
+            )
+
+        title, subtitle = tab_details[selected_metric_tab]
+        with solara.Column(classes=["metric-stats-panel"], gap="8px", style={"width": "100%", "minWidth": "0"}):
+            solara.Markdown(
+                f"""
+                <div class="metric-stats-heading">
+                    <div class="metric-stats-heading-title">{escape(title)}</div>
+                    <div class="metric-stats-heading-subtitle">{escape(subtitle)}</div>
+                </div>
+                """,
+                unsafe_solara_execute=True,
+            )
+            if selected_metric_tab == "Chart":
+                with solara.GridFixed(columns=1):
+                    ClientResizeTrigger(
+                        children=solara.FigureEcharts(
+                            option=options,
+                            attributes={"style": "height:clamp(360px, 60vw, 520px); width:100%; min-width:0;"},
+                        ),
+                        trigger_key=f"engine-metric-stats:{selected_metric_tab}:{hash(json.dumps(options, sort_keys=True, default=str))}",
+                    )
+            elif selected_metric_tab == "Data":
+                render_export("Metric_Data.csv", df)
+                render_metric_table(df)
+            elif selected_metric_tab == "Stats":
+                render_export("Metric_Stats.csv", stats_df)
+                render_metric_table(stats_df, first_column_left=True)
+            else:
+                render_export("Metric_DS_Breakdown.csv", ds_df)
+                render_metric_table(ds_df, first_column_left=True)
+
+            solara.Markdown(
+                """
+                <div class="metric-stats-heading" style="margin-top: 16px;">
+                    <div class="metric-stats-heading-title">Building Damage State Distribution</div>
+                    <div class="metric-stats-heading-subtitle">Counts of buildings by damage state for the current scenario.</div>
+                </div>
+                """,
+                unsafe_solara_execute=True,
+            )
+            ClientResizeTrigger(
+                children=solara.FigureEcharts(
+                    option=building_ds_chart_options,
+                    attributes={"style": "height:clamp(300px, 46vw, 420px); width:100%; min-width:0;"},
+                ),
+                trigger_key=f"engine-building-ds-chart:{hash(json.dumps(building_ds_chart_options, sort_keys=True, default=str))}",
+            )
 
 @solara.component
 def MapViewer():
@@ -1937,7 +2647,9 @@ def MapViewer():
     solara.use_effect(cleanup_cache, [])
 
     def create_layers():
-        map_layers = []
+        regular_layers = []
+        infrastructure_layers = []
+        priority_layers = []
         sorted_layers = sorted(
             layers.value['layers'].items(),
             key=lambda item: item[1].get('render_order', 0)
@@ -1962,14 +2674,21 @@ def MapViewer():
                     cache_key_parts.append(hash(tuple(landuse_filter.value)))
 
                 cache_key = tuple(cache_key_parts)
-                if cache_key not in layers.value.setdefault('_map_layer_cache', {}):
+                use_cache = l != "constraint"
+                if (not use_cache) or cache_key not in layers.value.setdefault('_map_layer_cache', {}):
                     print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
-                    layers.value['_map_layer_cache'][cache_key] = create_map_layer(df_filtered, l)
-                
-                map_layer = layers.value['_map_layer_cache'][cache_key]
-                map_layers.append(map_layer)
+                    created_layer = create_map_layer(df_filtered, l)
+                    if use_cache:
+                        layers.value['_map_layer_cache'][cache_key] = created_layer
+                map_layer = created_layer if not use_cache else layers.value['_map_layer_cache'][cache_key]
+                if l in {"road edges", "road nodes", "power edges", "power nodes"}:
+                    infrastructure_layers.append(map_layer)
+                elif l == "constraint":
+                    priority_layers.append(map_layer)
+                else:
+                    regular_layers.append(map_layer)
 
-        return map_layers
+        return regular_layers + infrastructure_layers + priority_layers
 
     map_layers = solara.use_memo(create_layers,
                     [building_filter.value, landuse_filter.value] + 
@@ -2044,6 +2763,7 @@ def MapViewer():
         controls.append(legend_control)
 
     with solara.Div(classes=["map-shell"]):
+        ClientLeafletInitialOrderFix(trigger_key=f"{layers.value['render_count'].value}")
         ipyleaflet.Map.element(
             zoom=zoom,
             max_zoom=23,                    
@@ -2057,6 +2777,7 @@ def MapViewer():
             touch_zoom=True,
             box_zoom=True,
             keyboard=True if random.random() > 0.5 else False,
+            panes=MAP_PANES,
             layers=base_layers + map_layers,
             controls = controls,
             layout = layout
@@ -3183,12 +3904,107 @@ def ImportDataZone2():
             if parameter_file_name:
                 solara.Text(f"Loaded: {parameter_file_name}")
         else:
+            catalogue_preview = get_basic_catalogue_preview(basic_country)
+            catalogue_path = catalogue_preview["path"]
             solara.Select(
                 label="Country Distribution",
                 value=basic_country,
                 values=list(BASIC_MODE_CONFIG.keys()),
                 on_value=set_basic_country,
             )
+            with solara.Details(summary=f"{basic_country} Distribution Catalogue", expand=False):
+                with solara.Card(
+                    subtitle="Review the default country assumptions before generating data",
+                    elevation=1,
+                    style={
+                        "width": "100%",
+                        "border": "1px solid rgba(15, 23, 42, 0.08)",
+                        "border-radius": "14px",
+                        "background": "linear-gradient(135deg, #fffaf1 0%, #ffffff 55%, #eef6ff 100%)",
+                    },
+                ):
+                    solara.Markdown(
+                        "Download the catalogue to inspect the predefined distribution tables used by Basic Mode. "
+                        "This helps you understand how land use, income, and exposure assumptions reflect the selected country context."
+                    )
+                    with solara.Row(gap="12px", style={"flexWrap": "wrap", "margin": "8px 0 4px 0"}):
+                        with solara.Card(title="Workbook", elevation=0, style={"minWidth": "160px", "background": "rgba(255,255,255,0.88)"}):
+                            solara.Text(catalogue_path.name, style={"font-weight": "700"})
+                        with solara.Card(title="Sheets", elevation=0, style={"minWidth": "120px", "background": "rgba(255,255,255,0.88)"}):
+                            solara.Text(str(len(catalogue_preview["sheet_names"])), style={"font-weight": "700"})
+                        with solara.Card(title="File Size", elevation=0, style={"minWidth": "120px", "background": "rgba(255,255,255,0.88)"}):
+                            solara.Text(catalogue_preview["size_label"], style={"font-weight": "700"})
+                    with solara.Row(gap="12px", style={"flexWrap": "wrap", "marginTop": "8px"}):
+                        with solara.FileDownload(
+                            catalogue_path.read_bytes(),
+                            catalogue_path.name,
+                            mime_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        ):
+                            solara.Button(
+                                "Download Catalogue",
+                                outlined=True,
+                                classes=["generate-data-action-button"],
+                            )
+            with solara.Details(summary="Density Capacity Information", expand=False):
+                with solara.Card(
+                    elevation=1,
+                    style={
+                        "width": "100%",
+                        "border": "1px solid rgba(15, 23, 42, 0.08)",
+                        "border-radius": "14px",
+                        "background": "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+                    },
+                ):
+                    JustifiedMarkdown(
+                        "The **densityCap** setting represents the notional residential carrying capacity of built-up urban fabric in persons per hectare. "
+                        "It should therefore be interpreted as a modeling cap for developed residential land, not as a direct reproduction of citywide average density."
+                    )
+                    JustifiedMarkdown(
+                        "The calibration starts from the GHSL Degree of Urbanisation framework, which provides a consistent global baseline for comparison. "
+                        "In that framework, an urban centre begins at approximately **1,500 people/km²** or **15 people/hectare**. "
+                        "That threshold is a useful lower reference for the least intense urban fabric classes, but the values used here are intentionally higher because the model is designed to represent the capacity of already urbanised residential fabric rather than the minimum threshold for defining an urban area."
+                    )
+                    solara.Markdown("**Default densityCap values across all available country catalogues**")
+                    solara.Markdown(
+                        "Values below are expressed in **people per hectare** for the five residential urban fabric intensity classes."
+                    )
+                    solara.DataFrame(get_density_cap_table(), items_per_page=10)
+                    JustifiedMarkdown(
+                        "Across the country profiles, the series have been differentiated to reflect broad contrasts in settlement structure, metropolitan concentration, and the prevalence of compact or informal urban development."
+                    )
+                    JustifiedMarkdown(
+                        "**Kenya** is anchored to the Nairobi context, but citywide averages alone would understate the pressure found in dense informal settlements. "
+                        "Very high local densities have been reported in parts of informal Nairobi, while low-density, higher-income neighbourhoods can be far less compact. "
+                        "For that reason, a **220 people/ha** cap for continuous urban fabric was selected as a high but still nationally transferable value, without applying extreme slum-level density to the full country context."
+                    )
+                    JustifiedMarkdown(
+                        "**Tanzania** is benchmarked primarily against Dar es Salaam, the country's principal urban density reference point. "
+                        "Reported metropolitan averages remain moderate at city scale, but much denser neighbourhood conditions are expected within the urban fabric itself. "
+                        "The proposed series is therefore slightly below Kenya, while still reflecting the dynamics of fast-growing East African urbanisation."
+                    )
+                    JustifiedMarkdown(
+                        "**Bangladesh** warrants the highest values in the set. "
+                        "Even at large administrative scale, population density is high, and Dhaka-level urban estimates rise sharply further when measured in compact built-up areas. "
+                        "A **450 people/ha** cap for continuous urban fabric is therefore intended to preserve the capacity of very dense metropolitan environments such as Dhaka and Chattogram."
+                    )
+                    JustifiedMarkdown(
+                        "**Nepal** is shaped primarily by the Kathmandu Valley context. "
+                        "National density is much lower and the country's geography is highly fragmented, but the capital region remains substantially more compact than most of the national territory. "
+                        "The resulting profile stays well below Bangladesh while remaining close to Kenya, with a slightly more compact urban pattern overall."
+                    )
+                    JustifiedMarkdown(
+                        "**Brazil** is highly urbanised and includes a large population living in favelas and other dense urban communities. "
+                        "That supports a comparatively strong capacity in the continuous and dense classes. "
+                        "At the same time, Brazilian cities are not generally as compact as Bangladesh's largest metropolitan fabrics, so the continuous cap is held at **260 people/ha** rather than pushed toward the highest tier."
+                    )
+                    JustifiedMarkdown(
+                        "**Canada** combines very low national average density with downtown districts that can still reach substantial urban intensity. "
+                        "This justifies a moderate cap of **180 people/ha** for continuous fabric, followed by a relatively steep decline toward the lower-density classes to better match the broader settlement pattern."
+                    )
+                    JustifiedMarkdown(
+                        "**United Kingdom** uses London as an important reference, but the wider national urban fabric is generally more continuous than Canada's. "
+                        "Accordingly, the UK profile remains somewhat more even across the lower classes, while still staying below the densest South Asian cases."
+                    )
             solara.Info("Basic Mode uses predefined distribution catalogues. Upload land-use data and complete the mapping table below.")
 
         solara.Markdown("**Land-Use Layer (.geojson, .zip, .rar, .kml, .gpkg)**")
@@ -3403,13 +4219,15 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     .map-shell {
         position: relative;
         width: 100%;
+        isolation: isolate;
+        overflow: hidden;
     }
 
     .map-filter-overlay {
         position: absolute;
         top: 130px;
         left: 14px;
-        z-index: 1000;
+        z-index: 20;
         width: auto;
         max-width: calc(100% - 20px);
         pointer-events: auto;
