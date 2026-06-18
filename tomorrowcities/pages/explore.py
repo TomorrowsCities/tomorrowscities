@@ -29,7 +29,7 @@ import secrets
 import tempfile
 from html import escape
 
-from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user, ClientResizeTrigger, ClientLeafletInitialOrderFix, ViewportObserver
+from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user, ClientResizeTrigger, ClientLeafletInitialOrderFix
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, constraint_layer_colors, building_colors, road_edge_colors,\
                     power_edge_colors, ds_to_color, ds_to_color_approx, create_tally, MAP_PANES
@@ -347,34 +347,95 @@ def MetaDataViewer(session_name):
     if session_name is not None:
         metadata = fetch_metadata(session_name)
         
-        # Define display mapping and order
-        display_map = {
-            'scenario_name': 'Scenario Name:',
-            'hazard': 'Hazard Type:',
-            'infra': 'Assets at Risk:',
-            'datetime_analysis': 'Analysis Time:',
-            'datetime_upload': 'Analysis Upload Time:',
-            'user_id': 'Uploader User ID:'
-        }
+        # Define display mapping, order, and icons
+        display_map = [
+            ('scenario_name', 'Scenario Name', 'mdi-card-text-outline'),
+            ('hazard', 'Hazard Type', 'mdi-alert-decagram-outline'),
+            ('infra', 'Assets at Risk', 'mdi-home-city-outline'),
+            ('datetime_analysis', 'Analysis Time', 'mdi-calendar-clock'),
+            ('datetime_upload', 'Upload Time', 'mdi-cloud-upload-outline'),
+            ('user_id', 'Uploader ID', 'mdi-account-circle-outline')
+        ]
 
-        with solara.Column(style={"margin-top": "10px"}):
-            with solara.GridFixed(columns=2, row_gap="6px"):
-                for key, label in display_map.items():
-                    if key in metadata:
-                        value = metadata[key]
+        # Filter display map to only keys present in metadata
+        active_items = [(k, l, i) for k, l, i in display_map if k in metadata]
+
+        with solara.Card(
+            title="Scenario Information",
+            elevation=0,
+            style={
+                "margin-top": "16px",
+                "border": "1px solid rgba(15, 23, 42, 0.09)",
+                "border-radius": "12px",
+                "background": "linear-gradient(180deg, #ffffff 0%, #f9fafb 100%)",
+                "padding": "8px 12px 12px 12px"
+            }
+        ):
+            with solara.Div(style={"display": "flex", "flex-direction": "column", "width": "100%"}):
+                for idx, (key, label, icon) in enumerate(active_items):
+                    value = metadata[key]
+                    
+                    # Format value
+                    if key == 'infra' and isinstance(value, list):
+                        display_value = ", ".join(value)
+                    elif value is None:
+                        display_value = 'None'
+                    else:
+                        display_value = f'{value}'
+                    
+                    # Row style with border bottom divider (except last row)
+                    row_style = {
+                        "display": "flex",
+                        "flex-direction": "column",
+                        "padding": "10px 0 8px 0",
+                        "width": "100%",
+                    }
+                    if idx < len(active_items) - 1:
+                        row_style["border-bottom"] = "1px solid rgba(15, 23, 42, 0.06)"
+                    
+                    with solara.Div(style=row_style):
+                        # Label Row
+                        with solara.Row(style={"align-items": "center", "margin-bottom": "4px"}, gap="4px"):
+                            solara.v.Icon(children=[icon], style_="font-size: 16px; color: #64748b; margin-right: 4px;")
+                            solara.Text(label.upper(), style={
+                                "font-size": "0.7rem",
+                                "font-weight": "700",
+                                "letter-spacing": "0.05em",
+                                "color": "#64748b",
+                            })
                         
-                        # Format value
-                        if key == 'infra' and isinstance(value, list):
-                            display_value = ", ".join(value)
-                        elif value is None:
-                            display_value = 'None'
-                        else:
-                            display_value = f'{value}'
-                        
-                        # Row with bold label and left-aligned value
-                        solara.Text(f"{label}", style={"font-weight": "bold", "line-height": "1.35", "padding-right": "8px"})
-                        with solara.Div(classes=["metadata-value-wrap"]):
-                            solara.Text(display_value, style={"line-height": "1.35"})
+                        # Value Row
+                        with solara.Div(classes=["metadata-value-wrap"], style={"padding-left": "22px", "width": "100%"}):
+                            if key == 'hazard':
+                                badge_color = "#eff6ff"
+                                text_color = "#1d4ed8"
+                                if display_value.lower() == 'earthquake':
+                                    badge_color = "#fef2f2"
+                                    text_color = "#b91c1c"
+                                elif display_value.lower() == 'flood':
+                                    badge_color = "#ecfeff"
+                                    text_color = "#0369a1"
+                                
+                                with solara.Div(style={
+                                    "display": "inline-block",
+                                    "padding": "2px 8px",
+                                    "border-radius": "20px",
+                                    "background-color": badge_color,
+                                    "color": text_color,
+                                    "font-size": "0.8rem",
+                                    "font-weight": "600",
+                                    "text-transform": "capitalize"
+                                }):
+                                    solara.Text(display_value)
+                            else:
+                                solara.Text(display_value, style={
+                                    "font-size": "0.85rem",
+                                    "font-weight": "500",
+                                    "color": "#0f172a",
+                                    "line-height": "1.35",
+                                    "word-break": "break-word",
+                                    "overflow-wrap": "anywhere"
+                                })
         # print(metadata)
 
 def clear_session():
@@ -667,12 +728,18 @@ def MapInfo():
                                values=["summary","detail"])
 
     if layers.value['map_info_button'].value == "summary":
-        with solara.GridFixed(columns=2,row_gap="1px"):
+        with solara.Div(style={
+            "display": "grid",
+            "grid-template-columns": "minmax(0, 1.2fr) minmax(0, 1.8fr)",
+            "row-gap": "4px",
+            "column-gap": "8px",
+            "width": "100%",
+        }):
             for layer_name,layer in layers.value['layers'].items():
                 data = layer['data'].value
                 with solara.Tooltip(layer['map_info_tooltip']):
-                    solara.Text(f'{layer_name}')
-                with solara.Row(justify="right"):
+                    solara.Text(f'{layer_name}', style={"word-break": "break-word", "overflow-wrap": "anywhere"})
+                with solara.Div(style={"text-align": "right", "word-break": "break-word", "overflow-wrap": "anywhere"}):
                     if data is None:
                         solara.Text('0')
                     else:
@@ -681,12 +748,18 @@ def MapInfo():
                         elif isinstance(data, dict) and layer_name == 'gem_vulnerability':
                             solara.Text(f"{len(data['vulnerabilityFunctions'])}")
     else:
-        with solara.GridFixed(columns=2,row_gap="1px"):
+        with solara.Div(style={
+            "display": "grid",
+            "grid-template-columns": "minmax(0, 1.2fr) minmax(0, 1.8fr)",
+            "row-gap": "4px",
+            "column-gap": "8px",
+            "width": "100%",
+        }):
             for key, value in layers.value['map_info_detail'].value.items():
                 if key == 'style':
                     continue
-                solara.Text(f'{key}')
-                with solara.Row(justify="right"):
+                solara.Text(f'{key}', style={"font-weight": "bold", "word-break": "break-word", "overflow-wrap": "anywhere"})
+                with solara.Div(style={"text-align": "right", "word-break": "break-word", "overflow-wrap": "anywhere"}):
                     strvalue = str(value)
                     solara.Text(f'{strvalue}')
     
@@ -1565,36 +1638,21 @@ def Page():
         overflow: auto;
     }
 
-    .explore-layout {
-        width: 100%;
-        align-items: flex-start;
-        gap: 16px;
+    .v-navigation-drawer {
+        max-width: 360px !important;
     }
 
-    .explore-desktop-sidebar {
-        flex: 0 0 min(420px, 32vw);
-        width: min(420px, 32vw);
-        min-width: 320px;
-        max-width: 420px;
-        overflow-x: hidden;
-    }
-
-    .explore-desktop-map {
-        flex: 1 1 0;
-        min-width: 0;
-    }
-
-    .explore-desktop-sidebar .v-input,
-    .explore-desktop-sidebar .v-input__control,
-    .explore-desktop-sidebar .v-input__slot,
-    .explore-desktop-sidebar .v-select__slot,
-    .explore-desktop-sidebar .v-select__selections {
+    .v-navigation-drawer .v-input,
+    .v-navigation-drawer .v-input__control,
+    .v-navigation-drawer .v-input__slot,
+    .v-navigation-drawer .v-select__slot,
+    .v-navigation-drawer .v-select__selections {
         min-width: 0 !important;
         max-width: 100% !important;
     }
 
-    .explore-desktop-sidebar .v-select__selection,
-    .explore-desktop-sidebar .v-select__selection--comma {
+    .v-navigation-drawer .v-select__selection,
+    .v-navigation-drawer .v-select__selection--comma {
         max-width: 100%;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1639,8 +1697,6 @@ def Page():
     """
     solara.Style(value=css)
     solara.Title(" ")
-    viewport_width = solara.use_reactive(0)
-    ViewportObserver(width=viewport_width)
     
     def on_load():
         session_data = read_from_session_storage('explore_initialized')
@@ -1650,37 +1706,30 @@ def Page():
             
     solara.use_effect(on_load, [])
 
-    def render_main_content():
-        MapViewer()
-        with solara.Row(justify="center"):
-            MetricPanel()
-        solara.Details(
-            summary="Metric Statistics",
-            children=[MetricStatistics()],
-            expand=False
-        )
-        solara.Details(
-            summary="Layer Details",
-            children=[LayerDisplayer()],
-            expand=False
-        )
-        solara.Details(
-            summary="Data Tables & Charts",
-            children=[GeneratedDataTablesCharts(layers=layers, scenario_label=session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)],
-            expand=False
-        )
+    # Mobile View: Content at the top
+    with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):
+        ExploreSidebarContent()
 
-    # Default to mobile until the client reports its true viewport width, so
-    # we never instantiate the desktop map/sidebar layout on phones first.
-    is_mobile = viewport_width.value == 0 or viewport_width.value < 960
+    # Desktop View: Content in Sidebar
+    with solara.Sidebar():
+        with solara.Column(classes=["d-none", "d-md-block"]):
+             ExploreSidebarContent()
 
-    if is_mobile:
-        with solara.Column(style={"width": "100%"}):
-            ExploreSidebarContent()
-            render_main_content()
-    else:
-        with solara.Row(classes=["explore-layout"], style={"width": "100%"}):
-            with solara.Column(classes=["explore-desktop-sidebar"]):
-                ExploreSidebarContent()
-            with solara.Column(classes=["explore-desktop-map"]):
-                render_main_content()
+    MapViewer()
+    with solara.Row(justify="center"):
+        MetricPanel()
+    solara.Details(
+        summary="Metric Statistics",
+        children=[MetricStatistics()],
+        expand=False
+    )
+    solara.Details(
+        summary="Layer Details",
+        children=[LayerDisplayer()],
+        expand=False
+    )
+    solara.Details(
+        summary="Data Tables & Charts",
+        children=[GeneratedDataTablesCharts(layers=layers, scenario_label=session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)],
+        expand=False
+    )
