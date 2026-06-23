@@ -32,7 +32,9 @@ def Overview():
     # Road Networks
     # Power Network Analysis    
 
-    order = ["howtouse", "changelog", "data", "metrics", "policies", "contribution", "flood", "landslide", "road", "power"]
+    # Hidden for now; keep entries here for easy re-enable later:
+    # "policies", "contribution", "landslide"
+    order = ["howtouse", "changelog", "data", "metrics", "earthquake", "flood", "road", "power"]
     
     with rv.Row(wrap=True) as main:
         for name in order:

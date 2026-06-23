@@ -1,4 +1,5 @@
 import solara
+from solara.alias import rv
 from solara.lab.components.confirmation_dialog import ConfirmationDialog
 import time
 import random
@@ -454,6 +455,13 @@ metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
 ds_to_color = {0: '#2c7bb6', 1: '#abd9e9', 2:'#ffffbf', 3:'#fdae61', 4: '#d7191c'}
 # approximate color names when hex codes can't be used
 ds_to_color_approx = {0: 'darkblue', 1: 'lightblue', 2:'beige', 3:'orange', 4: 'red'}
+DS_METRIC_LABELS = {
+    0: "DS0 No Damage",
+    1: "DS1 Slight",
+    2: "DS2 Moderate",
+    3: "DS3 Extensive",
+    4: "DS4 Complete",
+}
 
 
 def build_building_damage_state_chart_options(ds_counts, title="Building Damage State Distribution"):
@@ -577,6 +585,31 @@ def build_building_damage_state_chart_options(ds_counts, title="Building Damage 
             }
         ],
     }
+
+
+def get_visible_building_damage_state_counts(layers_state, bounds_value, building_cross_filter=None):
+    counts = {ds: 0 for ds in range(5)}
+    building_data = layers_state.value['layers']['building']['data'].value
+    if not isinstance(building_data, gpd.GeoDataFrame) or 'ds' not in building_data.columns:
+        return counts, 0, False
+
+    visible_buildings = building_data
+    if bounds_value is not None:
+        try:
+            ((ymin, xmin), (ymax, xmax)) = bounds_value
+            visible_buildings = visible_buildings.cx[xmin:xmax, ymin:ymax]
+        except Exception:
+            pass
+
+    filter_value = building_cross_filter.value if hasattr(building_cross_filter, "value") else building_cross_filter
+    if filter_value is not None:
+        visible_buildings = visible_buildings[filter_value]
+
+    total_visible = len(visible_buildings)
+    ds_series = pd.to_numeric(visible_buildings['ds'], errors='coerce').dropna().astype(int)
+    ds_series = ds_series[ds_series.isin(range(5))]
+    counts.update({int(ds): int(count) for ds, count in ds_series.value_counts().to_dict().items()})
+    return counts, total_visible, True
 def show_dialog_message(topic):
     layers.value['dialog_message_to_be_shown'].value = topic
 
@@ -1980,14 +2013,10 @@ def LayerDisplayer():
             solara.Text("Spacer", style={"visibility": "hidden"})
             FragilityDisplayer(data)
 
-metric_update_pending = solara.reactive(False)
-
 @task
 def generate_metrics_local():
-    metric_update_pending.set(True)
     print("Emtering generate_metrics_local")
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
-
     tally_geo = read_from_session_storage('tally_geo')
     hazard = read_from_session_storage('hazard')
     population_displacement_consensus = read_from_session_storage('population_displacement_consensus')
@@ -2013,7 +2042,6 @@ def generate_metrics_local():
                     metrics[metric_key]['max_value'] = int(round(avg_max))
         
         print('metrics', metrics)
-    metric_update_pending.set(False)
     return metrics
 
 @solara.component
@@ -2029,13 +2057,8 @@ def MetricPanel():
 
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
-        solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
-        with solara.Link("/docs/metrics"):
-             with solara.Tooltip('Click for impact metric definitions'):
-                solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
-    if metric_update_pending.value:
-        solara.ProgressLinear(metric_update_pending.value)
+    if generate_metrics_local.pending and layers.value['bounds'].value is not None:
+        solara.ProgressLinear(True)
     
     with solara.v.Row(justify="center", style_="margin-top: 0px; padding-top: 0px;"):
         for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
@@ -2047,6 +2070,55 @@ def MetricPanel():
                             metric['max_value'],
                             layers.value['render_count'].value,
                             icon=icon)      
+
+@solara.component
+def DamageStateMetricPanel(layers_state=layers, building_cross_filter=building_filter, render_key=None):
+    _ = render_key
+    bounds_value = layers_state.value['bounds'].value
+    ds_counts, total_visible, available = get_visible_building_damage_state_counts(
+        layers_state,
+        bounds_value,
+        building_cross_filter,
+    )
+    if not available:
+        solara.Info("Damage state metrics become available after an analysis is run and building damage states are generated.")
+        return
+
+    with solara.Div(style={"background": "#fcfdff", "padding": "6px", "border-radius": "8px"}):
+        with solara.v.Row(justify="center", style_="margin-top: 0px; padding-top: 0px;"):
+            for ds, description in DS_METRIC_LABELS.items():
+                with solara.v.Col(cols=6, sm=4, md=4, lg=4, xl=4, class_="damage-state-card-col", style_="padding: 5px;"):
+                    MetricWidget(
+                        f"ds{ds}",
+                        description,
+                        ds_counts[ds],
+                        max(total_visible, 1),
+                        layers_state.value['render_count'].value,
+                    )
+
+@solara.component
+def ImpactMetricsSummary():
+    with solara.Div(style={"display": "inline-flex", "align-items": "center", "gap": "6px"}):
+        solara.Text("Impact Metrics")
+        with solara.Link("https://webapp.tomorrowscities.org/docs/metrics"):
+            with solara.Tooltip("Click for impact metric definitions"):
+                solara.v.Icon(
+                    children=["mdi-help-box"],
+                    style_="font-size: 18px; color: #1f2937; line-height: 1;"
+                )
+
+@solara.component
+def ControlledDetails(summary="Summary", children=[], expand=False, on_expand=None):
+    def on_v_model(v_model):
+        expanded = v_model == 0
+        if on_expand is not None:
+            on_expand(expanded)
+
+    with rv.ExpansionPanels(v_model=0 if expand else None, on_v_model=on_v_model) as main:
+        with rv.ExpansionPanel():
+            rv.ExpansionPanelHeader(children=[summary])
+            rv.ExpansionPanelContent(children=children)
+    return main
 
 @solara.component
 def MetricStatistics():
@@ -2599,7 +2671,7 @@ def MetricStatistics():
             )
 
 @solara.component
-def MapViewer():
+def MapViewer(map_height_class="map-shell-default"):
     print('rendering mapviewer')
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
@@ -2631,7 +2703,7 @@ def MapViewer():
     # create base layers only once
     base_layers = solara.use_memo(create_base_layers,[])
     
-    layout = ipywidgets.Layout.element(width='100%', height='55vh')
+    layout = ipywidgets.Layout.element(width='100%', height='var(--tc-map-height)')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
@@ -2762,26 +2834,29 @@ def MapViewer():
     if legend_control is not None:
         controls.append(legend_control)
 
-    with solara.Div(classes=["map-shell"]):
+    with solara.Div(classes=["map-shell", map_height_class]):
         ClientLeafletInitialOrderFix(trigger_key=f"{layers.value['render_count'].value}")
-        ipyleaflet.Map.element(
-            zoom=zoom,
-            max_zoom=23,                    
-            on_zoom=set_zoom,
-            on_bounds=layers.value['bounds'].set,
-            center=layers.value['center'].value,
-            on_center=layers.value['center'].set,
-            scroll_wheel_zoom=True,
-            dragging=True,
-            double_click_zoom=True,
-            touch_zoom=True,
-            box_zoom=True,
-            keyboard=True if random.random() > 0.5 else False,
-            panes=MAP_PANES,
-            layers=base_layers + map_layers,
-            controls = controls,
-            layout = layout
-            )
+        ClientResizeTrigger(
+            children=ipyleaflet.Map.element(
+                zoom=zoom,
+                max_zoom=23,                    
+                on_zoom=set_zoom,
+                on_bounds=layers.value['bounds'].set,
+                center=layers.value['center'].value,
+                on_center=layers.value['center'].set,
+                scroll_wheel_zoom=True,
+                dragging=True,
+                double_click_zoom=True,
+                touch_zoom=True,
+                box_zoom=True,
+                keyboard=True if random.random() > 0.5 else False,
+                panes=MAP_PANES,
+                layers=base_layers + map_layers,
+                controls = controls,
+                layout = layout
+            ),
+            trigger_key=f"engine-map:{map_height_class}:{layers.value['render_count'].value}:{len(map_layers)}",
+        )
         with solara.Div(classes=["map-filter-overlay"]):
             with solara.Div(style={"display": "flex", "flex-direction": "column", "gap": "8px", "align-items": "flex-start"}):
                 with solara.Tooltip("Zoom to Land-use Layer"):
@@ -4160,27 +4235,53 @@ def WebApp():
         with solara.Column(classes=["d-none", "d-md-block"]):
              EngineSidebarContent()
 
+    impact_metrics_open, set_impact_metrics_open = solara.use_state(True)
+    damage_state_metrics_open, set_damage_state_metrics_open = solara.use_state(False)
+    metric_statistics_open, set_metric_statistics_open = solara.use_state(False)
+    layer_details_open, set_layer_details_open = solara.use_state(False)
+    data_tables_open, set_data_tables_open = solara.use_state(False)
+
+    if impact_metrics_open:
+        map_height_class = "map-shell-impact-open"
+    elif not any([damage_state_metrics_open, metric_statistics_open, layer_details_open, data_tables_open]):
+        map_height_class = "map-shell-all-closed"
+    else:
+        map_height_class = "map-shell-default"
+
     NotificationCenter()
 
     # LayerController()
-    MapViewer()
-    with solara.Row(justify="center"):
-        MetricPanel()
+    MapViewer(map_height_class=map_height_class)
+    ControlledDetails(
+        summary=ImpactMetricsSummary(),
+        children=[MetricPanel()],
+        expand=impact_metrics_open,
+        on_expand=set_impact_metrics_open,
+    )
+    ControlledDetails(
+        summary="Damage State Metrics",
+        children=[DamageStateMetricPanel(layers_state=layers, building_cross_filter=building_filter, render_key=layers.value['render_count'].value)],
+        expand=damage_state_metrics_open,
+        on_expand=set_damage_state_metrics_open,
+    )
     #LayerDisplayer()
-    solara.Details(
+    ControlledDetails(
         summary="Metric Statistics",
         children=[MetricStatistics()],
-        expand=False
+        expand=metric_statistics_open,
+        on_expand=set_metric_statistics_open,
     )
-    solara.Details(
+    ControlledDetails(
         summary="Layer Details",
         children=[LayerDisplayer()],
-        expand=False
+        expand=layer_details_open,
+        on_expand=set_layer_details_open,
     )
-    solara.Details(
+    ControlledDetails(
         summary="Data Tables & Charts",
         children=[GeneratedDataTablesCharts()],
-        expand=False
+        expand=data_tables_open,
+        on_expand=set_data_tables_open,
     )
     solara.Text("Spacer", style={"visibility": "hidden"})
 
@@ -4217,10 +4318,19 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     }
 
     .map-shell {
+        --tc-map-height: 52vh;
         position: relative;
         width: 100%;
         isolation: isolate;
         overflow: hidden;
+    }
+
+    .map-shell.map-shell-all-closed {
+        --tc-map-height: 74vh;
+    }
+
+    .map-shell.map-shell-impact-open {
+        --tc-map-height: 52vh;
     }
 
     .map-filter-overlay {
@@ -4352,6 +4462,11 @@ def Page(name: Optional[str] = None, page: int = 0, page_size=100):
     }
 
     @media (max-width: 960px) {
+        .map-shell,
+        .map-shell.map-shell-all-closed,
+        .map-shell.map-shell-impact-open {
+            --tc-map-height: 55vh;
+        }
         .v-app-bar__nav-icon {
             display: none !important;
         }

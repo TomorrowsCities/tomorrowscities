@@ -1,4 +1,5 @@
 import solara
+from solara.alias import rv
 from solara.lab.components.confirmation_dialog import ConfirmationDialog
 import time
 import random
@@ -33,9 +34,10 @@ from . import storage, connect_storage, read_from_session_storage, store_in_sess
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile
 from .engine import landuse_colors, generic_layer_colors, constraint_layer_colors, building_colors, road_edge_colors,\
                     power_edge_colors, ds_to_color, ds_to_color_approx, create_tally, MAP_PANES
-from .engine import MetricWidget, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer, GeneratedDataTablesCharts, create_road_edges_layer, build_building_damage_state_chart_options
+from .engine import MetricWidget, DamageStateMetricPanel, create_new_app_state, ParameterFileWidget, VulnerabiliyDisplayer, FragilityDisplayer, GeneratedDataTablesCharts, create_road_edges_layer, build_building_damage_state_chart_options
 from .utilities import PowerFragilityDisplayer
 from ..backend.engine import generate_metrics
+from ..components.notification_center import NotificationCenter
 
 def get_session_list():
     if storage.value is not None:
@@ -449,6 +451,15 @@ def force_render():
 def StorageViewer():
     solara.use_effect(lambda: refresh_session_list(), [user.value])
     with solara.Card(title='Load Scenario', subtitle='Choose a scenario from storage'):
+        solara.Markdown(
+            """
+            <div style="text-align: justify;">
+            Public scenarios shown here are user-created examples. Their inputs, assumptions, classifications, and simplifications are defined by the user who prepared them, and they should not be read as definitive descriptions of a place, community, or country. They are exploratory scenario products for testing and learning, not statements of absolute ground truth.
+            </div>
+            """
+            ,
+            unsafe_solara_execute=True,
+        )
         solara.Select(label='Choose scenario',value=session_name.value, values=session_list.value,
                     on_value=session_name.set)
         solara.Button(style={"width":"48%","margin":"1%"},label="Refresh List", on_click=lambda: refresh_session_list(),
@@ -462,7 +473,7 @@ def StorageViewer():
     MetaDataViewer(session_name)
 
 @solara.component
-def MapViewer():
+def MapViewer(map_height_class="map-shell-default"):
     print('rendering mapviewer')
     filters_open, set_filters_open = solara.use_state(False)
 
@@ -492,7 +503,7 @@ def MapViewer():
     # create base layers only once
     base_layers = solara.use_memo(create_base_layers,[])
     
-    layout = ipywidgets.Layout.element(width='100%', height='55vh')
+    layout = ipywidgets.Layout.element(width='100%', height='var(--tc-map-height)')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
@@ -603,26 +614,29 @@ def MapViewer():
     if legend_control is not None:
         controls.append(legend_control)
 
-    with solara.Div(classes=["map-shell"]):
+    with solara.Div(classes=["map-shell", map_height_class]):
         ClientLeafletInitialOrderFix(trigger_key=f"{render_count.value}")
-        ipyleaflet.Map.element(
-            zoom=zoom.value,
-            max_zoom=23,
-            on_zoom=zoom.set,
-            on_bounds=layers.value['bounds'].set,
-            center=layers.value['center'].value,
-            on_center=layers.value['center'].set,
-            scroll_wheel_zoom=True,
-            dragging=True,
-            double_click_zoom=True,
-            touch_zoom=True,
-            box_zoom=True,
-            keyboard=True if random.random() > 0.5 else False,
-            panes=MAP_PANES,
-            layers=base_layers + map_layers,
-            controls = controls,
-            layout = layout
-            )
+        ClientResizeTrigger(
+            children=ipyleaflet.Map.element(
+                zoom=zoom.value,
+                max_zoom=23,
+                on_zoom=zoom.set,
+                on_bounds=layers.value['bounds'].set,
+                center=layers.value['center'].value,
+                on_center=layers.value['center'].set,
+                scroll_wheel_zoom=True,
+                dragging=True,
+                double_click_zoom=True,
+                touch_zoom=True,
+                box_zoom=True,
+                keyboard=True if random.random() > 0.5 else False,
+                panes=MAP_PANES,
+                layers=base_layers + map_layers,
+                controls = controls,
+                layout = layout
+            ),
+            trigger_key=f"explore-map:{map_height_class}:{render_count.value}:{len(map_layers)}",
+        )
         with solara.Div(classes=["map-filter-overlay"]):
             with solara.Div(style={"display": "flex", "flex-direction": "column", "gap": "8px", "align-items": "flex-start"}):
                 with solara.Tooltip("Zoom to Land-use Layer"):
@@ -650,12 +664,8 @@ def MapViewer():
                             FilterPanel()
     print(f"MapViewer render count {render_count.value}")
 
-metric_update_pending = solara.reactive(False)
-
-
 @task
 def generate_metrics_local():
-    metric_update_pending.set(True)
     print("Emtering generate_metrics_local")
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
@@ -670,7 +680,6 @@ def generate_metrics_local():
         print('Triggering generate_metrics')
         metrics = generate_metrics(tally_filtered, tally_geo, hazard_type, population_displacement_consensus.value)
         print('metrics', metrics)
-    metric_update_pending.set(False)
     return metrics
 
 @solara.component
@@ -693,13 +702,6 @@ def MetricPanel():
         filtered_metrics = generate_metrics_local.value
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
-    with solara.Row(justify="center", style="align-items: center; margin-top: -25px; margin-bottom: -25px"):
-        solara.Markdown('''<h2 style="font-weight: bold; margin: 0px; line-height: 1.1">IMPACTS</h2>''')
-        with solara.Link("/docs/metrics"):
-             with solara.Tooltip('Click for impact metric definitions'):
-                solara.Button(icon_name="mdi-help-box", text=True, outlined=False, style={"margin": "0 0 -12px -32px", "padding": "0px"})
-    if metric_update_pending.value:
-        solara.ProgressLinear(metric_update_pending.value)
 
     with solara.v.Row(justify="center", style_="margin-top: 0px; padding-top: 0px;"):
         for (name, metric), icon in zip(filtered_metrics.items(), metric_icons):
@@ -713,6 +715,30 @@ def MetricPanel():
                             icon=icon)
 
     print(f"render count {render_count.value}")
+
+@solara.component
+def ImpactMetricsSummary():
+    with solara.Div(style={"display": "inline-flex", "align-items": "center", "gap": "6px"}):
+        solara.Text("Impact Metrics")
+        with solara.Link("https://webapp.tomorrowscities.org/docs/metrics"):
+            with solara.Tooltip("Click for impact metric definitions"):
+                solara.v.Icon(
+                    children=["mdi-help-box"],
+                    style_="font-size: 18px; color: #1f2937; line-height: 1;"
+                )
+
+@solara.component
+def ControlledDetails(summary="Summary", children=[], expand=False, on_expand=None):
+    def on_v_model(v_model):
+        expanded = v_model == 0
+        if on_expand is not None:
+            on_expand(expanded)
+
+    with rv.ExpansionPanels(v_model=0 if expand else None, on_v_model=on_v_model) as main:
+        with rv.ExpansionPanel():
+            rv.ExpansionPanelHeader(children=[summary])
+            rv.ExpansionPanelContent(children=children)
+    return main
 
 @solara.component
 def MapInfo():
@@ -957,8 +983,23 @@ def MetricStatistics():
         solara.Info('There is no metrics statistics data yet!')
         return
 
-    metrics = layers.value['metrics_realized'].value
-    if metrics and not all('ds_breakdown' in metric_data for metric_group in metrics for metric_data in metric_group.values()):
+    raw_metrics = layers.value['metrics_realized'].value
+    if isinstance(raw_metrics, dict):
+        metrics = [raw_metrics]
+    elif isinstance(raw_metrics, list):
+        metrics = [metric_group for metric_group in raw_metrics if isinstance(metric_group, dict)]
+    else:
+        metrics = []
+
+    if not metrics:
+        solara.Info('Metric statistics data is not in a supported format for this scenario.')
+        return
+
+    if not all(
+        isinstance(metric_data, dict) and 'ds_breakdown' in metric_data
+        for metric_group in metrics
+        for metric_data in metric_group.values()
+    ):
         tally_geo = read_from_session_storage('explore_tally_geo')
         hazard_type = layers.value['hazard'].value
         if tally_geo is not None:
@@ -1560,10 +1601,19 @@ def Page():
     }
 
     .map-shell {
+        --tc-map-height: 52vh;
         position: relative;
         width: 100%;
         isolation: isolate;
         overflow: hidden;
+    }
+
+    .map-shell.map-shell-all-closed {
+        --tc-map-height: 74vh;
+    }
+
+    .map-shell.map-shell-impact-open {
+        --tc-map-height: 52vh;
     }
 
     .map-filter-overlay {
@@ -1669,6 +1719,11 @@ def Page():
     }
 
     @media (max-width: 960px) {
+        .map-shell,
+        .map-shell.map-shell-all-closed,
+        .map-shell.map-shell-impact-open {
+            --tc-map-height: 55vh;
+        }
         .v-app-bar__nav-icon {
             display: none !important;
         }
@@ -1715,21 +1770,48 @@ def Page():
         with solara.Column(classes=["d-none", "d-md-block"]):
              ExploreSidebarContent()
 
-    MapViewer()
-    with solara.Row(justify="center"):
-        MetricPanel()
-    solara.Details(
+    impact_metrics_open, set_impact_metrics_open = solara.use_state(True)
+    damage_state_metrics_open, set_damage_state_metrics_open = solara.use_state(False)
+    metric_statistics_open, set_metric_statistics_open = solara.use_state(False)
+    layer_details_open, set_layer_details_open = solara.use_state(False)
+    data_tables_open, set_data_tables_open = solara.use_state(False)
+
+    if impact_metrics_open:
+        map_height_class = "map-shell-impact-open"
+    elif not any([damage_state_metrics_open, metric_statistics_open, layer_details_open, data_tables_open]):
+        map_height_class = "map-shell-all-closed"
+    else:
+        map_height_class = "map-shell-default"
+
+    NotificationCenter()
+    MapViewer(map_height_class=map_height_class)
+    ControlledDetails(
+        summary=ImpactMetricsSummary(),
+        children=[MetricPanel()],
+        expand=impact_metrics_open,
+        on_expand=set_impact_metrics_open,
+    )
+    ControlledDetails(
+        summary="Damage State Metrics",
+        children=[DamageStateMetricPanel(layers_state=layers, building_cross_filter=building_filter, render_key=render_count.value)],
+        expand=damage_state_metrics_open,
+        on_expand=set_damage_state_metrics_open,
+    )
+    ControlledDetails(
         summary="Metric Statistics",
         children=[MetricStatistics()],
-        expand=False
+        expand=metric_statistics_open,
+        on_expand=set_metric_statistics_open,
     )
-    solara.Details(
+    ControlledDetails(
         summary="Layer Details",
         children=[LayerDisplayer()],
-        expand=False
+        expand=layer_details_open,
+        on_expand=set_layer_details_open,
     )
-    solara.Details(
+    ControlledDetails(
         summary="Data Tables & Charts",
         children=[GeneratedDataTablesCharts(layers=layers, scenario_label=session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)],
-        expand=False
+        expand=data_tables_open,
+        on_expand=set_data_tables_open,
     )

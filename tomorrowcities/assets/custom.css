@@ -212,6 +212,13 @@ vector overlays without any runtime DOM observers.
     }
 }
 
+@media (min-width: 1280px) {
+    .damage-state-card-col {
+        flex: 0 0 20% !important;
+        max-width: 20% !important;
+    }
+}
+
 @media (max-width: 960px) {
     .mobile-hide {
         display: none !important;

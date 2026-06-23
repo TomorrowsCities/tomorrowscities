@@ -4,10 +4,9 @@
     >
         <svg
             viewBox="0 0 120 72"
-            width="120"
-            height="72"
             aria-hidden="true"
-            style="display: block; margin: 0 auto;"
+            preserveAspectRatio="xMidYMid meet"
+            style="display: block; width: min(120px, 100%); height: auto; margin: 0 auto;"
         >
             <path
                 d="M 18 56 A 42 42 0 0 1 102 56"
