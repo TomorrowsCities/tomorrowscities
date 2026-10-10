@@ -1,0 +1,24 @@
+diff --git a/tomorrowcities/pages/__init__.py b/tomorrowcities/pages/__init__.py
+--- a/tomorrowcities/pages/__init__.py
++++ b/tomorrowcities/pages/__init__.py
+@@ -53,1 +53,1 @@
+-    public_paths = ["/", "docs", "engine", "explore", "utilities", "account"] # "policies"
++    public_paths = ["/", "docs", "engine", "explore", "utilities", "account", "harmonisation"] # "policies"
+@@ -159,6 +159,8 @@
+                             elif route_entry.path == "docs":
+                                 name = "DOCUMENTATION"
+                             elif route_entry.path == "account":
+                                 name = "➜] LOGIN"
++                            elif route_entry.path == "harmonisation":
++                                name = "DATA HARMONISATION"
+                             else:
+                                 name = route_entry.path.upper()
+@@ -223,6 +225,8 @@
+                             elif route_entry.path == "docs":
+                                 name = "DOCUMENTATION"
+                             elif route_entry.path == "account":
+                                 name = "➜] LOGIN"
++                            elif route_entry.path == "harmonisation":
++                                name = "DATA HARMONISATION"
+                             else:
+                                 name = route_entry.path.upper()
