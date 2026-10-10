@@ -12,7 +12,7 @@ from ..components.file_drop import FileDrop
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
 MAX_ROWS = 100_000
 PLANNED_FORMATS = {
-    ".parquet": "Parquet support is planned but is not enabled in this Stage 1A build.",
+    ".parquet": "Parquet support is planned but is not enabled in this Stage 1A build..",
     ".gpkg": "GeoPackage support is planned but is not enabled in this Stage 1A build.",
     ".kml": "KML/KMZ support is planned but is not enabled in this Stage 1A build.",
     ".kmz": "KML/KMZ support is planned but is not enabled in this Stage 1A build.",
