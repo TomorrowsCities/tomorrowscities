@@ -50,7 +50,7 @@ def check_auth(route, children):
 
     # routes that are public or only for admin
     # the rest only requires login
-    public_paths = ["/", "docs", "engine", "explore", "utilities", "account"] # "policies"
+    public_paths = ["/", "docs", "harmonisation", "engine", "explore", "utilities", "account"] # "policies"
     admin_paths = [""]
 
     if route.path in public_paths:
@@ -170,6 +170,8 @@ def Layout(children=[]):
                                 name = "UTILITIES"
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
+                            elif route_entry.path == "harmonisation":
+                                name = "DATA HARMONISATION"
                             elif route_entry.path == "account":
                                 name = "➜] LOGIN"
                             else:
@@ -237,6 +239,8 @@ def Layout(children=[]):
                                 name = "UTILITIES"
                             elif route_entry.path == "docs":
                                 name = "DOCUMENTATION"
+                            elif route_entry.path == "harmonisation":
+                                name = "DATA HARMONISATION"
                             elif route_entry.path == "account":
                                 name = "➜] LOGIN"
                             else:

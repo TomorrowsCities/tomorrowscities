@@ -15,6 +15,6 @@ COPY --chown=user . $HOME/app
 
 WORKDIR $HOME/app
 
-RUN (cd tomorrowcities & pip install -e .)
+RUN  pip install --user -e .
 
 CMD ["solara", "run", "tomorrowcities.pages",  "--host", "0.0.0.0", "--port", "7860"]

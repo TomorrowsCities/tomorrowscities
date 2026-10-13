@@ -1,0 +1,50 @@
+name: Build TCDSE Docker Image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: tcdseregistrykizito.azurecr.io
+  IMAGE_NAME: tcdse
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Check ACR secrets
+        shell: bash
+        run: |
+          if [ -z "${{ secrets.ACR_USERNAME }}" ]; then
+            echo "ERROR: ACR_USERNAME is empty"
+            exit 1
+          else
+            echo "ACR_USERNAME is present"
+          fi
+
+          if [ -z "${{ secrets.ACR_PASSWORD }}" ]; then
+            echo "ERROR: ACR_PASSWORD is empty"
+            exit 1
+          else
+            echo "ACR_PASSWORD is present"
+          fi
+      - name: Log in to Azure Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Build and push TCDSE image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}

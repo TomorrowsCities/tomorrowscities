@@ -8,7 +8,8 @@ license = {file = "LICENSE"}
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
 dependencies = [
-    "solara",
+    "solara==1.61",
+    "anyio==4.4.0",
     "starlette<1.0",
     "geopandas",
     "ipyleaflet",
@@ -34,7 +35,7 @@ path = "tomorrowcities/__init__.py"
 
 
 [project.urls]
-Home = "https://github.com/TomorrowsCities/tomorrowcities"
+Home = "https://github.com/tommy-hash/tcdse-azure"
 
 [tool.black]
 line-length = 160
