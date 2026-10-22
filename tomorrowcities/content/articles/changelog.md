@@ -11,6 +11,20 @@ category:
   - general
 ---
 
+## Unreleased: flood impact revisions
+
+* Impact imports now stage lazy browser streams sequentially, parse JSON tables once and defer map work until the upload batch is complete. Invalid files are reported without resetting other layers; successful inputs are retained in the existing session store for same-process reconnects.
+* Closed detail/chart panels and unrequested exports no longer prepare large payloads. Map previews retain one version per layer and release retired widgets. Oversized raster imports fail clearly instead of expanding an unbounded grid; positive cell centres and analysis semantics are retained.
+* Docker and Procfile entry points now use production mode and one worker. Rebuild/redeploy existing services to apply the startup changes.
+* Explore now opens empty and loads a scenario only after an explicit Load Scenario action. Clear cancels pending work and removes selection, metadata, filters and cached tally data; late results are ignored after Clear, selection changes or leaving the page.
+* Explore prepares new scenarios outside the visible state, keeps the previous valid scenario if loading fails, and fetches metadata once in the background. Map previews and exports use the same bounded/lazy behaviour as Engine; closed panels do not prepare hidden tables or charts.
+
+* Default flood casualties now use the versioned `people-risk-v1` provisional screening model, counting injuries including fatalities once. It separates human harm from economic DS, distributes residents by floor and exposes occupancy, evacuation, shelter and vulnerability assumptions.
+* Added model explanations, result assumptions download and building-level expected harm diagnostics. Defaults are illustrative and require local validation; depth-only GIRI data do not provide velocity or human vulnerability.
+* Retained `legacy-depth` to reproduce the previous corrected application baseline. Older saved scenarios keep their legacy interpretation until rerun. Earthquake and landslide casualty calculations are retained.
+* Earlier flood revisions added linear-memory interpolation, optional deeper vulnerability knots, endpoint holding and explicit building-ID depth joins. These intentionally change out-of-range flood behaviour and ID-tagged hazard assignment; they are not a promise of identical results for every historical flood input.
+* Added existing-footprint exposure generation as a separate entry point; the existing generator remains available.
+
 **Changelog: v1.0**
 
 ## What's Changed

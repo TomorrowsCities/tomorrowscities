@@ -29,6 +29,14 @@ That relative damage is then translated into a discrete damage state:
 
 The DS assignment is controlled by the thresholds configured in Engine. As a result, the same flood depth can lead to different DS summaries if those thresholds are changed.
 
+These categories are bins of economic damage ratio, not measured structural collapse probabilities. Human injury is calculated separately; changing only DS thresholds does not change the default casualty estimate.
+
+## Hazard Units and Spatial Assignment
+
+Building flood depths must be in **metres above ground**. GIRI centimetre rasters must be divided by 100 before upload; the TIFF importer does not automatically convert units. Do not convert an already prepared metre raster again. TIFF upload represents nonzero cells by centre points and assigns the nearest point to each building polygon, with the configured distance cutoff. This spatial method is unchanged by the casualty revision; a coarse raster and a small cutoff can exclude buildings within a wet cell.
+
+Road flood assignment uses the original TIFF cell boundaries retained at import: an edge receives the maximum depth among intersected cells. For point-only inputs without raster grid metadata, roads use the nearest measurement within the configured distance cutoff. Re-upload the original TIFF to rerun older scenarios with cell-based road exposure. Building assignment and casualty calculations are unchanged by this road correction. See [Road Network Analysis](/docs/road) for edge closure and bridge assumptions.
+
 ## Data Format for Flood Vulnerability
 Flood vulnerability is a tabular data example of which is shown below: 
 
@@ -42,6 +50,28 @@ The exposure string in the first column (**expstr**) contains four components se
 
 The tabular data can be provided to engine in two formats: Microsoft Excel or JSON both of which is ok. However, if 
 there are thousands of records in your data, we recommend JSON since importing a JSON is much faster than importing a Microsoft Excel.
+
+Each exposure class must have one finite, nondecreasing curve within [0, 1], starting at zero. Optional deeper knots such as `hw9` or `hw12_5` are supported. Between knots, interpolation is linear. Beyond the last knot, its damage ratio is held rather than jumping to total loss. These are economic vulnerability curves, not human injury curves.
+
+## Flood Casualties
+
+**people-risk-v1** replaces the default anonymous depth-only casualty curve with a provisional adaptation of the Defra/Environment Agency Flood Risks to People equations [4]. Fatalities are a subset of the combined harm cohort, so each casualty is counted once.
+
+For each floor, `d = max(h - k*H, 0)` and `HR = d*(v+0.5)+DF`, with HR zero on dry floors. The exposed fraction is `X = clip(HR*AV/100, 0, 1)` and the harm fraction is `Y = clip(2*PV, 0, 1)`. Expected combined casualties are `sum(N_present/F * X * Y)`. Expected fatalities are the subset `sum(harm_on_floor * clip(2*HR/100, 0, 1))`; expected nonfatal injuries are the difference. Here PV is a fraction-based score: fraction aged 75+ plus fraction with long-term illness, potentially overlapping.
+
+`N_present = residents * occupancy * (1-evacuated) * (1-sheltered)`. Residents are spread equally over F storeys, using an assumed floor spacing H. Shelter is an **additional safely protected fraction of remaining occupants**, separate from the dry upper floors already represented. Avoid representing the same evacuation or shelter benefit again in AV. The result is independent of economic DS thresholds.
+
+### Scenario Assumptions
+
+Calculation Parameters exposes velocity, debris factor, AV, PV, floor spacing, occupancy, safe evacuation and safe shelter. Defaults are velocity **0 m/s**, debris **0**, AV **6**, PV **0.25**, spacing **3 m**, occupancy **1**, evacuated **0**, sheltered **0**. AV and PV are illustrative sensitivity inputs, not regional demographic findings. AV is the sum of warning, onset and area scores; it ranges from 3 to 9. A depth map cannot determine these settings. In particular, zero velocity is an assumed still-water scenario, not an estimate of unobserved flow.
+
+This is an application adaptation, **not a locally validated forecast or the complete official methodology**. Floor allocation, explicit population reductions, fraction bounds and integer allocation are application choices. Upper floors are assumed structurally stable and habitable; collapse, basements, flood duration, rapid rise, breach dynamics and actual occupant locations are excluded. Non-resident workers/students and indirect health effects are not included. Validate locally and vary the assumptions before using these outputs for decisions. Economic DS4 does not establish collapse or invalidate shelter automatically.
+
+Exports contain `casualty_expected`, `fatalities_expected`, `injuries_nonfatal_expected`, `people_at_risk_expected`, `casualty_probability` and `casualty_model`. The integer total is rounded once across the building stock and allocated by largest remainders. The result panel downloads the version and assumptions used for the last run. [Metric 8](/docs/metrics) explains assignment to individual records. Two return periods alone do not establish annual average casualties.
+
+### Legacy Compatibility
+
+Select **legacy-depth** only to reproduce the previous application baseline: economic DS2+ gating, the previous depth curve, per-building truncation and a 74.38% endpoint at 6 m and above. This reproduces the corrected baseline, not the earlier bug that jumped to 100% above 6 m. Saved scenarios without a model version retain legacy interpretation until rerun. Earthquake, landslide, road and power calculations are unchanged by this casualty model.
 
 ## Calculation Parameters in Engine
 The **Calculation Parameters** panel on the Engine page includes several flood-specific settings. These parameters are important because they control how hazard values are interpreted and how relative damage is converted into damage states.
@@ -73,3 +103,4 @@ do not depend on code levels of the structures. So any policy affecting code lev
 * [1] Global flood depth-damage functions: Methodology and the database with guidelines, [link](https://publications.jrc.ec.europa.eu/repository/handle/JRC105688)
 * [2] Englhardt, Johanna, et al. "Enhancement of large-scale flood risk assessments using building-material-based vulnerability curves for an object-based approach in urban and rural areas." Natural Hazards and Earth System Sciences 19.8 (2019): 1703-1722.  [link](https://nhess.copernicus.org/articles/19/1703/2019/nhess-19-1703-2019.pdf)
 * [3] [Flood Vulnerability Generator](https://huggingface.co/spaces/hkayabilisim/flood_vulnerability_generator)
+* [4] Defra / Environment Agency, HR Wallingford et al. (2006), *Flood Risks to People, Phase 2: FD2321/TR1*, sections 3.5, 5.4 and 6. [Technical report](https://assets.publishing.service.gov.uk/media/602bbc768fa8f50383c41f80/Flood_risks_to_people_-_Phase_2_The_flood_risks_to_people_methodology_technical_report.pdf). Crown copyright; source acknowledged. Used here with the application adaptations described above.

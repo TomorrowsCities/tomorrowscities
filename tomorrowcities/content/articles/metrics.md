@@ -67,9 +67,19 @@ An individual is assumed to be displaced when any of the following condition hol
 * the individual can not reach to workplace, school, or associated hospital via transportation network
 * the individual's workplace, school, or associated hospital has no electricity
 
-### Metric 8: Casualty
+### Metric 8: Casualties
 
-This metric is calculated on building-level context meaning that it is directly related to the damage state of each building and the number of residents in that building.
+This metric counts unique people suffering direct physical injury or death. A fatality is part of the casualty total, not an additional person. It does not count displacement, all people in flooded buildings, or indirect illness after the event.
+
+For **floods**, the default **people-risk-v1** model estimates harm separately from economic damage. Residents are distributed equally across the storeys in `expstr`; local depth on floor k is `max(depth - k * floor_height, 0)`. The hazard, area vulnerability and people vulnerability equations are adapted from Defra/EA FD2321/TR1. Occupancy, safe evacuation and additional safe shelter fractions adjust the population present. Dry upper floors have no direct inundation harm under the assumed stable-building conditions. DS thresholds and the uploaded economic vulnerability table do not gate this casualty estimate.
+
+The default assumptions are **illustrative scenario inputs**, not measurements for Mumbai or another location: velocity 0 m/s, debris factor 0, area vulnerability 6, people vulnerability 0.25, floor height 3 m, full residential occupancy, and no evacuation or additional shelter. A depth raster alone cannot establish these conditions. See [Flood](/docs/flood) for formulas, limitations and the source. Review the assumptions in Calculation Parameters before interpreting results.
+
+The model retains fractional expected casualties and expected fatal/nonfatal components in the building export. The displayed integer total rounds the stock-wide expectation once; largest remainders allocate people to buildings. Random selection then assigns that fixed building count to individuals without replacement. These identities are bookkeeping assignments, not predictions of which people will be harmed; age and illness are represented through an aggregate vulnerability parameter, not individual targeting. Expected severity components are not separately realised individual outcomes.
+
+**Legacy-depth** remains available for comparison with earlier application results. It applies an uncalibrated depth curve to all residents in DS2+ buildings, truncates each building's count and holds the 6 m endpoint at 74.38%. Saved scenarios without a casualty model version load as legacy; selecting a different model requires rerunning the analysis. The result panel provides an assumptions download identifying the model that produced the current output.
+
+For **earthquakes and landslides**, the existing building-damage-based casualty calculations are retained. This revision changes the default flood casualty method; it does not change those hazard calculations. Results are conditional on each scenario event, not annual average casualties.
 
 ## Average Impact Metrics in Monte-Carlo Simulations
 When the hazard scenario is run with different random realizations such as landslide calculations,

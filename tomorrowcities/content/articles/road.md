@@ -109,6 +109,8 @@ During execution, the selected trigger-level column is converted into `collapse_
 ### Step 1: Assign buildings to road nodes
 Each building is assigned to its nearest road node using a nearest-neighbour spatial join. The resulting node ID is written back to the building layer and then passed through to the household layer.
 
+If several nodes are equally near a building polygon, the lowest `node_id` is selected. This keeps one attachment per building, including when a polygon contains multiple road nodes.
+
 ### Step 2: Build the graph
 The road network is assembled as a graph from:
 
@@ -117,10 +119,12 @@ The road network is assembled as a graph from:
 
 If **Preserve Edge Directions** is disabled, the graph is converted to an undirected network. If it is enabled, shortest-path calculations respect the supplied edge direction.
 
+Accessibility queries use connected components for undirected networks and reverse reachability searches for directed networks. The app does not store a table of all reachable node pairs.
+
 ### Step 3: Evaluate road damage by hazard
 
 #### Flood
-For flood, the current implementation assigns the **nearest intensity value** to each road edge. It then marks roads as fully damaged (`DS4`) when:
+For TIFF flood inputs, the app uses the **maximum depth of the raster cells intersected by each road edge**. Cell boundaries are retained during TIFF import, so water is not extrapolated into adjacent dry cells. Point-only inputs without raster grid metadata use the nearest measurement within **Minimum Flood Distance Threshold**; equally near measurements use the largest depth. The app marks road edges as fully damaged (`DS4`) when:
 
 * a non-bridge road exceeds the road water threshold, or
 * a culvert exceeds the culvert water threshold
@@ -129,12 +133,13 @@ This is threshold-based logic rather than a probabilistic bridge fragility calcu
 
 In practice, flood damage assignment depends on:
 
-* the nearest flood intensity value linked to the edge
+* the depths of raster cells intersected by the edge, or the nearest valid point measurement
 * whether the edge is treated as a regular road or a culvert
-* the flood distance threshold
 * the configured water-level thresholds for roads and culverts
 
-If the nearest flood point is too far away, the edge is treated as outside the flood footprint. If it is close enough and the water depth crosses the relevant threshold, the edge is treated as failed.
+For point-only inputs, measurements beyond the distance cutoff give zero effective road depth. For TIFF inputs, actual cell intersections determine exposure; a small point-distance cutoff does not discard roads inside a wet cell but far from its centre. Re-upload the original TIFF when rerunning a scenario created before raster grid metadata was retained. A GeoJSON export of intensity points does not retain this metadata and uses the point-only method.
+
+An edge is an entire network connection: partial inundation can close the connection, so its whole line is shown as damaged. This does not mean every point along the line is underwater. Bridge edges with a nonempty `bridge_type` other than `culvert` are not marked flooded by these road thresholds.
 
 #### Earthquake
 For earthquake, the app evaluates road edges using the **centroid** of each edge and assigns the nearest intensity measure. Bridge edges are then matched to the road fragility table using `bridge_type`, and a damage state is derived from the fragility model.
@@ -210,9 +215,15 @@ The `individual` layer receives:
 * **facility_access**: whether the individual can still reach the associated facility node through the damaged network
 
 ## Important Parameters
+Changing the Road selection or a calculation parameter requires another click on
+**Calculate**. Road inputs may remain uploaded when Road is off. Each calculation
+starts with fresh damage/access defaults, so previous road closures and access
+losses do not carry over into a building-only run. Re-enabling Road recalculates
+the network with the current settings.
+
 The current road workflow depends on several important settings from the Engine page:
 
-* **Minimum Flood Distance Threshold**: if the nearest flood intensity point is farther than this distance, the structure is treated as outside flood influence
+* **Minimum Flood Distance Threshold**: applies to building flood assignment and point-only road flood inputs; TIFF road exposure uses the original cell boundaries
 * **Minimum Water Level Threshold for Roads**: threshold above which non-bridge roads are treated as flooded
 * **Minimum Water Level Threshold for Culverts**: threshold above which culvert edges are treated as flooded
 * **Earthquake Intensity Unit**: must match the uploaded intensity layer when earthquake is selected

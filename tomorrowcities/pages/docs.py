@@ -11,6 +11,12 @@ There are two different ways to import data:
 * Drag & Drop local files
 * Import sample data from S3
 
+Flood depth inputs must be in metres above ground. Convert raw GIRI centimetre
+rasters by dividing by 100 before upload; the importer does not auto-convert.
+Flood economic vulnerability curves and human casualty assumptions are separate.
+Review [Flood](/docs/flood) and [Metrics](/docs/metrics), including the provisional
+casualty model settings in Calculation Parameters.
+
 ## Drag & Drop
 Drag & Drop your local files  [Road Networks](/docs/road).
 

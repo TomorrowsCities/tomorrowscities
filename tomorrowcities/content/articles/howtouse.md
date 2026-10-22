@@ -72,7 +72,16 @@ You can:
 
 * Drag and drop files from your computer
 * Click the upload area to browse local files
-* Load sample files from cloud storage when that option is available in your environment
+* Open **Upload Data from Cloud**, double-click folders to browse sample inputs,
+  then double-click a file to import it. Use **Refresh files** to reload the list.
+  To import the whole open folder, use **Load this folder** below the file list.
+  It includes supported files directly in that folder, without subfolders.
+  Keep one input per layer in the folder; duplicate layers or failed files leave
+  the folder batch unapplied and preserve your existing inputs.
+  To load a subset, tick the file checkboxes (or **Select all files**) and use
+  **Load selected**. You can also drag the selected group onto the upload area
+  above the cloud panel. Without a selection, dragging a file loads just that file.
+* Use **Load Sample Scenario** to load the bundled example without a cloud connection
 
 Supported inputs include Excel, GeoTIFF, JSON, GeoJSON, and GEM XML.
 
@@ -106,6 +115,10 @@ In the current app, you can verify data in three ways:
 * **Map view**: confirm that buildings, hazard layers, roads, power assets, and land-use polygons appear in the correct location
 * **Map Info**: inspect loaded layer counts and feature details
 * **Layer Details**: review data tables for both spatial and non-spatial datasets
+
+Enable **intensity** in the map layer control and open **Map Legend → Intensity** to read the hazard colours. Flood intensity increases from light blue to dark blue; earthquake intensity increases from yellow through orange to dark red. The legend follows the selected hazard. When enabled, intensity appears above land use, buildings, and infrastructure; uncheck it to see those layers underneath. Flood depth uses fixed metre intervals (0–0.25, 0.25–0.5, 0.5–1, 1–2, 2–4, 4–8, 8–16, and above 16); earthquake acceleration uses fixed intervals in the selected unit. Other hazard intensities use the loaded dataset's range and input units.
+
+Zero and missing values are transparent. The map preview uses the maximum intensity when several source points share a display cell. Point density and zoom do not determine its colour; analysis and exported source data retain the original values.
 
 A few practical checks go a long way:
 
@@ -145,6 +158,15 @@ Your hazard choice must match the input hazard layer and the vulnerability or fr
 ### 3. Review calculation parameters
 
 Open **Calculation Parameters** and check the scenario-specific settings before running the model.
+
+After changing a parameter or the **Assets at Risk** selection, click **Calculate**
+again. The app resets derived damage and service-access fields before each run
+and simulation trial, then calculates the selected assets with the current
+settings. Uploaded layers can stay in place: switching Road or Power off does not
+require **Clear** or another upload. An unselected network contributes no modelled
+access or supply disruption, matching a fresh analysis without that network.
+Not every parameter changes every metric; for example, the `people-risk-v1` flood
+casualty model uses its own people-risk settings rather than building damage-state thresholds.
 
 Examples include:
 
