@@ -18,6 +18,28 @@ from math import ceil
 import math
 from itertools import repeat, chain
 from .utils import ParameterFile
+from .flood import validate_flood_vulnerability, flood_curve_columns, interpolate_flood_rows, join_sampled_flood_depth
+from .flood import join_road_flood_depth
+from .flood_casualty import FLOOD_CASUALTY_MODEL, calculate_flood_casualties
+
+def _road_facility_access(graph, household_nodes, facility_nodes):
+    """Answer only requested reachability queries without storing all node pairs."""
+    if not graph.is_directed():
+        components = {node: component for component, members in enumerate(nx.connected_components(graph))
+                      for node in members}
+        source_component = household_nodes.map(components)
+        target_component = facility_nodes.map(components)
+        return source_component.notna() & source_component.eq(target_component)
+
+    access = np.zeros(len(household_nodes), dtype=bool)
+    targets = facility_nodes.reset_index(drop=True)
+    sources = household_nodes.reset_index(drop=True)
+    for target, positions in targets.groupby(targets).indices.items():
+        if target in graph:
+            reachable = nx.ancestors(graph, target) | {target}
+            access[positions] = sources.iloc[positions].isin(reachable).to_numpy()
+    return pd.Series(access, index=household_nodes.index)
+
 
 def compute_road_infra(buildings, household, individual,
                         nodes, edges, intensity, fragility, hazard, 
@@ -79,20 +101,21 @@ def compute_road_infra(buildings, household, individual,
     gdf_buildings = gpd.sjoin_nearest(gdf_buildings,gdf_nodes, 
                 how='left', rsuffix='road_node',distance_col='road_node_distance')
 
+    # A polygon can contain several road nodes, all at zero distance. Keep one
+    # deterministic attachment per building and preserve the input row order.
+    gdf_buildings = gdf_buildings.sort_values('node_id', kind='stable')
+    gdf_buildings = gdf_buildings.loc[~gdf_buildings.index.duplicated()].reindex(buildings.index)
+
     if hazard in ['flood','landslide']:
-        gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity, how='left',
-                                          rsuffix='intensity',distance_col='distance')
-        gdf_edges = gdf_edges.drop_duplicates(subset=['edge_id'], keep='first')
-        # TODO: sjoin_nearest or the approach below: compare
-        #roads_with_width = gdf_edges['geometry'].buffer(threshold_flood_distance)
-        #for i, road in enumerate(roads_with_width):
-        #    print(i)
-        #    within_ims = gdf_intensity.clip(road)
-        #    if len(within_ims) > 0:
-        #        max_im = within_ims['im'].max()
-        #    else:
-        #        max_im = 0
-        #    gdf_edges.loc[i,'im'] = max_im
+        if hazard == 'flood':
+            gdf_edges = join_road_flood_depth(gdf_edges, gdf_intensity, threshold_flood_distance)
+            # Repeated calculations must not retain a previous flooded state.
+            gdf_edges['ds'] = DS_NO
+            gdf_edges['is_damaged'] = False
+        else:
+            gdf_edges = gpd.sjoin_nearest(gdf_edges, gdf_intensity, how='left',
+                                          rsuffix='intensity', distance_col='distance')
+            gdf_edges = gdf_edges.drop_duplicates(subset=['edge_id'], keep='first')
         if hazard == 'landslide':
             print('before')
             print(gdf_edges.loc[0])
@@ -188,22 +211,16 @@ def compute_road_infra(buildings, household, individual,
     household_w_node_id = household.drop(columns=['node_id']).merge(gdf_buildings[['bldid','node_id']], on='bldid', how='left')
     household_w_node_id['hospital_access'] = False
 
-    # For each node which at least one hospital assigned to
+    # Apply each hospital's reachable set in batches rather than scanning all
+    # buildings and households separately for every reachable node.
     for hospital_node in hospital_nodes:
-        # every node that can reach to hospital_node
-        for node_with_hospital_access in nx.ancestors(G_dmg, hospital_node) | {hospital_node}:
-            # find the buildings associated with node_with_hospital_access
-            idx = gdf_buildings['node_id'] == node_with_hospital_access
-            # these buildings have access to hospital_node
-            gdf_buildings.loc[idx, 'hospital_access'] = True
-
-            # for each hospital connected to hospital_node
-            for hospital_bld in gdf_buildings[(gdf_buildings['node_id'] == hospital_node) & (gdf_buildings['occupancy'] == 'Hea')]['bldid']:
-                # find the households satisfying:
-                #  - if the hospital is the household's community hospital
-                #  - and household's building is reachable from that hospital
-                idx = (household_w_node_id['commfacid'] == hospital_bld) & (household_w_node_id['node_id'] == node_with_hospital_access)
-                household_w_node_id.loc[idx, 'hospital_access'] = True
+        reachable = nx.ancestors(G_dmg, hospital_node) | {hospital_node}
+        gdf_buildings.loc[gdf_buildings['node_id'].isin(reachable), 'hospital_access'] = True
+        hospital_ids = gdf_buildings.loc[
+            (gdf_buildings['node_id'] == hospital_node) & (gdf_buildings['occupancy'] == 'Hea'), 'bldid']
+        idx = (household_w_node_id['commfacid'].isin(hospital_ids) &
+               household_w_node_id['node_id'].isin(reachable))
+        household_w_node_id.loc[idx, 'hospital_access'] = True
 
     # Workplace/School (facility) connectivity analysis
     # For each individual, find the closest road node (closest) of the
@@ -221,20 +238,8 @@ def compute_road_infra(buildings, household, individual,
                         .rename(columns={'node_id':'facility_node_id'})
     print('individual_w_nodes')
     print(individual_w_nodes)
-    # Calculate distances between all nodes in the damaged network
-    # If graph is directed, shortest path calculation obeys the directions
-    shortest_distance = nx.shortest_path_length(G_dmg)
-
-    # Create a dictionary to store all open connections
-    connection_dict = dict()
-    for source, targets in shortest_distance:
-        connection_dict[source] = dict()
-        for target, hop in targets.items():
-            connection_dict[source][target] = True
-
-    # Based on connectivity, fill-in facillity_access attribute in the individual layer
-    print(individual_w_nodes)
-    individual_w_nodes['facility_access'] = individual_w_nodes.apply(lambda x: x['facility_node_id'] in connection_dict[x['household_node_id']].keys(),axis=1)
+    individual_w_nodes['facility_access'] = _road_facility_access(
+        G_dmg, individual_w_nodes['household_node_id'], individual_w_nodes['facility_node_id'])
 
     return gdf_edges['ds'], gdf_edges['is_damaged'], gdf_buildings['node_id'], gdf_buildings['hospital_access'], household_w_node_id['node_id'], household_w_node_id['hospital_access'], individual_w_nodes['facility_access']
 
@@ -445,7 +450,9 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             cdf_median_increase_in_percent = 0.20,
             flood_depth_reduction = 0.20,
             damage_curve_suppress_factor = 0.9,
-            earthquake_simulation_method = 'legacy'
+            earthquake_simulation_method = 'legacy',
+            flood_casualty_model = FLOOD_CASUALTY_MODEL,
+            flood_casualty_settings = None,
             ):
     print('threshold_flood', threshold_flood)
     print('cdf_median_increase_in_percent',cdf_median_increase_in_percent)
@@ -456,6 +463,8 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
         earthquake_intensity_normalization_factor = 9.81
 
     gem_fragility = True if isinstance(df_hazard, dict) else False
+    if hazard_type == 'flood':
+        validate_flood_vulnerability(df_hazard)
     print('gem_fragility mode', gem_fragility)
     if hazard_type == 'landslide' or \
           (hazard_type == 'earthquake' and earthquake_simulation_method == 'monte carlo'):
@@ -508,8 +517,11 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
     gdf_buildings = gdf_buildings.to_crs(f"EPSG:{epsg}")
     gdf_intensity = gdf_intensity.to_crs(f"EPSG:{epsg}")
 
-    gdf_building_intensity = gpd.sjoin_nearest(gdf_buildings,gdf_intensity, 
-                how='left', rsuffix='intensity',distance_col='distance')
+    if hazard_type == 'flood' and 'bldid' in gdf_intensity.columns:
+        gdf_building_intensity = join_sampled_flood_depth(gdf_buildings, gdf_intensity)
+    else:
+        gdf_building_intensity = gpd.sjoin_nearest(gdf_buildings,gdf_intensity,
+                    how='left', rsuffix='intensity',distance_col='distance')
     gdf_building_intensity = gdf_building_intensity.drop_duplicates(subset=['bldid'], keep='first')
 
     gdf_building_intensity = gdf_building_intensity.merge(gdf_landuse[['zoneid','avgincome']],on='zoneid',how='left')
@@ -751,7 +763,7 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
 
     elif hazard_type == HAZARD_FLOOD:
         bld_flood = gdf_building_intensity.merge(df_hazard, on='expstr', how='left')
-        damage_curve_cols = ['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']
+        x, damage_curve_cols = flood_curve_columns(df_hazard)
         # reduce flood depth *flood_depth_reduction* cm
         # Effect of policies are stacked
         if 1 in policies:
@@ -774,29 +786,28 @@ def compute(gdf_landuse, gdf_buildings, df_household, df_individual,gdf_intensit
             bld_flood[damage_curve_cols] = bld_flood[damage_curve_cols] * damage_curve_suppress_factor
         bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
 
-        x = np.array([0,0.5,1,1.5,2,3,4,5,6])
-        y = bld_flood[['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']].to_numpy()
+        y = bld_flood[damage_curve_cols].to_numpy(dtype=float)
         xnew = bld_flood['im'].to_numpy(dtype=np.float64)
-        flood_mapping = interp1d(x,y,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
-        # TODO: find another way for vectorized interpolate
-        bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
+        bld_flood['fl_prob'] = interpolate_flood_rows(xnew, x, y)
         ds2_threshold, ds3_threshold, ds4_threshold = threshold_flood
         bld_flood['fl_ds'] = bld_flood['fl_prob'].map(lambda x: DS_COMPLETE if x > ds4_threshold else DS_EXTENSIVE if x > ds3_threshold else DS_MODERATE if x > ds2_threshold else DS_SLIGHT if x > 0 else DS_NO )
-        flooded_buildings = bld_flood['fl_ds'] > DS_SLIGHT
+        if flood_casualty_model == FLOOD_CASUALTY_MODEL:
+            harm = calculate_flood_casualties(bld_flood, xnew, flood_casualty_settings)
+            for column in harm:
+                bld_flood[column] = harm[column]
+            casualty_columns = list(harm.columns)
+        elif flood_casualty_model == 'legacy-depth':
+            # Reproduce the earlier application baseline, including DS gating
+            # and building-level truncation; retain its corrected endpoint hold.
+            rates = [0,0,0,0.000976715,0.0105355,0.052184493,0.160744982,0.373769339,0.743830881]
+            expected = np.interp(xnew, [0,0.5,1,1.5,2,3,4,5,6], rates) * bld_flood.residents
+            bld_flood['casualty'] = np.where(bld_flood.fl_ds > DS_SLIGHT, expected, 0).astype(int)
+            bld_flood['casualty_model'] = 'legacy-depth'
+            casualty_columns = ['casualty', 'casualty_model']
+        else:
+            raise ValueError(f'Unknown flood casualty model: {flood_casualty_model}')
 
-        casualty_rates = np.array([[0,0,0,0.000976715,0.0105355,0.052184493,0.160744982,0.373769339,0.743830881]])
-        y_casualty = np.repeat(casualty_rates, len(bld_flood),axis=0)
-        casualty_mapping = interp1d(x,y_casualty,axis=1,kind='linear',bounds_error=False, fill_value=(0,1))
-        # TODO: find another way for vectorized interpolate
-        bld_flood['casualty_prob'] = np.diag(casualty_mapping(xnew))
-        bld_flood['casualty_rates'] = bld_flood['casualty_prob'] * bld_flood['residents']
-        bld_flood['casualty'] = 0
-        bld_flood.loc[flooded_buildings, 'casualty'] = bld_flood.loc[flooded_buildings, 'casualty_rates']
-        bld_flood['casualty'] = bld_flood['casualty'].astype(int)
-
-
-        # Create a simplified building-hazard relation
-        bld_hazard = bld_flood[['bldid','fl_ds','casualty']]
+        bld_hazard = bld_flood[['bldid','fl_ds'] + casualty_columns]
         bld_hazard = bld_hazard.rename(columns={'fl_ds':'ds'})
 
         ds_str = {0: 'No Damage',1:'Flooded'}
@@ -821,14 +832,15 @@ def create_tally(l, b, h, i):
 
     #tally.to_excel('/tmp/tally.xlsx')
     building_level_casualties = tally[tally['casualty_in_building'] > 0][['bldid','casualty_in_building']].drop_duplicates()
+    building_person_indices = tally.groupby('bldid', sort=False).indices if len(building_level_casualties) else {}
     for (row, bldid, casualty_in_building) in building_level_casualties.itertuples(name=None):
-        individuals_in_building = tally[tally['bldid'] == bldid]['individ']
-        n_sample = min(casualty_in_building, len(individuals_in_building))
-        selected_individuals = individuals_in_building.sample(n_sample)
-        tally.loc[selected_individuals.index, 'casualty'] = 1
+        positions = building_person_indices[bldid]
+        n_sample = min(int(casualty_in_building), len(positions))
+        selected_positions = np.random.choice(positions, n_sample, replace=False)
+        tally.loc[tally.index[selected_positions], 'casualty'] = 1
 
-    tally['has_facility'] = tally['indivfacid'].apply(lambda x: x > -1)
-    tally['lost_facility_access'] = tally.apply(lambda x: x['has_facility'] and not x['facility_access'], axis=1)
+    tally['has_facility'] = tally['indivfacid'] > -1
+    tally['lost_facility_access'] = tally['has_facility'] & ~tally['facility_access'].astype(bool)
 
     tally_geo = gpd.GeoDataFrame(tally, geometry="geometry")
 
@@ -1011,7 +1023,7 @@ def generate_metrics(t, t_full, hazard_type, population_displacement_consensus):
                 "metric5": {"desc": "Number of households displaced", "value": metric5, "max_value": number_of_households, "ds_breakdown": ds_breakdowns['metric5']},
                 "metric6": {"desc": "Number of homeless individuals", "value": metric6, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric6']},
                 "metric7": {"desc": "Population displacement", "value": metric7, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric7']},
-                "metric8": {"desc": "Number of casualties", "value": metric8, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric8']},
+                "metric8": {"desc": "Casualties", "value": metric8, "max_value": number_of_individuals, "ds_breakdown": ds_breakdowns['metric8']},
                 }
 
     return new_metrics

@@ -3,6 +3,7 @@ import pandas as pd
 import geopandas as gpd
 from scipy.stats import norm
 from scipy.interpolate import interp1d
+from .flood import validate_flood_vulnerability, flood_curve_columns, interpolate_flood_rows, join_sampled_flood_depth
 
 class DamageCalculator:
     """
@@ -65,9 +66,12 @@ class DamageCalculator:
         gdf_haz = gdf_haz.set_crs("EPSG:4326", allow_override=True).to_crs(f"EPSG:{epsg}")
         
         # Spatial join to find nearest hazard intensity
-        gdf_building_intensity = gpd.sjoin_nearest(
-            gdf_bld, gdf_haz, how='left', rsuffix='intensity', distance_col='distance'
-        )
+        if self.hazard_type == self.HAZARD_FLOOD and 'bldid' in gdf_haz.columns:
+            gdf_building_intensity = join_sampled_flood_depth(gdf_bld, gdf_haz)
+        else:
+            gdf_building_intensity = gpd.sjoin_nearest(
+                gdf_bld, gdf_haz, how='left', rsuffix='intensity', distance_col='distance'
+            )
         gdf_building_intensity = gdf_building_intensity.drop_duplicates(subset=['bldid'], keep='first')
         
         if self.hazard_type == self.HAZARD_EARTHQUAKE:
@@ -169,6 +173,7 @@ class DamageCalculator:
         return bld_eq[['bldid', 'ds']].reset_index(drop=True)
 
     def _calculate_flood(self, bld_flood: gpd.GeoDataFrame, vulnerability) -> pd.DataFrame:
+        validate_flood_vulnerability(vulnerability)
         bld_flood = bld_flood.merge(vulnerability, on='expstr', how='left')
         
         away_from_flood = bld_flood['distance'] > self.threshold_flood_distance
@@ -176,17 +181,15 @@ class DamageCalculator:
         
         bld_flood.loc[bld_flood['im'] < 0, 'im'] = 0
 
-        damage_curve_cols = ['hw0','hw0_5','hw1','hw1_5','hw2','hw3','hw4','hw5','hw6']
+        x, damage_curve_cols = flood_curve_columns(vulnerability)
         missing_cols = [c for c in damage_curve_cols if c not in bld_flood.columns]
         if missing_cols:
             raise ValueError(f"Vulnerability data must contain columns: {damage_curve_cols}")
             
-        x = np.array([0, 0.5, 1, 1.5, 2, 3, 4, 5, 6])
         y = bld_flood[damage_curve_cols].to_numpy()
         xnew = bld_flood['im'].to_numpy(dtype=np.float64)
         
-        flood_mapping = interp1d(x, y, axis=1, kind='linear', bounds_error=False, fill_value=(0, 1))
-        bld_flood['fl_prob'] = np.diag(flood_mapping(xnew))
+        bld_flood['fl_prob'] = interpolate_flood_rows(xnew, x, y)
         
         ds2_threshold, ds3_threshold, ds4_threshold = self.threshold_flood
         bld_flood['ds'] = bld_flood['fl_prob'].map(
