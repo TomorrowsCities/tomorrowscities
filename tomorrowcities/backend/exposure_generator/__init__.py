@@ -7,6 +7,7 @@ import geopandas as gpd
 import pandas as pd
 
 from .data_processing import process_data
+from .existing_footprints import process_existing_footprints
 from .osm_constraints import fetch_osm_constraints, merge_constraints
 
 
