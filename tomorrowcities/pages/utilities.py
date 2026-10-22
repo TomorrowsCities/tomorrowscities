@@ -795,6 +795,10 @@ class FileListWidget(vy.VuetifyTemplate):
     clicked = traitlets.Dict(allow_none=True, default_value=None).tag(sync=True)
     double_clicked = traitlets.Dict(allow_none=True, default_value=None).tag(sync=True)
     scroll_pos = traitlets.Int(allow_none=True).tag(sync=True)
+    selected_files = traitlets.List(default_value=[]).tag(sync=True)
+    multi_select = traitlets.Bool(False).tag(sync=True)
+    cloud_directory = traitlets.Unicode('').tag(sync=True)
+    busy = traitlets.Bool(False).tag(sync=True)
 
     def test_click(self, path: Union[Path, str], double_click=False):
         """Simulate a click or double click at the Python side"""
@@ -824,119 +828,75 @@ def S3FileBrowser(
     on_file_name: Callable[[str], None] = None,
     start_directory=None,
     can_select=False,
-):  
-    print("==================",storage)
+    on_files_open: Callable[[List[Path]], None] = None,
+    loading=False,
+):
+    from ..backend.cloud_files import cloud_path, list_cloud_directory
 
-    def get_s3_file_list():
-        file_list = []
-        print("==================....",storage)
-
-        client = storage.get_client()
-        objects = client.list_objects(Bucket=storage.bucket_name)
-        for obj in objects.get('Contents', []):
-            extension = obj["Key"].lower().split('.')[-1] 
-            if extension in extension_list:
-                file_list.append(obj["Key"])
-        return [f'/{f}' for f in file_list]
-
-    if start_directory is not None:
-        directory = start_directory  # pragma: no cover
-    if directory is None:
-        directory = '/' # pragma: no cover
-    if isinstance(directory, str):
-        directory = Path(directory)
-    current_dir = solara.use_reactive(directory)
+    initial = start_directory if start_directory is not None else directory
+    if not isinstance(initial, solara.Reactive):
+        initial = cloud_path(initial)
+    current_dir = solara.use_reactive(initial)
     selected, set_selected = solara.use_state(None)
     double_clicked, set_double_clicked = solara.use_state(None)
-    warning, set_warning = solara.use_state(cast(Optional[str], None))
-    scroll_pos_stack, set_scroll_pos_stack = solara.use_state(cast(List[int], []))
     scroll_pos, set_scroll_pos = solara.use_state(0)
-    selected, set_selected = solara.use_state(None)
-    s3_file_list, set_s3_file_list = solara.use_state(get_s3_file_list())
-    storage, set_storage = solara.use_state_or_update(storage)
+    scroll_pos_stack, set_scroll_pos_stack = solara.use_state([])
+    refresh, set_refresh = solara.use_state(0)
+    selection, set_selection = solara.use_state({'directory': None, 'names': []})
+    requested_path = str(cloud_path(current_dir.value))
 
-    def s3_is_file(path):
-        for extension in extension_list:
-            if path.endswith(f'.{extension}'):
-                return True
-        return None
+    def load_directory(cancel):
+        entries = list_cloud_directory(storage, requested_path, filter, directory_first)
+        if cancel.is_set():
+            return None
+        return requested_path, entries
 
-    def s3_list_dir(path, filter: Callable[[Path], bool] = lambda x: True, directory_first: bool = False) -> List[dict]:
-        os_path = Path(path)
-        matched_paths = [f for f in s3_file_list if f.startswith(str(path))]
-        results = set()
-        for p in matched_paths:
-            parts = p.split('/')
-            for i in range(len(parts)+1):
-                candidate = Path("/".join(parts[:i]))
-                if candidate.parent == os_path:
-                    results.add(candidate.name)
-        
-        results_extended = [{'name': r, 'is_file': s3_is_file(r) } for r in results]
-        sorted_files = sorted(results_extended, key=lambda item: (item["is_file"] == directory_first, item["name"].lower()))
-        return sorted_files
-
-    def change_dir(new_dir: str):
-        has_access = False
-        for f in s3_file_list:
-            if f.startswith(new_dir):
-                has_access = True
-                break
-        if has_access:
-            current_dir.value = Path(new_dir)
-            if on_directory_change:
-                on_directory_change(Path(new_dir))
-            set_warning(None)
-            return True
-        else:
-            set_warning(f"[no read access to {new_dir}]")
+    listing = solara.use_thread(load_directory,
+        dependencies=[id(storage), requested_path, refresh, filter, directory_first], intrusive_cancel=False)
+    ready = (listing.state == solara.ResultState.FINISHED and listing.value is not None
+             and listing.value[0] == requested_path)
+    files = listing.value[1] if ready else []
+    file_paths = [cloud_path(requested_path) / item['name'] for item in files if item['is_file']]
+    file_names = [path.name for path in file_paths]
+    checked = [name for name in selection['names'] if name in file_names] if selection['directory'] == requested_path else []
+    selected_paths = [path for path in file_paths if path.name in checked]
+    parent = cloud_path(requested_path).parent
+    root_directory = cloud_path(start_directory or '/')
+    if ready and parent != cloud_path(requested_path) and cloud_path(requested_path) != root_directory:
+        files = [{"name": "..", "is_file": False}] + files
 
     def on_item(item, double_click):
         if item is None:
             if can_select and on_path_select:
                 on_path_select(None)
             return
-        if item["name"] == "..":
-            current_dir_str = str(current_dir.value)
-            new_dir = current_dir_str[: current_dir_str.rfind('/')]
-            if new_dir == "":
-                new_dir = "/"
-            action_change_directory = (can_select and double_click) or (not can_select and not double_click)
-            if action_change_directory and change_dir(new_dir):
-                if scroll_pos_stack:
-                    last_pos = scroll_pos_stack[-1]
-                    set_scroll_pos_stack(scroll_pos_stack[:-1])
-                    set_scroll_pos(last_pos)
-                set_selected(None)
-                set_double_clicked(None)
-                if on_path_select and can_select:
-                    on_path_select(None)
-            if can_select and not double_click:
-                if on_path_select:
-                    on_path_select(Path(new_dir))
+        if not ready or item not in files:
             return
-
-        path = os.path.join(current_dir.value, item["name"])
-        is_file = item["is_file"]
+        path = parent if item["name"] == ".." else cloud_path(requested_path) / item["name"]
         if (can_select and double_click) or (not can_select and not double_click):
-            if is_file:
+            if item["is_file"]:
+                if loading:
+                    return
                 if on_file_open:
-                    on_file_open(Path(path))
-                if on_file_name is not None:
-                    on_file_name(path)
+                    on_file_open(path)
+                if on_file_name:
+                    on_file_name(str(path))
             else:
-                if change_dir(path):
+                if item["name"] == "..":
+                    set_scroll_pos(scroll_pos_stack[-1] if scroll_pos_stack else 0)
+                    set_scroll_pos_stack(scroll_pos_stack[:-1])
+                else:
                     set_scroll_pos_stack(scroll_pos_stack + [scroll_pos])
                     set_scroll_pos(0)
+                set_selection({'directory': None, 'names': []})
+                current_dir.set(path)
+                if on_directory_change:
+                    on_directory_change(path)
                 set_selected(None)
-            set_double_clicked(None)
             if on_path_select and can_select:
                 on_path_select(None)
-        elif can_select and not double_click:
-            if on_path_select:
-                on_path_select(Path(path))
-        else:  # not can_select and double_click is ignored
-            raise RuntimeError("Combination should not happen")  # pragma: no cover
+        elif can_select and not double_click and on_path_select:
+            on_path_select(path)
 
     def on_click(item):
         set_selected(item)
@@ -946,24 +906,77 @@ def S3FileBrowser(
         set_double_clicked(item)
         if can_select:
             on_item(item, True)
-        # otherwise we can ignore it, single click will handle it
+        set_double_clicked(None)
 
-    files = [{"name": "..", "is_file": False}] + s3_list_dir(current_dir.value, filter=filter, directory_first=directory_first)
-    with Div(class_="solara-file-browser") as main:
-        Div(children=['aws s3:'+str(current_dir.value)])
-        FileListWidget.element(
-            files=files,
-            selected=selected,
-            clicked=selected,
-            on_clicked=on_click,
-            double_clicked=double_clicked,
-            on_double_clicked=on_double_click,
-            scroll_pos=scroll_pos,
-            on_scroll_pos=set_scroll_pos,
-        ).key("FileList")
-        if warning:
-            Div(style_="font-weight: bold; color: red", children=[warning])
+    def on_checked(names):
+        if ready and not loading and isinstance(names, list):
+            valid = list(dict.fromkeys(name for name in names if name in file_names))
+            set_selection({'directory': requested_path, 'names': valid})
 
+    def refresh_files():
+        set_selection({'directory': None, 'names': []})
+        set_refresh(refresh + 1)
+
+    def load_folder():
+        if ready and file_paths and not loading and on_files_open:
+            on_files_open(selected_paths or file_paths)
+
+    folder_name = {'datastore': 'Sample data', 'daressalaam': 'Dar es Salaam',
+                   'nablus': 'Nablus', 'nairobi': 'Nairobi', 'rapti': 'Rapti'}.get(
+                       cloud_path(requested_path).name, cloud_path(requested_path).name.replace('_', ' ') or 'Sample data')
+    with Div(class_="solara-file-browser tc-cloud-browser") as main:
+        solara.Style(Path(__file__).with_name('cloud_browser.css').read_text(encoding='utf-8'))
+        with Div(class_="tc-cloud-browser-toolbar"):
+            with Div(class_="tc-cloud-browser-location"):
+                vy.Icon.element(children=['mdi-folder-outline'], size=20)
+                Div(children=[folder_name], class_="tc-cloud-browser-folder-name")
+            with solara.Tooltip("Refresh files"):
+                solara.Button(icon_name="mdi-refresh", icon=True,
+                              attributes={"aria-label": "Refresh files"},
+                              on_click=refresh_files)
+        hint = ('Double-click folders. Select or drag files to load.' if on_files_open
+                else 'Double-click to open a folder or load a file.')
+        Div(children=[hint], class_="tc-cloud-browser-hint")
+        if on_files_open is not None and file_paths:
+            with Div(class_="tc-cloud-browser-selection"):
+                vy.Checkbox.element(label='Select all files', dense=True, hide_details=True,
+                                    v_model=len(checked) == len(file_paths),
+                                    indeterminate=0 < len(checked) < len(file_paths), disabled=loading,
+                                    on_v_model=lambda value: on_checked(file_names if value else []))
+        with Div(class_="tc-cloud-browser-list"):
+            if listing.state == solara.ResultState.ERROR:
+                solara.Error("Files are unavailable. Please refresh to retry.")
+            elif not ready:
+                solara.ProgressLinear(True)
+                Div(children=['Loading files...'], class_="tc-cloud-browser-hint")
+            else:
+                FileListWidget.element(
+                    files=files,
+                    clicked=selected,
+                    on_clicked=on_click,
+                    double_clicked=double_clicked,
+                    on_double_clicked=on_double_click,
+                    scroll_pos=scroll_pos,
+                    on_scroll_pos=set_scroll_pos,
+                    multi_select=on_files_open is not None,
+                    selected_files=checked,
+                    on_selected_files=on_checked,
+                    cloud_directory=requested_path,
+                    busy=loading,
+                ).key(requested_path)
+                if not listing.value[1]:
+                    Div(children=['No input files in this folder.'], class_="tc-cloud-browser-empty")
+        if on_files_open is not None:
+            with Div(class_="tc-cloud-browser-footer"):
+                label = 'Loading files...' if loading else 'Load selected' if checked else 'Load this folder'
+                if file_paths and not loading:
+                    label += f' ({len(selected_paths or file_paths)})'
+                tip = ('Load the selected files together.' if checked else
+                       'Load all input files in this folder. Subfolders are not included.')
+                with solara.Tooltip(tip):
+                    solara.Button(label, icon_name="mdi-folder-download-outline", outlined=True,
+                                  on_click=load_folder, disabled=not ready or not file_paths or loading,
+                                  style={"width": "100%"})
     return main
 
 @solara.component

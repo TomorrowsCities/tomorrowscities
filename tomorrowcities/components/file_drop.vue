@@ -1,7 +1,12 @@
 <template>
-  <div ref="dropzone" class="solara-file-drop" effectAllowed="move" @click="triggerFileInput">
+  <div ref="dropzone" class="solara-file-drop" @click="triggerFileInput">
     <input type="file" ref="fileInput" :multiple="multiple" style="display: none;" @change="onFileChange" />
-    <template v-if="file_info && file_info.length > 0">
+    <template v-if="allow_cloud && cloud_drop && cloud_drop.paths">
+      <div v-for="path in cloud_drop.paths" :key="path" class="solara-file-drop__filename">
+        {{ path.split('/').pop() }}
+      </div>
+    </template>
+    <template v-else-if="file_info && file_info.length > 0">
       <template v-if="multiple">
         <div v-for="file in file_info" class="solara-file-drop__filename">
           {{ file.name }}
@@ -25,17 +30,39 @@ module.exports = {
     this.chunk_size = 2 * 1024 * 1024;
     this.$refs.dropzone.addEventListener('dragover', event => {
       event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      this.$refs.dropzone.classList.add('tc-cloud-drop-active');
+    });
+    this.$refs.dropzone.addEventListener('dragleave', event => {
+      if (!this.$refs.dropzone.contains(event.relatedTarget)) {
+        this.$refs.dropzone.classList.remove('tc-cloud-drop-active');
+      }
     });
 
-    this.$refs.dropzone.addEventListener('drop', async event => {
+    this.$refs.dropzone.addEventListener('drop', event => {
       event.preventDefault();
+      this.$refs.dropzone.classList.remove('tc-cloud-drop-active');
+      const raw = event.dataTransfer.getData('application/x-tcdse-cloud-files+json');
+      if (raw) {
+        if (!this.allow_cloud) return;
+        let payload;
+        try { payload = JSON.parse(raw); } catch (_) { return; }
+        if (!Array.isArray(payload.paths) || !payload.paths.length ||
+            !payload.paths.every(path => typeof path === 'string')) return;
+        this._cloudDropSerial = (this._cloudDropSerial || 0) + 1;
+        this.cloud_drop = {paths: payload.paths, request_id: Date.now() + ':' + this._cloudDropSerial};
+        return;
+      }
+      // Native file objects remain lazy: only their names/sizes cross the widget.
+      const items = Array.from(event.dataTransfer.items || []);
+      const nativeFiles = items.length ? items.filter(item => {
+        if (item.kind !== 'file') return false;
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        return !entry || entry.isFile;
+      }).map(item => item.getAsFile()).filter(Boolean) : Array.from(event.dataTransfer.files || []);
+      if (!nativeFiles.length) return;
       // Clear file information before processing new files
       this.jupyter_clear();
-      const items = await Promise.all([...event.dataTransfer.items]);
-      const files = items.map(i => i.webkitGetAsEntry())
-      const fileHolders = files.filter(f => f.isFile)
-      const nativeFilesPromises = fileHolders.map(fileHolder => new Promise((rs, rj) => fileHolder.file(rs, rj)))
-      const nativeFiles = await Promise.all(nativeFilesPromises)
 
       this.native_file_info = nativeFiles
       this.file_info = this.native_file_info.map(
@@ -66,6 +93,7 @@ module.exports = {
       event.target.value = '';
     },
     jupyter_clear() {
+      this.cloud_drop = null;
       this.native_file_info = [];
       this.file_info = [];
     },
@@ -109,6 +137,10 @@ module.exports = {
 }
 .solara-file-drop:hover {
   background-color: rgba(0, 0, 0, 0.05);
+}
+.solara-file-drop.tc-cloud-drop-active {
+  border-color: #279989;
+  background-color: rgba(39, 153, 137, 0.1);
 }
 .solara-file-drop__filename {
   display: block;

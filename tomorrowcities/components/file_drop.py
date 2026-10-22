@@ -26,6 +26,8 @@ class FileDropZone(FileInput):
     items = traitlets.List(default_value=[]).tag(sync=True)
     label = traitlets.Unicode().tag(sync=True)
     multiple = traitlets.Bool(True).tag(sync=True)
+    allow_cloud = traitlets.Bool(False).tag(sync=True)
+    cloud_drop = traitlets.Dict(allow_none=True, default_value=None).tag(sync=True)
 
 
 @solara.component
@@ -36,6 +38,7 @@ def _FileDrop(
     lazy: bool = True,
     multiple: bool = False,
     uid: Optional[str] = None,
+    on_cloud_files: Optional[Callable[[List[str]], None]] = None,
 ):
     """Generic implementation used by FileDrop and FileDropMultiple.
 
@@ -45,7 +48,17 @@ def _FileDrop(
     file_info, set_file_info = solara.use_state(None)
     wired_files, set_wired_files = solara.use_state(cast(Optional[typing.List[FileInfo]], None))
 
-    file_drop = FileDropZone.element(label=label, on_total_progress=on_total_progress, on_file_info=set_file_info, multiple=multiple).key(uid) if uid else FileDropZone.element(label=label, on_total_progress=on_total_progress, on_file_info=set_file_info, multiple=multiple)  # type: ignore
+    def handle_cloud_drop(request):
+        if on_cloud_files and isinstance(request, dict):
+            paths = request.get('paths')
+            if isinstance(paths, list) and paths and all(isinstance(path, str) for path in paths):
+                on_cloud_files(paths)
+
+    file_drop = FileDropZone.element(label=label, on_total_progress=on_total_progress,
+        on_file_info=set_file_info, multiple=multiple, allow_cloud=on_cloud_files is not None,
+        on_cloud_drop=handle_cloud_drop)
+    if uid:
+        file_drop = file_drop.key(uid)
 
     def wire_files():
         if not file_info:
@@ -125,6 +138,7 @@ def FileDropMultiple(
     on_file: Optional[Callable[[List[FileInfo]], None]] = None,
     lazy: bool = True,
     uid: Optional[str] = None,
+    on_cloud_files: Optional[Callable[[List[str]], None]] = None,
 ):
     """Region a user can drop multiple files into for file uploading.
 
@@ -136,7 +150,9 @@ def FileDropMultiple(
      * `on_file`: Will be called with a `List[FileInfo]`.
         Each `FileInfo` contains the file `.name`, `.length`, `.file_obj` object, and `.data` attributes.
      * `lazy`: Whether to load the file contents into memory or not.
+     * `on_cloud_files`: Optional handler for internal cloud-file drag payloads.
 
     """
 
-    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file, lazy=lazy, multiple=True, uid=uid)
+    return _FileDrop(label=label, on_total_progress=on_total_progress, on_file=on_file,
+                     lazy=lazy, multiple=True, uid=uid, on_cloud_files=on_cloud_files)

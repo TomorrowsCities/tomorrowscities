@@ -42,10 +42,20 @@ threshold_road_water_height = solara.reactive(0.3)
 threshold_culvert_water_height = solara.reactive(1.5)
 from ..backend.engine import compute, compute_power_infra, compute_road_infra, generate_exposure, \
     create_tally, generate_metrics
+from ..backend.flood_casualty import (
+    FLOOD_CASUALTY_MODEL, FloodCasualtySettings, flood_casualty_metadata,
+)
+from ..backend.analysis_state import reset_analysis_outputs
+FLOOD_CASUALTY_STATE_KEYS = ['flood_casualty_model', 'flood_casualty_result_metadata'] + [
+    'flood_casualty_' + key for key in FloodCasualtySettings.__dataclass_fields__
+]
 from ..backend.utils import building_preprocess, identity_preprocess, ParameterFile, read_gem_xml, read_gem_xml_fragility, read_gem_xml_vulnerability, getText
 from .utilities import S3FileBrowser, extension_list, extension_list_w_dots, PowerFragilityDisplayer, FragilityFunctionDisplayer, \
                         convert_data_for_filter_view, lbl_2_str
 from ..components.file_drop import FileDrop, FileDropMultiple
+from ..components.map_layer_cache import MapLayerCache
+from ..components.intensity_layer import create_intensity_layer
+from ..components.basemap_selector import BasemapSelector, DEFAULT_BASEMAP, create_basemap_layer
 from ..components.notification_center import (
     NotificationCenter,
     clear_notifications,
@@ -58,6 +68,10 @@ from .docs import data_import_help
 import ipywidgets
 from solara.lab import task
 import tempfile
+import threading
+import time
+from ..backend.uploads import staged_upload, staged_cloud_upload, read_upload
+from ..backend.cloud_files import cloud_import_sources, validate_cloud_drop_paths
 from ..backend.exposure_generator import (
     fetch_osm_constraints,
     merge_constraints,
@@ -176,9 +190,8 @@ save_status = solara.reactive("")
 center_default = (41.01,28.98)
 
 MAP_PANES = {
-    "intensityPane": {"zIndex": 250, "pointerEvents": "auto"},
-    # Keep land use above the default Leaflet overlay pane because the heatmap
-    # plugin can still render there on first paint.
+    # Show enabled intensity above data layers; Leaflet popups remain above it.
+    "intensityPane": {"zIndex": 680, "pointerEvents": "auto"},
     "landusePane": {"zIndex": 410, "pointerEvents": "auto"},
     "buildingPane": {"zIndex": 450, "pointerEvents": "auto"},
     "infrastructurePane": {"zIndex": 650, "pointerEvents": "auto"},
@@ -203,6 +216,11 @@ def create_new_app_state():
     'threshold_increase_road_water_height': solara.reactive(0.2),
     'damage_curve_suppress_factor': solara.reactive(0.9),
     'flood_depth_reduction': solara.reactive(0.2),
+    'flood_casualty_model': solara.reactive(FLOOD_CASUALTY_MODEL),
+    'flood_casualty_result_metadata': solara.reactive(None),
+    '_data_import_busy': solara.reactive(False),
+    **{'flood_casualty_' + key: solara.reactive(value)
+       for key, value in vars(FloodCasualtySettings()).items()},
     'dialog_message_to_be_shown': solara.reactive(None),
     'seed': solara.reactive(42),
     'version': '1.0',
@@ -439,7 +457,7 @@ def create_new_app_state():
         "metric5": {"desc": "Number of households displaced", "value": 0, "max_value": 100},
         "metric6": {"desc": "Number of homeless individuals", "value": 0, "max_value": 100},
         "metric7": {"desc": "Population displacement", "value": 0, "max_value":100},
-        "metric8": {"desc": "Number of casualties", "value": 0, "max_value":100},}})
+        "metric8": {"desc": "Casualties", "value": 0, "max_value":100},}})
 
 layers = create_new_app_state()
 
@@ -652,11 +670,25 @@ def load_from_state(source_dict):
     while stack:
         path, current_dict = stack.pop()
         for key, value in current_dict.items():
+            if str(key).startswith('_'):
+                continue
             if isinstance(value, dict):
                 stack.append((path + (key,), value))
             else:
                 keys = list(path + (key,))
-                src_value = get_nested_value(source_dict, keys)
+                try:
+                    src_value = get_nested_value(source_dict, keys)
+                except KeyError:
+                    if len(keys) == 1 and key in FLOOD_CASUALTY_STATE_KEYS:
+                        # Saved scenarios from before this revision keep their old model.
+                        if key == 'flood_casualty_model':
+                            layers.value[key].set('legacy-depth')
+                        elif key == 'flood_casualty_result_metadata':
+                            layers.value[key].set({'model': 'legacy-depth', 'status': 'Uncalibrated legacy result'})
+                        else:
+                            layers.value[key].set(getattr(FloodCasualtySettings(), key.removeprefix('flood_casualty_')))
+                        continue
+                    raise
                 if isinstance(value,solara.toestand.Reactive):
                     assign_nested_value(layers.value, keys, solara.reactive(src_value))
                 else:
@@ -671,7 +703,7 @@ def store_info_to_session():
         })
     for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
                 'bounds','selected_layer','render_count','implementation_capacity_score',
-                'data_import_method','map_info_button','map_info_detail']:
+                'data_import_method','map_info_button','map_info_detail'] + FLOOD_CASUALTY_STATE_KEYS:
         print('saving',attr, layers.value[attr].value)
         store_in_session_storage(attr, layers.value[attr].value)
 
@@ -690,11 +722,19 @@ def reload_info_from_session():
        
     for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
                 'bounds','selected_layer','render_count','implementation_capacity_score',
-                'data_import_method','map_info_button','map_info_detail']:
+                'data_import_method','map_info_button','map_info_detail'] + FLOOD_CASUALTY_STATE_KEYS:
         session_data = read_from_session_storage(attr)
         if session_data is not None:
             print('reloading',attr, session_data)
             layers.value[attr].set(session_data)
+
+    if (read_from_session_storage('flood_casualty_model') is None
+            and layers.value['hazard'].value == 'flood'
+            and layers.value['tally_is_available'].value):
+        layers.value['flood_casualty_model'].set('legacy-depth')
+        layers.value['flood_casualty_result_metadata'].set({
+            'model': 'legacy-depth', 'status': 'Uncalibrated result restored from an older session',
+        })
 
 reset_counter = solara.reactive(0)
 
@@ -709,7 +749,7 @@ def reset_session():
         store_in_session_storage(layer_name, None)
     for attr in ['hazard', 'tally_is_available', 'selected_policies','center',
                 'bounds','selected_layer','render_count','implementation_capacity_score',
-                'data_import_method','map_info_button','map_info_detail']:
+                'data_import_method','map_info_button','map_info_detail'] + FLOOD_CASUALTY_STATE_KEYS:
         store_in_session_storage(attr, None)
     store_in_session_storage('tally', None)
     store_in_session_storage('tally_geo', None)
@@ -994,35 +1034,10 @@ def landuse_colors(feature):
 
 def create_map_layer(df, name):
     if name == "intensity":
-        # Take the largest 500_000 values to display
-        im_col = 'pga' if 'pga' in df.columns else 'im'
-        df_non_zero = df[df[im_col] > 0]
-        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000)).copy()
-        df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
-        #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
-        locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        heatmap_layer = ipyleaflet.Heatmap(
-            locations=locs,
-            radius=3,
-            blur=2,
-            name=name,
-            pane="intensityPane",
-            options=["pane"],
-            bottom=True,
+        map_layer = create_intensity_layer(
+            df, intensity_click_handler, layers.value['hazard'].value,
+            layers.value['earthquake_intensity_unit'].value, name=name,
         )
-        clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
-        info_layer = ipyleaflet.GeoJSON(
-            data=json.loads(clickable_df.to_json()),
-            name=f"{name}-info",
-            pane="intensityPane",
-            options=["pane"],
-            bottom=True,
-            point_style={'radius': 5, 'color': 'white', 'fillOpacity': 0.2, 'opacity': 0, 'weight': 15},
-            style={"opacity": 0, "fillOpacity": 0.2, "weight": 0},
-            hover_style={"opacity": 0.8, "fillOpacity": 0.8, "weight": 1, "color": "#ffffff"},
-        )
-        info_layer.on_click(intensity_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name, bottom=True)
     elif name == "landuse":
         style_callback = landuse_colors if "luf" in df.columns else generic_layer_colors
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
@@ -1123,8 +1138,14 @@ def fast_transform_xy(T,x,y):
     return second_pass[0], second_pass[1]
 
 def read_tiff(file_bytes):
-    byte_io = io.BytesIO(file_bytes)
+    from tomorrowcities.backend.uploads import validate_raster_size
+    byte_io = io.BytesIO(file_bytes) if isinstance(file_bytes, (bytes, bytearray)) else file_bytes
     with rasterio.open(byte_io) as src:
+        current_crs = src.crs
+        target_crs = 'EPSG:4326'
+        transform, width, height = calculate_default_transform(current_crs, target_crs, src.width, src.height, *src.bounds)
+        validate_raster_size(src.width, src.height, src.count)
+        validate_raster_size(width, height, src.count)
         if src.nodata == None:
             ims = src.read()
             # when nodata is not specificed, do my best to clean data
@@ -1144,9 +1165,6 @@ def read_tiff(file_bytes):
                 band_names[b] = 'im'
             else:
                 band_names[b] = f'im{b+1}'
-    current_crs = src.crs
-    target_crs = 'EPSG:4326'
-    transform, width, height = calculate_default_transform(current_crs, target_crs, src.width, src.height, *src.bounds)
     ims_transformed = np.zeros((n_bands, height, width))
 
     print('start reproject ..........')
@@ -1160,13 +1178,22 @@ def read_tiff(file_bytes):
             dst_crs=target_crs,
             resampling=Resampling.nearest)
 
-    lon_pos, lat_pos = np.meshgrid(range(width),range(height))
+    # Construct points only for positive pixels, in the same row-major order
+    # and at exactly the same cell centres as the previous full-grid import.
+    lat_pos, lon_pos = np.nonzero((ims_transformed > 0).any(axis=0))
     print('start transform ..........')
     #lon, lat = rasterio.transform.xy(transform,lat_pos.flatten(),lon_pos.flatten())
-    lon, lat = fast_transform_xy(transform,lat_pos.flatten(),lon_pos.flatten())
+    lon, lat = fast_transform_xy(transform,lat_pos,lon_pos)
     print('start dataframe ..........')
-    gdf = gpd.GeoDataFrame({band_names[i]:ims_transformed[i].flatten() for i in range(n_bands)},
-            geometry = gpd.points_from_xy(lon, lat, crs="EPSG:4326"))
+    gdf = gpd.GeoDataFrame({band_names[i]:ims_transformed[i, lat_pos, lon_pos] for i in range(n_bands)},
+            geometry = gpd.points_from_xy(lon, lat, crs="EPSG:4326"), index=lat_pos * width + lon_pos)
+    # Keep only grid geometry metadata, not a second copy of the raster array.
+    # Road flood assignment can then use the actual wet cells rather than
+    # extrapolating from sparse positive cell-centre points.
+    gdf.attrs['raster_grid'] = {
+        'transform': tuple(transform)[:6], 'width': width, 'height': height,
+        'crs': target_crs,
+    }
     #gdf = gdf.rename(columns={0:'im'})
     # return only the non-zero intensity measures
     return gdf[(gdf.drop(columns='geometry')>0).any(axis=1)]
@@ -1371,12 +1398,80 @@ def MetricParameters():
             solara.Text('Minimum Water Level Threshold for Culverts (meters)')
             solara.SliderFloat(label=None, value=threshold_culvert_water_height, min=0,max=3)
 
+        with solara.Card(title='Flood Casualty Parameters', subtitle='Scenario assumptions'):
+            solara.Select(label='Flood casualty model',
+                          values=[FLOOD_CASUALTY_MODEL, 'legacy-depth'],
+                          value=layers.value['flood_casualty_model'])
+            if layers.value['flood_casualty_model'].value == FLOOD_CASUALTY_MODEL:
+                solara.Info('Provisional scenario screening, not a locally calibrated forecast. '
+                            'Defaults assume still water without debris. GIRI depth maps do not '
+                            'supply velocity, warning effectiveness or health vulnerability. '
+                            'Review these assumptions and rerun after changes.')
+                for field, label, low, high, step in [
+                    ('velocity_m_s', 'Assumed flow velocity (m/s)', 0, 10, 0.1),
+                    ('debris_factor', 'Assumed debris hazard factor', 0, 1, 0.5),
+                    ('area_vulnerability', 'Area vulnerability (3–9)', 3, 9, 0.5),
+                    ('people_vulnerability', 'People vulnerability (0–2)', 0, 2, 0.01),
+                    ('floor_height_m', 'Assumed floor-to-floor height (m)', 1, 6, 0.1),
+                    ('occupancy_fraction', 'Fraction of residents present (0–1)', 0, 1, 0.05),
+                    ('evacuation_fraction', 'Fraction evacuated safely before exposure (0–1)', 0, 1, 0.05),
+                    ('shelter_fraction', 'Additional safe shelter fraction (0–1)', 0, 1, 0.05),
+                ]:
+                    with solara.Column(gap='4px', style={
+                        'width': '100%', 'min-width': '0', 'flex-shrink': '0', 'margin-bottom': '12px',
+                    }):
+                        solara.Text(label, style={
+                            'display': 'block', 'white-space': 'normal',
+                            'overflow-wrap': 'anywhere', 'line-height': '1.4',
+                        })
+                        solara.SliderFloat(label=None, value=layers.value['flood_casualty_' + field],
+                                           min=low, max=high, step=step)
+                solara.Markdown('[Method and parameter definitions](/docs/flood).')
+            else:
+                solara.Warning('Legacy comparison only: uncalibrated depth curve applied to all '
+                               'residents in DS2+ buildings. No floor, evacuation or shelter model. '
+                               'Above 6 m the endpoint is held at 74.38%.')
+
+            if layers.value['hazard'].value == 'flood':
+                result_metadata = layers.value['flood_casualty_result_metadata'].value
+                if result_metadata:
+                    solara.Style('''
+                        .flood-casualty-download .solara-file-download-container {
+                            width: 100%;
+                            max-width: 100%;
+                            min-width: 0;
+                        }
+                        .flood-casualty-download .v-btn__content {
+                            flex: 1 1 auto;
+                            min-width: 0;
+                            white-space: normal;
+                            overflow-wrap: anywhere;
+                        }
+                        .flood-casualty-download .v-icon {
+                            flex-shrink: 0;
+                        }
+                    ''')
+                    with solara.Div(classes=['flood-casualty-download'], style={
+                        'width': '100%', 'max-width': '100%', 'min-width': '0',
+                    }):
+                        with solara.FileDownload(json.dumps(result_metadata, indent=2),
+                                                 'flood_casualty_method.json', mime_type='application/json'):
+                            solara.Button('Download casualty assumptions', icon_name='mdi-download',
+                                          block=True, style={
+                                              'max-width': '100%', 'height': 'auto', 'min-height': '36px',
+                                              'white-space': 'normal', 'line-height': '1.4',
+                                              'padding': '8px 12px',
+                                          })
+
         # with solara.Card(title='Landslide Parameters',subtitle='Choose the parameters for the landslide simulation'):
         #     solara.SliderInt(label='Number of Monte-Carlo Trials', value=landslide_max_trials, min=1,max=100)
 
 @solara.component
 def MetricWidget(name, description, value, max_value, render_count, icon=None):
     _ = render_count
+    if name == 'metric8':
+        # Keep labels concise even when an older saved scenario supplies its old description.
+        description = 'Casualties'
     safe_value = 0 if value is None else value
     safe_max_value = max(1, 0 if max_value is None else max_value)
     progress_ratio = min(max(safe_value / safe_max_value, 0), 1)
@@ -1678,23 +1773,15 @@ def GeneratedDataTablesCharts(layers=layers, scenario_label=None, source_label=N
 
 
 def import_data(fileinfo: solara.components.file_drop.FileInfo):
-    data_array = fileinfo['data']
-    extension = fileinfo['name'].split('.')[-1]
-    if extension == 'xlsx':
-        import io
-        data = pd.read_excel(io.BytesIO(data_array))
-    elif extension in ['tiff','tif']:
-        data = read_tiff(data_array)
-    elif extension.lower() in ['xml']:
-        data = read_gem_xml(data_array)
-    else:
-        json_string = data_array.decode('utf-8')
-        json_data = json.loads(json_string)
-        if "features" in json_data.keys():
-            data = gpd.GeoDataFrame.from_features(json_data['features'])
-        else:
-            import io
-            data = pd.read_json(io.StringIO(json_string))
+    with staged_upload(fileinfo) as path:
+        data = read_upload(path, read_tiff, read_gem_xml)
+        name, data = prepare_imported_data(data)
+        if name == 'parameter':
+            data = ParameterFile(content=path.read_bytes())
+        return name, data
+
+
+def prepare_imported_data(data):
 
     if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
         # reset existing index to avoid conflicts in index-related computations
@@ -1724,6 +1811,9 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
                         size_of_best_match = len(layer_attributes)
                         logging.debug('There are extra columns', attributes - layer_attributes)
 
+    if name is None:
+        return None, None
+
     # Internal checking
     if name in ["road edges", "power edges"]:
         if "edge_id" in data.columns:
@@ -1735,9 +1825,6 @@ def import_data(fileinfo: solara.components.file_drop.FileInfo):
     # Preprocess
     data = layers.value['layers'][name]['pre_processing'](data, layers.value['layers'][name]['extra_cols'])
 
-    if name == "parameter":
-        data = ParameterFile(content=data_array)
-        
     return (name, data)
 
 
@@ -1962,8 +2049,12 @@ def LayerDisplayer():
         data = nonempty_layers[selected]['data'].value
         if isinstance(data, gpd.GeoDataFrame) or isinstance(data, pd.DataFrame):
             if "geometry" in data.columns:
-                ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-                df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
+                bounds = layers.value['bounds'].value
+                if bounds is None:
+                    df_filtered = data.drop(columns='geometry')
+                else:
+                    ((ymin,xmin),(ymax,xmax)) = bounds
+                    df_filtered = data.cx[xmin:xmax,ymin:ymax].drop(columns='geometry')
                 if df_filtered.empty:
                     df_filtered = data.drop(columns='geometry')
                 render_layer_dataframe(df_filtered, card_title=selected)
@@ -1974,18 +2065,16 @@ def LayerDisplayer():
                     render_layer_dataframe(data, card_title=selected)
             if selected in ["landuse","building","road edges","road nodes","power nodes","power edges","intensity"] :
                 with solara.Row(classes=["layer-download-row"]):
-                    file_object = data.to_json()
-                    with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
+                    with solara.FileDownload(lambda data=data: data.to_json(), f"{selected}_export.geojson", mime_type="application/geo+json"):
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                    with solara.FileDownload(lambda data=data: data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
             elif selected in ['household', 'individual', 'fragility', 'landslide fragility', 'vulnerability', 'power fragility', 'road fragility']:
                  with solara.Row(classes=["layer-download-row"]):
-                    file_object = data.to_json()
-                    with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
+                    with solara.FileDownload(lambda data=data: data.to_json(), f"{selected}_export.json", mime_type="application/json"):
                         solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                    with solara.FileDownload(lambda data=data: data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                  solara.Text("Spacer", style={"visibility": "hidden"})
         elif isinstance(data, ParameterFile):
@@ -2054,7 +2143,6 @@ def MetricPanel():
                      layers.value['render_count'].value], debug_name="generate_metrics_loca")
     if generate_metrics_local.finished:
         filtered_metrics = generate_metrics_local.value
-
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
     if generate_metrics_local.pending and layers.value['bounds'].value is not None:
@@ -2132,7 +2220,7 @@ def MetricStatistics():
     # get the metric names from the first measurement
     metric_names = metrics[0].keys()
     metric_labels = {
-        metric_name: metrics[0][metric_name].get('desc', metric_name)
+        metric_name: 'Casualties' if metric_name == 'metric8' else metrics[0][metric_name].get('desc', metric_name)
         for metric_name in metric_names
     }
     building_data = layers.value['layers']['building']['data'].value
@@ -2676,6 +2764,8 @@ def MapViewer(map_height_class="map-shell-default"):
     default_zoom = 14
     zoom, set_zoom = solara.use_state(default_zoom)
     filters_open, set_filters_open = solara.use_state(False)
+    basemap, set_basemap = solara.use_state(DEFAULT_BASEMAP)
+    layer_cache = solara.use_memo(MapLayerCache, [])
 
     def zoom_to_landuse():
         l = layers.value['layers']['landuse']['data'].value
@@ -2691,37 +2781,34 @@ def MapViewer(map_height_class="map-shell-default"):
                 calculated_zoom = int(math.floor(math.log2(360 / max_diff)))
                 calculated_zoom = max(1, min(calculated_zoom, 18))
                 set_zoom(calculated_zoom)
-    def create_base_layers():
-        base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
-        base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
-        base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
-        base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldImagery.build_url(),name="Esri WorldImagery",base = True)        
-        base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True) 
-        base_layer6 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.DarkMatter.build_url(),name="CartoDB Dark",base = True)                                                                                                                                        
-        return [base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1]
+    base_layer = solara.use_memo(lambda: create_basemap_layer(basemap), [basemap])
 
-    # create base layers only once
-    base_layers = solara.use_memo(create_base_layers,[])
-    
     layout = ipywidgets.Layout.element(width='100%', height='var(--tc-map-height)')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')                                                                                                                                              
+    attribution_control = ipyleaflet.AttributionControl.element(position="bottomright")
+    basemap_control = ipyleaflet.WidgetControl.element(
+        widget=BasemapSelector(value=basemap, on_value=set_basemap), position="topright"
+    )
 
     def cleanup_cache():
         # Clear the map layer cache when the MapViewer is unmounted. 
         # Solara automatically closes the ipyleaflet widgets on unmount, 
         # so if we revisit this page, we don't want to reuse dead widgets.
-        return lambda: layers.value.setdefault('_map_layer_cache', {}).clear()
+        return layer_cache.close
     
     solara.use_effect(cleanup_cache, [])
 
     def create_layers():
+        if layers.value['_data_import_busy'].value:
+            return layer_cache.layers
         regular_layers = []
         infrastructure_layers = []
         priority_layers = []
+        active_names = set()
         sorted_layers = sorted(
             layers.value['layers'].items(),
             key=lambda item: item[1].get('render_order', 0)
@@ -2729,6 +2816,7 @@ def MapViewer(map_height_class="map-shell-default"):
         for l, layer_config in sorted_layers:
             df = layer_config['data'].value
             if df is not None and isinstance(df, gpd.GeoDataFrame):
+                active_names.add(l)
                 df_filtered = df
                 if l == 'building':
                     if building_filter.value is not None:
@@ -2745,14 +2833,14 @@ def MapViewer(map_height_class="map-shell-default"):
                 elif l == 'landuse' and landuse_filter.value is not None:
                     cache_key_parts.append(hash(tuple(landuse_filter.value)))
 
+                if l == 'intensity':
+                    cache_key_parts.extend([layers.value['hazard'].value, layers.value['earthquake_intensity_unit'].value])
                 cache_key = tuple(cache_key_parts)
-                use_cache = l != "constraint"
-                if (not use_cache) or cache_key not in layers.value.setdefault('_map_layer_cache', {}):
-                    print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
-                    created_layer = create_map_layer(df_filtered, l)
-                    if use_cache:
-                        layers.value['_map_layer_cache'][cache_key] = created_layer
-                map_layer = created_layer if not use_cache else layers.value['_map_layer_cache'][cache_key]
+                map_layer = layer_cache.get(
+                    l, cache_key, df,
+                    lambda df_filtered=df_filtered, name=l: create_map_layer(df_filtered, name),
+                    force=l == 'constraint',
+                )
                 if l in {"road edges", "road nodes", "power edges", "power nodes"}:
                     infrastructure_layers.append(map_layer)
                 elif l == "constraint":
@@ -2760,20 +2848,27 @@ def MapViewer(map_height_class="map-shell-default"):
                 else:
                     regular_layers.append(map_layer)
 
-        return regular_layers + infrastructure_layers + priority_layers
+        layer_cache.prune(active_names)
+        layer_cache.layers = regular_layers + infrastructure_layers + priority_layers
+        return layer_cache.layers
 
     map_layers = solara.use_memo(create_layers,
-                    [building_filter.value, landuse_filter.value] + 
-                    [layers.value['render_count'].value])  
+                    [building_filter.value, landuse_filter.value,
+                     layers.value['hazard'].value, layers.value['earthquake_intensity_unit'].value] +
+                    [layers.value['render_count'].value, layers.value['_data_import_busy'].value])
+    # Close old widget trees only after the new map layer list has been rendered.
+    solara.use_effect(layer_cache.release_retired, [map_layers])
 
     def create_legend_control():
+        html_intensity = next((getattr(layer, 'intensity_legend_html', '')
+                               for layer in map_layers if layer.name == 'intensity'), '')
         df_lu = layers.value['layers']['landuse']['data'].value
         df_b = layers.value['layers']['building']['data'].value
         
         has_lu = df_lu is not None and isinstance(df_lu, gpd.GeoDataFrame) and 'luf' in df_lu.columns
         has_b = df_b is not None and isinstance(df_b, gpd.GeoDataFrame) and 'ds' in df_b.columns
         
-        if not has_lu and not has_b:
+        if not has_lu and not has_b and not html_intensity:
             return None
             
         import uuid
@@ -2805,14 +2900,18 @@ def MapViewer(map_height_class="map-shell-default"):
         #tab2-{uid}:checked ~ .tabs-{uid} .label2-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
         #tab1-{uid}:checked ~ #content1-{uid} {{ display: block; }}
         #tab2-{uid}:checked ~ #content2-{uid} {{ display: block; }}
+        #tab3-{uid}:checked ~ .tabs-{uid} .label3-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
+        #tab3-{uid}:checked ~ #content3-{uid} {{ display: block; }}
         </style>
         <details open style='background: white; padding: 8px; border-radius: 5px; box-shadow: 0 1px 5px rgba(0,0,0,0.4); max-height: 300px; overflow-y: auto; width: 170px;'>
             <summary style='cursor: pointer; font-weight: bold; margin-bottom: 8px; font-size: 13px;'>Map Legend</summary>
-            <input type="radio" name="legend-tab-{uid}" id="tab1-{uid}" class="tab-radio-{uid}" checked>
+            <input type="radio" name="legend-tab-{uid}" id="tab1-{uid}" class="tab-radio-{uid}" {"checked" if has_lu or has_b else ""}>
             <input type="radio" name="legend-tab-{uid}" id="tab2-{uid}" class="tab-radio-{uid}">
+            <input type="radio" name="legend-tab-{uid}" id="tab3-{uid}" class="tab-radio-{uid}" {"checked" if not (has_lu or has_b) else ""}>
             <div class="tabs-{uid}">
-                <label for="tab1-{uid}" class="tab-label-{uid} label1-{uid}">Land Use</label>
-                <label for="tab2-{uid}" class="tab-label-{uid} label2-{uid}">Damage</label>
+                <label for="tab1-{uid}" class="tab-label-{uid} label1-{uid}" style="display:{"block" if has_lu or has_b else "none"}">Land Use</label>
+                <label for="tab2-{uid}" class="tab-label-{uid} label2-{uid}" style="display:{"block" if has_lu or has_b else "none"}">Damage</label>
+                <label for="tab3-{uid}" class="tab-label-{uid} label3-{uid}" style="display:{"block" if html_intensity else "none"}">Intensity</label>
             </div>
             <div id="content1-{uid}" class="tab-content-{uid}">
                 {html_lu}
@@ -2820,24 +2919,29 @@ def MapViewer(map_height_class="map-shell-default"):
             <div id="content2-{uid}" class="tab-content-{uid}">
                 {html_ds}
             </div>
+            <div id="content3-{uid}" class="tab-content-{uid}">
+                {html_intensity}
+            </div>
         </details>
         """
         
-        legend_widget = ipywidgets.HTML(value=html_content)
+        legend_widget = ipywidgets.HTML.element(value=html_content)
         return ipyleaflet.WidgetControl.element(widget=legend_widget, position='bottomright')
 
     legend_control = solara.use_memo(create_legend_control, [
         layers.value['layers']['landuse']['data'].value,
-        layers.value['layers']['building']['data'].value
+        layers.value['layers']['building']['data'].value,
+        map_layers
     ])
-    controls = [tool1, tool2, tool3, tool4]
+    controls = [tool1, tool2, basemap_control, tool3, tool4, attribution_control]
     if legend_control is not None:
         controls.append(legend_control)
 
-    with solara.Div(classes=["map-shell", map_height_class]):
+    with solara.Div(classes=["map-shell", "tc-single-basemap", map_height_class]):
         ClientLeafletInitialOrderFix(trigger_key=f"{layers.value['render_count'].value}")
         ClientResizeTrigger(
             children=ipyleaflet.Map.element(
+                zoom_control=False, attribution_control=False,
                 zoom=zoom,
                 max_zoom=23,                    
                 on_zoom=set_zoom,
@@ -2851,7 +2955,7 @@ def MapViewer(map_height_class="map-shell-default"):
                 box_zoom=True,
                 keyboard=True if random.random() > 0.5 else False,
                 panes=MAP_PANES,
-                layers=base_layers + map_layers,
+                layers=[base_layer] + map_layers,
                 controls = controls,
                 layout = layout
             ),
@@ -3161,9 +3265,29 @@ def ExecutePanel():
                     flood_depth_reduction=flood_depth_reduction,
                     damage_curve_suppress_factor=damage_curve_suppress_factor,
                     earthquake_simulation_method=earthquake_simulation_method,
+                    flood_casualty_model=layers.value['flood_casualty_model'].value,
+                    flood_casualty_settings=FloodCasualtySettings(**{
+                        key: layers.value['flood_casualty_' + key].value
+                        for key in FloodCasualtySettings.__dataclass_fields__
+                    }) if layers.value['hazard'].value == 'flood' else None,
                     )
             buildings['ds'] = list(df_bld_hazard['ds'])
             buildings['casualty'] = list(df_bld_hazard['casualty'])
+            for column in ['casualty_expected', 'casualty_probability', 'fatalities_expected',
+                           'injuries_nonfatal_expected', 'people_at_risk_expected', 'casualty_model']:
+                if column in df_bld_hazard:
+                    buildings[column] = list(df_bld_hazard[column])
+                elif column in buildings:
+                    buildings.drop(columns=column, inplace=True)
+            if layers.value['hazard'].value == 'flood':
+                metadata = flood_casualty_metadata(FloodCasualtySettings(**{
+                    key: layers.value['flood_casualty_' + key].value
+                    for key in FloodCasualtySettings.__dataclass_fields__
+                })) if layers.value['flood_casualty_model'].value == FLOOD_CASUALTY_MODEL else {
+                    'model': 'legacy-depth', 'status': 'Uncalibrated legacy comparison',
+                    'definition': 'Combined casualty indicator; severity is not separated',
+                }
+                layers.value['flood_casualty_result_metadata'].set(metadata)
 
             return buildings
 
@@ -3205,6 +3329,9 @@ def ExecutePanel():
             }
 
             for trial in range(1,max_trials+1):
+                # No road/power access flags or damage values from a previous
+                # run/trial may influence the currently selected calculation.
+                reset_analysis_outputs(layers.value)
                 if trial == 1:
                     set_progress_message('Running...')
                 else:
@@ -3416,17 +3543,23 @@ def MapInfo():
 @solara.component
 def ImportDataZone1():
     def s3_file_open(p):
-        filename='aws.tmp'
-        with tempfile.TemporaryDirectory() as temp_dir:
-            filepath = os.path.join(temp_dir,filename)
-            storage.value.get_client().download_file(storage.value.bucket_name, str(p)[1:], filepath)
-            with open(filepath, 'rb') as fileObj:
-                fileContent = fileObj.read()
-                file_info = solara.components.file_drop.FileInfo(name=os.path.basename(p),
-                                                                size=len(fileContent),
-                                                                data=fileContent)
-                set_fileinfo([file_info])
-            os.unlink(os.path.join(temp_dir, filename))
+        # Queue the source only. Download/parse in the same cancellable worker
+        # as local uploads, without blocking the UI or retaining large bytes.
+        set_fileinfo(cloud_import_sources(storage.value, [p]))
+
+    def s3_folder_open(paths):
+        set_fileinfo(cloud_import_sources(storage.value, paths, folder_batch=True))
+
+    def s3_files_drop(paths):
+        if layers.value['_data_import_busy'].value:
+            notify_warning('Please wait for the current import to finish.')
+            return
+        try:
+            paths = validate_cloud_drop_paths(paths)
+        except ValueError as exc:
+            notify_error(str(exc))
+            return
+        s3_folder_open(paths)
 
 
     def local_file_open(p):
@@ -3439,6 +3572,8 @@ def ImportDataZone1():
 
     total_progress, set_total_progress = solara.use_state(-1)
     fileinfo, set_fileinfo = solara.use_state(None)
+    cloud_open, set_cloud_open = solara.use_state(False)
+    import_lock = solara.use_memo(threading.Lock, [])
     result, set_result = solara.use_state(solara.Result(True))
 
     generate_message, set_generate_message = solara.use_state("")
@@ -3450,43 +3585,102 @@ def ImportDataZone1():
         set_generate_counter(generate_counter + 1)
         generate_error.set("")
 
-    def load():
+    def load(cancel):
         if fileinfo is not None:
-            unrecognized_file_exists = False
-            # try not to trigger render inside loop
-            updated_center = None
-            for f in fileinfo:
-                print(f'processing file {f["name"]}')
-                name, data = import_data(f)
-                if name is not None and data is not None:
-                    if isinstance(data, gpd.GeoDataFrame):
-                        data = data.set_crs("epsg:4326",allow_override=True)
-                        layers.value['layers'][name]['df'].set(data.drop(columns=['geometry']))
-                        layers.value['layers'][name]['data'].set(data)
-                        # centroids in geometric coordinates (3857: Pseuod-Mercator in meters)
-                        # Geographic --> geometric --> calculate centroid --> geographic
-                        centroids = data.to_crs('epsg:3857').centroid.to_crs('epsg:4326')
-                        #centroids = data.centroid
-                        center_y = centroids.y.mean()
-                        center_x = centroids.x.mean()
-                        updated_center = (center_y, center_x)
-                    elif isinstance(data, pd.DataFrame):
-                        layers.value['layers'][name]['df'].set(data)
-                        layers.value['layers'][name]['data'].set(data)
-                    elif isinstance(data, ParameterFile):
-                        layers.value['layers'][name]['data'].set(data)
-                    elif isinstance(data, dict):
-                        layers.value['layers'][name]['data'].set(data)
-                else:
-                    unrecognized_file_exists = True
-            if updated_center:
-                layers.value['center'].set(updated_center)
-            layers.value['render_count'].set(layers.value['render_count'].value + 1)
+            # A replaced/cancelled import must not publish into a newer session.
+            generation = reset_counter.value
+            app_state = layers.value
+            busy = app_state['_data_import_busy']
+            with import_lock:
+                if cancel.is_set() or generation != reset_counter.value:
+                    return 'cancelled'
+                busy.set(True)
+                try:
+                    return load_files(cancel, generation, app_state)
+                finally:
+                    busy.set(False)
+        return 'empty'
 
-            if unrecognized_file_exists:
-                return "error"
-            return "success"
-        return "empty"
+    def load_files(cancel, generation, app_state):
+        unrecognized_file_exists = False
+        folder_batch = any(f.get('cloud_folder_batch', False) for f in fileinfo)
+        layer_sources = {}
+        pending = []
+        updated_center = None
+        for f in fileinfo:
+            if cancel.is_set() or generation != reset_counter.value:
+                return 'cancelled'
+            started = time.monotonic()
+            try:
+                if 'cloud_path' in f:
+                    with staged_cloud_upload(f['cloud_storage'], f['cloud_path'],
+                            cancelled=lambda: cancel.is_set() or generation != reset_counter.value) as downloaded:
+                        name, data = import_data(downloaded)
+                else:
+                    name, data = import_data(f)
+            except Exception as exc:
+                if cancel.is_set() or generation != reset_counter.value:
+                    return 'cancelled'
+                logging.exception('Failed to import %s', f['name'])
+                notify_error(f"{f['name']}: {exc}")
+                unrecognized_file_exists = True
+                continue
+            finally:
+                # Sample/cloud callers may provide bytes. Retain only the
+                # filename after processing, not another copy of the dataset.
+                f['data'] = None
+            logging.info('Imported %s into %s in %.2fs (%s rows)',
+                         f['name'], name, time.monotonic() - started,
+                         len(data) if isinstance(data, pd.DataFrame) else '-')
+            if name is None or data is None:
+                notify_error(f"{f['name']}: no supported layer schema was found.")
+                unrecognized_file_exists = True
+                continue
+            if folder_batch and name in layer_sources:
+                notify_error(f"Files were not loaded: {layer_sources[name]} and {f['name']} both contain "
+                             f"the '{name}' layer. Keep one file per layer in the folder, or load files individually.")
+                return 'error'
+            layer_sources[name] = f['name']
+            pending.append((name, data))
+
+        if cancel.is_set() or generation != reset_counter.value:
+            return 'cancelled'
+        if folder_batch and unrecognized_file_exists:
+            notify_error('Files were not loaded because some inputs could not be imported. '
+                         'See the file errors and retry; existing inputs are preserved.')
+            return 'error'
+        # Publish the completed batch together, after all browser reads.
+        # Map previews are deferred while _data_import_busy is true.
+        for name, data in pending:
+            if name is not None and data is not None:
+                if isinstance(data, gpd.GeoDataFrame):
+                    data = data.set_crs("epsg:4326",allow_override=True)
+                    app_state['layers'][name]['df'].set(data.drop(columns=['geometry']))
+                    app_state['layers'][name]['data'].set(data)
+                    # centroids in geometric coordinates (3857: Pseuod-Mercator in meters)
+                    # Geographic --> geometric --> calculate centroid --> geographic
+                    centroids = data.to_crs('epsg:3857').centroid.to_crs('epsg:4326')
+                    #centroids = data.centroid
+                    center_y = centroids.y.mean()
+                    center_x = centroids.x.mean()
+                    updated_center = (center_y, center_x)
+                elif isinstance(data, pd.DataFrame):
+                    app_state['layers'][name]['df'].set(data)
+                    app_state['layers'][name]['data'].set(data)
+                elif isinstance(data, ParameterFile):
+                    app_state['layers'][name]['data'].set(data)
+                elif isinstance(data, dict):
+                    app_state['layers'][name]['data'].set(data)
+            else:
+                unrecognized_file_exists = True
+        if updated_center:
+            app_state['center'].set(updated_center)
+        app_state['render_count'].set(app_state['render_count'].value + 1)
+        store_info_to_session()
+
+        if unrecognized_file_exists:
+            return "error"
+        return "success"
     
     def is_ready_to_generate():
         if layers.value['layers']['parameter']['data'].value is not None and \
@@ -3578,27 +3772,27 @@ def ImportDataZone1():
                         ''')
         FileDropMultiple(on_total_progress=progress,
                 on_file=on_file_deneme, 
-                lazy=False,
+                on_cloud_files=s3_files_drop if not layers.value['_data_import_busy'].value else None,
+                lazy=True,
                 label='Drop files here or click to browse',
                 uid=str(reset_counter.value))
                 
         #with solara.Column():
         def sample_data():
-            with solara.Column() as main:
-                solara.Markdown('''You can also choose sample data from our AWS S3 repository. 
-                                Double click to load data into the platform.
-                            ''')   
-                print("..............",storage.value)
-                S3FileBrowser(storage.value, "tcdse", can_select=True, on_file_open=s3_file_open, start_directory='/datastore')
+            with solara.Column(style={"width": "100%", "padding": "0", "gap": "0", "background": "transparent"}) as main:
+                S3FileBrowser(storage.value, can_select=True, on_file_open=s3_file_open,
+                              start_directory='/datastore', directory_first=True,
+                              on_files_open=s3_folder_open, loading=layers.value['_data_import_busy'].value)
             return main
         
         if storage.value is not None:        
-            solara.Details(
-            summary="Upload Data from Cloud",
-            children=[sample_data()],
-            expand=False
+            ControlledDetails(
+                summary="Upload Data from Cloud",
+                children=[sample_data()] if cloud_open else [],
+                expand=cloud_open,
+                on_expand=set_cloud_open,
             )
-            solara.Button("Load Sample Scenario", on_click=load_sample_scenario, outlined=True, style={"width": "100%"})
+        solara.Button("Load Sample Scenario", on_click=load_sample_scenario, outlined=True, style={"width": "100%"})
         
         with solara.Row(style={"width": "100%"}):
             solara.Button("Clear", on_click=on_clear, text=True, outlined=True, style={"width": "100%"})
@@ -3611,7 +3805,7 @@ def ImportDataZone1():
             if result.value == "success":
                 solara.Success("Data is successfully loaded and ready for analysis.")
             elif result.value == "error":
-                solara.Text("Unrecognized file")
+                solara.Text("Some files could not be loaded. See notifications for details.")
             else:
                 solara.Text("Spacer", style={'visibility':'hidden'})
             solara.ProgressLinear(value=False)
@@ -4267,19 +4461,19 @@ def WebApp():
     #LayerDisplayer()
     ControlledDetails(
         summary="Metric Statistics",
-        children=[MetricStatistics()],
+        children=[MetricStatistics()] if metric_statistics_open else [],
         expand=metric_statistics_open,
         on_expand=set_metric_statistics_open,
     )
     ControlledDetails(
         summary="Layer Details",
-        children=[LayerDisplayer()],
+        children=[LayerDisplayer()] if layer_details_open else [],
         expand=layer_details_open,
         on_expand=set_layer_details_open,
     )
     ControlledDetails(
         summary="Data Tables & Charts",
-        children=[GeneratedDataTablesCharts()],
+        children=[GeneratedDataTablesCharts()] if data_tables_open else [],
         expand=data_tables_open,
         on_expand=set_data_tables_open,
     )

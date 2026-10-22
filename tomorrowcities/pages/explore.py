@@ -28,6 +28,7 @@ from solara.lab import task
 from solara.hooks.dataframe import cross_filter_context
 import secrets
 import tempfile
+import threading
 from html import escape
 
 from . import storage, connect_storage, read_from_session_storage, store_in_session_storage, user, ClientResizeTrigger, ClientLeafletInitialOrderFix
@@ -38,6 +39,9 @@ from .engine import MetricWidget, DamageStateMetricPanel, create_new_app_state, 
 from .utilities import PowerFragilityDisplayer
 from ..backend.engine import generate_metrics
 from ..components.notification_center import NotificationCenter
+from ..components.map_layer_cache import MapLayerCache
+from ..components.intensity_layer import create_intensity_layer
+from ..components.basemap_selector import BasemapSelector, DEFAULT_BASEMAP, create_basemap_layer
 
 def get_session_list():
     if storage.value is not None:
@@ -45,7 +49,13 @@ def get_session_list():
     return None
 
 session_name = solara.reactive(None)
-session_list = solara.reactive(get_session_list())
+session_list = solara.reactive([])
+loaded_session_name = solara.reactive(None)
+scenario_metadata = solara.reactive(None)
+load_request = solara.reactive(None)
+loaded_request = solara.reactive(None)
+scenario_work_lock = solara.reactive(None)
+_publish_lock = threading.RLock()
 status_text = solara.reactive("")
 selected_tab = solara.reactive(None)
 MAP_INFO_TAB_INDEX = 2
@@ -87,35 +97,10 @@ def open_map_info(properties, layer_name=""):
 
 def create_map_layer(df, name):
     if name == "intensity":
-        # Take the largest 500_000 values to display
-        im_col = 'pga' if 'pga' in df.columns else 'im'
-        df_non_zero = df[df[im_col] > 0]
-        df_limited = df_non_zero.sample(min(len(df_non_zero),500_000)).copy()
-        df_limited[im_col] = df_limited[im_col] / df_limited[im_col].max()
-        #df_limited = df.sort_values(by=im_col,ascending=False).head(500_000)
-        locs = np.array([df_limited.geometry.y.to_list(), df_limited.geometry.x.to_list(), df_limited[im_col].to_list()]).transpose().tolist()
-        heatmap_layer = ipyleaflet.Heatmap(
-            locations=locs,
-            radius=3,
-            blur=2,
-            name=name,
-            pane="intensityPane",
-            options=["pane"],
-            bottom=True,
+        map_layer = create_intensity_layer(
+            df, intensity_click_handler, layers.value['hazard'].value,
+            layers.value['earthquake_intensity_unit'].value, name=name,
         )
-        clickable_df = df_non_zero.sample(min(len(df_non_zero),5000)).copy()
-        info_layer = ipyleaflet.GeoJSON(
-            data=json.loads(clickable_df.to_json()),
-            name=f"{name}-info",
-            pane="intensityPane",
-            options=["pane"],
-            bottom=True,
-            point_style={'radius': 5, 'color': 'white', 'fillOpacity': 0.2, 'opacity': 0, 'weight': 15},
-            style={"opacity": 0, "fillOpacity": 0.2, "weight": 0},
-            hover_style={"opacity": 0.8, "fillOpacity": 0.8, "weight": 1, "color": "#ffffff"},
-        )
-        info_layer.on_click(intensity_click_handler)
-        map_layer = ipyleaflet.LayerGroup(layers=(heatmap_layer, info_layer), name=name, bottom=True)
     elif name == "landuse":
         map_layer = ipyleaflet.GeoJSON(data = json.loads(df.to_json()), name = name,
             pane="landusePane",
@@ -214,24 +199,27 @@ def intensity_click_handler(event=None, feature=None, id=None, properties=None, 
 def revive_storage():
     if storage.value is None:
         revived_storage = connect_storage()
-        if revive_storage is None:
+        if revived_storage is None:
             status_text.value = "Couldn't connect to datastore"
         else:
             storage.value = revived_storage
             status_text.value = "Connection to S3 is OK!"
+            refresh_session_list()
     else:
-        status_text.value = "No storage configuration!"   
+        status_text.value = "Datastore is already connected."
 
 
 
+@task
 def refresh_session_list():
-    sess_list = get_session_list()
-    if sess_list is not None:
-        session_list.set(sess_list)
-        status_text.value = ""
-    else:
-        session_list.set([])
-        status_text.value = "no connections to AWS"
+    try:
+        sess_list = get_session_list()
+        if refresh_session_list.is_current():
+            session_list.set(sess_list or [])
+    except Exception:
+        logging.exception('Unable to refresh Explore scenario list')
+        if refresh_session_list.is_current():
+            session_list.set([])
 
 def assign_nested_value(dictionary, keys, value):
     for key in keys[:-1]:
@@ -247,11 +235,16 @@ def get_nested_value(dictionary, keys):
         return (dictionary[keys[-1]], True)
     return (None, False)
 
-def load_from_state(source_dict):
-    stack = [((), layers.value)]
+def load_from_state(source_dict, target=None):
+    if not isinstance(source_dict, dict):
+        raise ValueError('Scenario state must be a dictionary')
+    target = layers.value if target is None else target
+    stack = [((), target)]
     while stack:
         path, current_dict = stack.pop()
         for key, value in current_dict.items():
+            if str(key).startswith('_'):
+                continue
             if isinstance(value, dict):
                 stack.append((path + (key,), value))
             else:
@@ -259,95 +252,168 @@ def load_from_state(source_dict):
                 src_value, is_available = get_nested_value(source_dict, keys)
                 if is_available:
                     if isinstance(value,solara.toestand.Reactive):
-                        assign_nested_value(layers.value, keys, solara.reactive(src_value))
+                        assign_nested_value(target, keys, solara.reactive(src_value))
                     else:
-                        assign_nested_value(layers.value, keys, src_value)
+                        assign_nested_value(target, keys, src_value)
+    if 'flood_casualty_model' not in source_dict and target['hazard'].value == 'flood':
+        target['flood_casualty_model'].set('legacy-depth')
 
 
 
-def post_processing_after_load():
-    # DF : no geometry
-    building_df = layers.value['layers']['building']['df'].value 
-    landuse_df = layers.value['layers']['landuse']['df'].value 
-    if building_df is not None and landuse_df is not None:
-        building_df = building_df.merge(landuse_df[['zoneid','avgincome']],on='zoneid',how='left')
-        layers.value['layers']['building']['df'].set(building_df) 
-
-    # data: geometry
-    building_data = layers.value['layers']['building']['data'].value 
-    landuse_data = layers.value['layers']['landuse']['data'].value 
-    if building_data is not None and landuse_data is not None:
-        building_data = building_data.merge(landuse_data[['zoneid','avgincome']],on='zoneid',how='left')
-        layers.value['layers']['building']['data'].set(building_data)
-
-    # Update tally_filter_cols to include zoneid if missing (e.g. from old saved sessions)
-    current_cols = layers.value['tally_filter_cols']
-    if 'zoneid' not in current_cols:
-        # Prepend to match engine page behavior
-        layers.value['tally_filter_cols'] = ['zoneid'] + current_cols
-
-    l = layers.value['layers']['landuse']['data'].value
-    b = layers.value['layers']['building']['data'].value
-    h = layers.value['layers']['household']['data'].value
-    i = layers.value['layers']['individual']['data'].value
-    
-    if l is not None:
+def post_processing_after_load(state):
+    """Prepare an isolated candidate; do not mutate the visible page or session store."""
+    l = state['layers']['landuse']['data'].value
+    b = state['layers']['building']['data'].value
+    h = state['layers']['household']['data'].value
+    i = state['layers']['individual']['data'].value
+    # Preserve saved income columns and avoid avgincome_x/avgincome_y on reload.
+    for field in ['df', 'data']:
+        frame = state['layers']['building'][field].value
+        if frame is None and field == 'df' and b is not None:
+            frame = b.drop(columns='geometry', errors='ignore')
+        if frame is not None and l is not None and 'avgincome' not in frame:
+            frame = frame.merge(l[['zoneid','avgincome']], on='zoneid', how='left', validate='many_to_one')
+        state['layers']['building'][field].set(frame)
+    b = state['layers']['building']['data'].value
+    state['tally_filter_cols'] = list(dict.fromkeys(['zoneid'] + state['tally_filter_cols']))
+    target_zoom = 14
+    extent_layer = l if l is not None else b
+    if extent_layer is not None and not extent_layer.empty:
         import math
-        bounds = l.total_bounds
+        bounds = extent_layer.total_bounds
         minx, miny, maxx, maxy = bounds
         center_x = (minx + maxx) / 2
         center_y = (miny + maxy) / 2
-        layers.value['center'].set((center_y, center_x))
+        state['center'].set((center_y, center_x))
         max_diff = max(maxx - minx, maxy - miny)
         if max_diff > 0:
             calculated_zoom = int(math.floor(math.log2(360 / max_diff)))
             calculated_zoom = max(1, min(calculated_zoom, 18))
-            zoom.set(calculated_zoom)
+            target_zoom = calculated_zoom
 
-    _, tally_geo =  create_tally(l, b, h, i)
-    store_in_session_storage('explore_tally_geo', tally_geo)
-    store_in_session_storage('explore_tally_minimal', tally_geo[layers.value['tally_filter_cols']])
-    if layers.value['metrics_realized'].value is None and tally_geo is not None:
-        hazard_type = layers.value['hazard'].value
+    tally_geo = minimal = None
+    if all(frame is not None for frame in [l, b, h, i]):
+        # Keep the full saved layers for viewing/export. The tally only needs
+        # metric and filter fields, not repeated OSM descriptions per resident.
+        filters = state['tally_filter_cols']
+        bcols = list(dict.fromkeys(['bldid','zoneid','occupancy','ds','has_power','casualty','geometry'] + [c for c in filters if c in b and c not in ['luf','avgincome']]))
+        lcols = list(dict.fromkeys(['zoneid','geometry'] + [c for c in ['luf','avgincome'] + filters if c in l and c not in bcols and c not in h and c not in i]))
+        _, tally_geo = create_tally(l[lcols], b[bcols], h, i)
+        minimal = tally_geo[[c for c in filters if c in tally_geo]]
+    if state['metrics_realized'].value is None and tally_geo is not None:
+        hazard_type = state['hazard'].value
         fallback_metrics = generate_metrics(
             tally_geo,
             tally_geo,
             hazard_type,
-            population_displacement_consensus.value
+            2
         )
-        layers.value['metrics_realized'].set([fallback_metrics])
-    tally_counter.value += 1
-    
-@task
-def load_session():
-    tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
-    storage.value.get_client().download_fileobj(storage.value.bucket_name, session_name.value + '.data', tmp_file)
-    tmp_file.close()
-    with open(tmp_file.name, 'rb') as obj_file:
-        print('unpickle session..', session_name.value)
-        loaded_state = pickle.load(obj_file)
-        load_from_state(loaded_state)
-    os.unlink(tmp_file.name)  
-    post_processing_after_load()
-    force_render()
+        state['metrics_realized'].set([fallback_metrics])
+    return tally_geo, minimal, target_zoom
 
-def fetch_metadata(session_name):
-    tmp_file = tempfile.NamedTemporaryFile("wb", delete=False)
-    storage.value.get_client().download_fileobj(storage.value.bucket_name, session_name + '.metadata', tmp_file)
-    tmp_file.close()
-    # Read tmp_file in binary read
-    with open(tmp_file.name, 'rb') as obj_file:
-        print('Opening session.metadata...')
-        metadata = pickle.load(obj_file)
-    # Delete tmp_file
-    os.unlink(tmp_file.name)
+
+def read_scenario_object(name, suffix, datastore):
+    with tempfile.TemporaryDirectory(prefix='tc-explore-') as folder:
+        path = Path(folder) / 'object.bin'
+        with path.open('wb') as target:
+            datastore.get_client().download_fileobj(datastore.bucket_name, name + suffix, target)
+        with path.open('rb') as source:
+            return pickle.load(source)
+
+
+def fetch_metadata(name, datastore=None):
+    metadata = read_scenario_object(name, '.metadata', storage.value if datastore is None else datastore)
+    if not isinstance(metadata, dict):
+        raise ValueError('Scenario metadata must be a dictionary')
     return metadata
+
+
+def cancel_pending(work):
+    if work.pending:
+        work.cancel()
+
+
+def select_session(name):
+    with _publish_lock:
+        load_request.set(None)
+        cancel_pending(load_session)
+        session_name.set(name)
+        status_text.set('')
+
+
+def request_load_session():
+    with _publish_lock:
+        name, datastore = session_name.value, storage.value
+        if name is None or datastore is None:
+            return
+        request = secrets.token_hex(16)
+        load_request.set(request)
+        status_text.set('Loading scenario…')
+        load_session(name, request, datastore)
+
+
+@task
+def load_session(name, request, datastore):
+    with _publish_lock:
+        if scenario_work_lock.value is None:
+            scenario_work_lock.set(threading.Lock())
+        work_lock = scenario_work_lock.value
+    # A cancelled download may still be returning from the storage SDK.
+    # Serialize heavy preparation per user, without blocking Clear's commit lock.
+    with work_lock:
+        load_session_snapshot(name, request, datastore)
+
+
+def load_session_snapshot(name, request, datastore):
+    def current():
+        return load_request.value == request and session_name.value == name and load_session.is_current()
+    try:
+        if not current():
+            return
+        source = read_scenario_object(name, '.data', datastore)
+        if not current():
+            return
+        state = create_new_app_state().value
+        load_from_state(source, target=state)
+        metadata = None
+        try:
+            metadata = fetch_metadata(name, datastore)
+        except Exception:
+            logging.exception('Unable to read Explore metadata for %s', name)
+        if not current():
+            return
+        tally_geo, minimal, target_zoom = post_processing_after_load(state)
+        with _publish_lock:
+            if not current():
+                return
+            cancel_pending(generate_metrics_local)
+            loaded_request.set(None)
+            layers.set(state)
+            store_in_session_storage('explore_tally_geo', tally_geo)
+            store_in_session_storage('explore_tally_minimal', minimal)
+            tally_filter.set(None)
+            building_filter.set(None)
+            landuse_filter.set(None)
+            population_displacement_consensus.set(2)
+            zoom.set(target_zoom)
+            scenario_metadata.set(metadata)
+            loaded_session_name.set(name)
+            tally_counter.set(tally_counter.value + 1)
+            loaded_request.set(request)
+            load_request.set(None)
+            status_text.set('Scenario loaded.' if metadata is not None else 'Scenario loaded; metadata is unavailable.')
+            force_render()
+    except Exception:
+        logging.exception('Unable to load Explore scenario %s', name)
+        with _publish_lock:
+            if current():
+                load_request.set(None)
+                status_text.set('Scenario could not be loaded. Existing data was kept; try again.')
 
 @solara.component
 def MetaDataViewer(session_name):
-    session_name, _ = solara.use_state_or_update(session_name.value)
-    if session_name is not None:
-        metadata = fetch_metadata(session_name)
+    metadata = scenario_metadata.value
+    if loaded_session_name.value is not None and isinstance(metadata, dict):
         
         # Define display mapping, order, and icons
         display_map = [
@@ -441,15 +507,34 @@ def MetaDataViewer(session_name):
         # print(metadata)
 
 def clear_session():
-    layers.set(create_new_app_state().value)
-    force_render()
+    with _publish_lock:
+        load_request.set(None)
+        loaded_request.set(None)
+        cancel_pending(load_session)
+        cancel_pending(generate_metrics_local)
+        session_name.set(None)
+        loaded_session_name.set(None)
+        scenario_metadata.set(None)
+        store_in_session_storage('explore_tally_geo', None)
+        store_in_session_storage('explore_tally_minimal', None)
+        tally_filter.set(None)
+        building_filter.set(None)
+        landuse_filter.set(None)
+        population_displacement_consensus.set(2)
+        selected_tab.set(0)
+        last_click_time.set(0.0)
+        last_click_render_order.set(-1)
+        status_text.set('')
+        zoom.set(14)
+        layers.set(create_new_app_state().value)
+        tally_counter.set(tally_counter.value + 1)
+        force_render()
 
 def force_render():
     render_count.set(render_count.value + 1)
 
 @solara.component
 def StorageViewer():
-    solara.use_effect(lambda: refresh_session_list(), [user.value])
     with solara.Card(title='Load Scenario', subtitle='Choose a scenario from storage'):
         solara.Markdown(
             """
@@ -461,21 +546,26 @@ def StorageViewer():
             unsafe_solara_execute=True,
         )
         solara.Select(label='Choose scenario',value=session_name.value, values=session_list.value,
-                    on_value=session_name.set)
+                    on_value=select_session)
         solara.Button(style={"width":"48%","margin":"1%"},label="Refresh List", on_click=lambda: refresh_session_list(),
                       disabled = True if storage.value is None else False)
         solara.Button(style={"width":"48%","margin":"1%"},label="Revive Storage", on_click=lambda: revive_storage())
-        solara.Button(style={"width":"48%","margin":"1%"},label="Load Scenario", on_click = load_session, 
-                      disabled=True if session_name.value is None else False)
+        solara.Button(style={"width":"48%","margin":"1%"},label="Load Scenario", on_click=request_load_session,
+                      disabled=session_name.value is None or storage.value is None)
         solara.Button(style={"width":"48%","margin":"1%"},label='Clear Scenario', on_click=lambda: clear_session())
-    solara.ProgressLinear(load_session.pending)
+    solara.ProgressLinear(load_request.value is not None and load_session.pending)
     solara.Text(text=status_text.value)
+    if loaded_session_name.value is not None:
+        label = (scenario_metadata.value or {}).get('scenario_name') or loaded_session_name.value
+        solara.Text(f'Loaded scenario: {label}')
     MetaDataViewer(session_name)
 
 @solara.component
 def MapViewer(map_height_class="map-shell-default"):
     print('rendering mapviewer')
     filters_open, set_filters_open = solara.use_state(False)
+    basemap, set_basemap = solara.use_state(DEFAULT_BASEMAP)
+    layer_cache = solara.use_memo(MapLayerCache, [])
 
     def zoom_to_landuse():
         l = layers.value['layers']['landuse']['data'].value
@@ -491,31 +581,28 @@ def MapViewer(map_height_class="map-shell-default"):
                 calculated_zoom = int(math.floor(math.log2(360 / max_diff)))
                 calculated_zoom = max(1, min(calculated_zoom, 18))
                 zoom.set(calculated_zoom)
-    def create_base_layers():
-        base_layer1 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenStreetMap.Mapnik.build_url(),name="OpenStreetMap",base = True)
-        base_layer2 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.OpenTopoMap.build_url(),name="OpenTopoMap",base = True)
-        base_layer3 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldStreetMap.build_url(),name="Esri WorldStreetMap",base = True)
-        base_layer4 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.Esri.WorldImagery.build_url(),name="Esri WorldImagery",base = True)        
-        base_layer5 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.Positron.build_url(),name="CartoDB",base = True) 
-        base_layer6 = ipyleaflet.TileLayer.element(url=ipyleaflet.basemaps.CartoDB.DarkMatter.build_url(),name="CartoDB Dark",base = True)                                                                                                                                        
-        return [base_layer2, base_layer3, base_layer4, base_layer5, base_layer6, base_layer1]
+    base_layer = solara.use_memo(lambda: create_basemap_layer(basemap), [basemap])
 
-    # create base layers only once
-    base_layers = solara.use_memo(create_base_layers,[])
-    
     layout = ipywidgets.Layout.element(width='100%', height='var(--tc-map-height)')
 
     tool1 = ipyleaflet.ZoomControl.element(position='topleft')
     tool2 = ipyleaflet.FullScreenControl.element(position='topleft')    
     tool3 = ipyleaflet.LayersControl.element(position='topright', collapsed=False)
     tool4 = ipyleaflet.ScaleControl.element(position='bottomleft')
+    attribution_control = ipyleaflet.AttributionControl.element(position="bottomright")
+    basemap_control = ipyleaflet.WidgetControl.element(
+        widget=BasemapSelector(value=basemap, on_value=set_basemap), position="topright"
+    )
 
-    # Removed cleanup_cache as we no longer cache map layers
+    def cleanup_cache():
+        return layer_cache.close
+    solara.use_effect(cleanup_cache, [])
 
     def create_layers():
         regular_layers = []
         infrastructure_layers = []
         priority_layers = []
+        active_names = set()
         sorted_layers = sorted(
             layers.value['layers'].items(),
             key=lambda item: item[1].get('render_order', 0)
@@ -523,6 +610,7 @@ def MapViewer(map_height_class="map-shell-default"):
         for l, layer_config in sorted_layers:
             df = layer_config['data'].value
             if df is not None and isinstance(df, gpd.GeoDataFrame):
+                active_names.add(l)
                 df_filtered = df
                 if l == 'building':
                     if building_filter.value is not None:
@@ -531,8 +619,13 @@ def MapViewer(map_height_class="map-shell-default"):
                     if landuse_filter.value is not None:
                         df_filtered = df[landuse_filter.value]
 
-                print(f"Creating new layer for {l}, df_filtered size: {len(df_filtered)}")
-                map_layer = create_map_layer(df_filtered, l) if l == "constraint" else create_map_layer(df_filtered, l)
+                mask = building_filter.value if l == 'building' else landuse_filter.value if l == 'landuse' else None
+                key = (render_count.value, hash(tuple(mask)) if mask is not None else None)
+                if l == 'intensity':
+                    key += (layers.value['hazard'].value, layers.value['earthquake_intensity_unit'].value)
+                map_layer = layer_cache.get(l, key, df,
+                    lambda df_filtered=df_filtered, name=l: create_map_layer(df_filtered, name),
+                    force=l == 'constraint')
                 if l in {"road edges", "road nodes", "power edges", "power nodes"}:
                     infrastructure_layers.append(map_layer)
                 elif l == "constraint":
@@ -540,20 +633,26 @@ def MapViewer(map_height_class="map-shell-default"):
                 else:
                     regular_layers.append(map_layer)
 
-        return regular_layers + infrastructure_layers + priority_layers
+        layer_cache.prune(active_names)
+        layer_cache.layers = regular_layers + infrastructure_layers + priority_layers
+        return layer_cache.layers
 
     map_layers = solara.use_memo(create_layers,
-                    [building_filter.value, landuse_filter.value] +
+                    [building_filter.value, landuse_filter.value,
+                     layers.value['hazard'].value, layers.value['earthquake_intensity_unit'].value] +
                     [render_count.value])
+    solara.use_effect(layer_cache.release_retired, [map_layers])
 
     def create_legend_control():
+        html_intensity = next((getattr(layer, 'intensity_legend_html', '')
+                               for layer in map_layers if layer.name == 'intensity'), '')
         df_lu = layers.value['layers']['landuse']['data'].value
         df_b = layers.value['layers']['building']['data'].value
         
         has_lu = df_lu is not None and isinstance(df_lu, gpd.GeoDataFrame) and 'luf' in df_lu.columns
         has_b = df_b is not None and isinstance(df_b, gpd.GeoDataFrame) and 'ds' in df_b.columns
         
-        if not has_lu and not has_b:
+        if not has_lu and not has_b and not html_intensity:
             return None
             
         import uuid
@@ -585,14 +684,18 @@ def MapViewer(map_height_class="map-shell-default"):
         #tab2-{uid}:checked ~ .tabs-{uid} .label2-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
         #tab1-{uid}:checked ~ #content1-{uid} {{ display: block; }}
         #tab2-{uid}:checked ~ #content2-{uid} {{ display: block; }}
+        #tab3-{uid}:checked ~ .tabs-{uid} .label3-{uid} {{ background: white; border-bottom: 2px solid white; margin-bottom: -1px; }}
+        #tab3-{uid}:checked ~ #content3-{uid} {{ display: block; }}
         </style>
         <details open style='background: white; padding: 8px; border-radius: 5px; box-shadow: 0 1px 5px rgba(0,0,0,0.4); max-height: 300px; overflow-y: auto; width: 170px;'>
             <summary style='cursor: pointer; font-weight: bold; margin-bottom: 8px; font-size: 13px;'>Map Legend</summary>
-            <input type="radio" name="legend-tab-{uid}" id="tab1-{uid}" class="tab-radio-{uid}" checked>
+            <input type="radio" name="legend-tab-{uid}" id="tab1-{uid}" class="tab-radio-{uid}" {"checked" if has_lu or has_b else ""}>
             <input type="radio" name="legend-tab-{uid}" id="tab2-{uid}" class="tab-radio-{uid}">
+            <input type="radio" name="legend-tab-{uid}" id="tab3-{uid}" class="tab-radio-{uid}" {"checked" if not (has_lu or has_b) else ""}>
             <div class="tabs-{uid}">
-                <label for="tab1-{uid}" class="tab-label-{uid} label1-{uid}">Land Use</label>
-                <label for="tab2-{uid}" class="tab-label-{uid} label2-{uid}">Damage</label>
+                <label for="tab1-{uid}" class="tab-label-{uid} label1-{uid}" style="display:{"block" if has_lu or has_b else "none"}">Land Use</label>
+                <label for="tab2-{uid}" class="tab-label-{uid} label2-{uid}" style="display:{"block" if has_lu or has_b else "none"}">Damage</label>
+                <label for="tab3-{uid}" class="tab-label-{uid} label3-{uid}" style="display:{"block" if html_intensity else "none"}">Intensity</label>
             </div>
             <div id="content1-{uid}" class="tab-content-{uid}">
                 {html_lu}
@@ -600,24 +703,29 @@ def MapViewer(map_height_class="map-shell-default"):
             <div id="content2-{uid}" class="tab-content-{uid}">
                 {html_ds}
             </div>
+            <div id="content3-{uid}" class="tab-content-{uid}">
+                {html_intensity}
+            </div>
         </details>
         """
         
-        legend_widget = ipywidgets.HTML(value=html_content)
+        legend_widget = ipywidgets.HTML.element(value=html_content)
         return ipyleaflet.WidgetControl.element(widget=legend_widget, position='bottomright')
 
     legend_control = solara.use_memo(create_legend_control, [
         layers.value['layers']['landuse']['data'].value,
-        layers.value['layers']['building']['data'].value
+        layers.value['layers']['building']['data'].value,
+        map_layers
     ])
-    controls = [tool1, tool2, tool3, tool4]
+    controls = [tool1, tool2, basemap_control, tool3, tool4, attribution_control]
     if legend_control is not None:
         controls.append(legend_control)
 
-    with solara.Div(classes=["map-shell", map_height_class]):
+    with solara.Div(classes=["map-shell", "tc-single-basemap", map_height_class]):
         ClientLeafletInitialOrderFix(trigger_key=f"{render_count.value}")
         ClientResizeTrigger(
             children=ipyleaflet.Map.element(
+                zoom_control=False, attribution_control=False,
                 zoom=zoom.value,
                 max_zoom=23,
                 on_zoom=zoom.set,
@@ -631,7 +739,7 @@ def MapViewer(map_height_class="map-shell-default"):
                 box_zoom=True,
                 keyboard=True if random.random() > 0.5 else False,
                 panes=MAP_PANES,
-                layers=base_layers + map_layers,
+                layers=[base_layer] + map_layers,
                 controls = controls,
                 layout = layout
             ),
@@ -665,22 +773,25 @@ def MapViewer(map_height_class="map-shell-default"):
     print(f"MapViewer render count {render_count.value}")
 
 @task
-def generate_metrics_local():
+def generate_metrics_local(request, bounds, mask, consensus):
     print("Emtering generate_metrics_local")
     metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
 
     tally_geo = read_from_session_storage('explore_tally_geo')
-    print('population_displacement_consensus explore', population_displacement_consensus.value)
-    if tally_geo is not None and layers.value['bounds'].value is not None:
-        ((ymin,xmin),(ymax,xmax)) = layers.value['bounds'].value
-        tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
-        if tally_filter.value is not None:
-            tally_filtered = tally_filtered[tally_filter.value]
+    if request is None or request != loaded_request.value:
+        return request, metrics
+    if tally_geo is not None:
+        tally_filtered = tally_geo
+        if bounds is not None:
+            ((ymin,xmin),(ymax,xmax)) = bounds
+            tally_filtered = tally_geo.cx[xmin:xmax,ymin:ymax]
+        if mask is not None:
+            tally_filtered = tally_filtered[mask]
         hazard_type = layers.value['hazard'].value
         print('Triggering generate_metrics')
-        metrics = generate_metrics(tally_filtered, tally_geo, hazard_type, population_displacement_consensus.value)
+        metrics = generate_metrics(tally_filtered, tally_geo, hazard_type, consensus)
         print('metrics', metrics)
-    return metrics
+    return request, metrics
 
 @solara.component
 def MetricPanel():
@@ -693,13 +804,19 @@ def MetricPanel():
     metric_icon7 = 'tomorrowcities/content/icons/metric7.png'
     metric_icon8 = 'tomorrowcities/content/icons/metric8.png'
     filtered_metrics = {name: {'value':0, 'max_value':0, 'desc': metric['desc']} for name, metric in layers.value['metrics'].items()}
-    solara.use_memo(generate_metrics_local, 
-                    [tally_counter.value,
+    def refresh_metrics():
+        if loaded_request.value is not None:
+            generate_metrics_local(loaded_request.value, layers.value['bounds'].value,
+                                   tally_filter.value, population_displacement_consensus.value)
+    solara.use_memo(refresh_metrics,
+                    [loaded_request.value, tally_counter.value,
                      layers.value['bounds'].value,
                      population_displacement_consensus.value,
                      tally_filter.value], debug_name="generate_metrics_loca")
-    if generate_metrics_local.finished:
-        filtered_metrics = generate_metrics_local.value
+    if loaded_request.value is not None and generate_metrics_local.finished:
+        request, calculated = generate_metrics_local.value
+        if request == loaded_request.value:
+            filtered_metrics = calculated
 
     metric_icons = [metric_icon1,metric_icon2,metric_icon3,metric_icon4,metric_icon5,metric_icon6,metric_icon7,metric_icon8]
 
@@ -936,18 +1053,16 @@ def LayerDisplayer():
                     render_layer_dataframe(data, card_title=selected)
             if selected in ["landuse", "building", "road edges", "road nodes", "power nodes", "power edges", "intensity"]:
                 with solara.Row(classes=["layer-download-row"]):
-                    file_object = data.to_json()
-                    with solara.FileDownload(file_object, f"{selected}_export.geojson", mime_type="application/geo+json"):
+                    with solara.FileDownload(lambda data=data: data.to_json(), f"{selected}_export.geojson", mime_type="application/geo+json"):
                         solara.Button("Download GeoJSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                    with solara.FileDownload(lambda data=data: data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
             elif selected in ['household', 'individual', 'fragility', 'landslide fragility', 'vulnerability', 'power fragility', 'road fragility']:
                 with solara.Row(classes=["layer-download-row"]):
-                    file_object = data.to_json()
-                    with solara.FileDownload(file_object, f"{selected}_export.json", mime_type="application/json"):
+                    with solara.FileDownload(lambda data=data: data.to_json(), f"{selected}_export.json", mime_type="application/json"):
                         solara.Button("Download JSON", icon_name="mdi-cloud-download-outline", color="primary")
-                    with solara.FileDownload(data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
+                    with solara.FileDownload(lambda data=data: data.to_csv(), f"{selected}_export.csv", mime_type="text/csv"):
                         solara.Button("Download CSV", icon_name="mdi-cloud-download-outline", color="primary")
                 solara.Text("Spacer", style={"visibility": "hidden"})
         elif isinstance(data, ParameterFile):
@@ -1021,7 +1136,7 @@ def MetricStatistics():
             ]
     metric_names = metrics[0].keys()
     metric_labels = {
-        metric_name: metrics[0][metric_name].get('desc', metric_name)
+        metric_name: 'Casualties' if metric_name == 'metric8' else metrics[0][metric_name].get('desc', metric_name)
         for metric_name in metric_names
     }
     building_data = layers.value['layers']['building']['data'].value
@@ -1754,12 +1869,11 @@ def Page():
     solara.Title(" ")
     
     def on_load():
-        session_data = read_from_session_storage('explore_initialized')
-        if session_data is None:
-            clear_session()
-            store_in_session_storage('explore_initialized', True)
+        clear_session()
+        refresh_session_list()
+        return clear_session
             
-    solara.use_effect(on_load, [])
+    solara.use_effect(on_load, [user.value])
 
     # Mobile View: Content at the top
     with solara.Column(classes=["d-block", "d-md-none"], style={"width": "100%"}):
@@ -1799,19 +1913,19 @@ def Page():
     )
     ControlledDetails(
         summary="Metric Statistics",
-        children=[MetricStatistics()],
+        children=[MetricStatistics()] if metric_statistics_open else [],
         expand=metric_statistics_open,
         on_expand=set_metric_statistics_open,
     )
     ControlledDetails(
         summary="Layer Details",
-        children=[LayerDisplayer()],
+        children=[LayerDisplayer()] if layer_details_open else [],
         expand=layer_details_open,
         on_expand=set_layer_details_open,
     )
     ControlledDetails(
         summary="Data Tables & Charts",
-        children=[GeneratedDataTablesCharts(layers=layers, scenario_label=session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)],
+        children=[GeneratedDataTablesCharts(layers=layers, scenario_label=loaded_session_name.value, source_label="Loaded Scenario", refresh_key=render_count.value)] if data_tables_open else [],
         expand=data_tables_open,
         on_expand=set_data_tables_open,
     )

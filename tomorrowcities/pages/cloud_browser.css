@@ -1,0 +1,140 @@
+/* Scoped to the cloud input panel; other file browsers retain their styling. */
+.tc-cloud-browser {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid #dde5e2;
+  border-radius: 10px;
+  background: #fff !important;
+}
+.tc-cloud-browser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 32px;
+}
+.tc-cloud-browser-location {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #294d43;
+}
+.tc-cloud-browser-folder-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.tc-cloud-browser-toolbar .v-btn {
+  flex: 0 0 32px;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  color: #4d6c62;
+}
+.tc-cloud-browser-hint {
+  margin: 4px 0 12px;
+  color: #64716b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tc-cloud-browser-list {
+  min-height: 104px;
+  overflow: hidden;
+  border: 1px solid #e4eae7;
+  border-radius: 7px;
+  background: #fff;
+}
+.tc-cloud-browser .solara-file-list {
+  max-height: 300px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.tc-cloud-browser .solara-file-list .v-list {
+  padding: 4px 0;
+  background: #fff;
+}
+.tc-cloud-browser .solara-file-list .v-list-item {
+  height: auto;
+  min-height: 36px;
+  padding: 5px 9px;
+  border-radius: 0;
+}
+.tc-cloud-browser .solara-file-list .v-list-item:hover {
+  background: #f2f7f4;
+}
+.tc-cloud-browser .solara-file-list-selected {
+  background: #e6f1eb;
+}
+.tc-cloud-browser .solara-file-list .v-list-item__content {
+  min-width: 0;
+  padding: 2px 0;
+}
+.tc-cloud-browser .solara-file-list .v-list-item__title {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.tc-cloud-browser .solara-file-list .v-list-item__icon {
+  align-self: center;
+  margin-right: 9px;
+}
+.tc-cloud-browser .solara-file-list .v-icon {
+  color: #638375;
+  font-size: 20px;
+}
+.tc-cloud-browser .solara-file-list-dir {
+  font-weight: 500;
+}
+.tc-cloud-browser-empty {
+  padding: 14px 10px;
+  color: #64716b;
+  font-size: 13px;
+}
+.tc-cloud-browser-list > .tc-cloud-browser-hint {
+  margin: 14px 10px;
+}
+.tc-cloud-browser .v-alert {
+  margin: 8px;
+  padding: 10px;
+  font-size: 13px;
+}
+.tc-cloud-browser-footer {
+  padding-top: 12px;
+}
+.tc-cloud-browser-selection .v-input--checkbox {
+  margin: 0 0 6px;
+  padding: 0;
+}
+.tc-cloud-browser-selection .v-label {
+  font-size: 12px;
+}
+.tc-cloud-browser .tc-cloud-file-checkbox {
+  flex: 0 0 24px;
+  margin-right: 6px;
+}
+.tc-cloud-browser .tc-cloud-file-checkbox .v-input--checkbox {
+  margin: 0;
+  padding: 0;
+}
+.tc-cloud-browser .solara-file-list .v-list-item[draggable="true"] {
+  cursor: grab;
+}
+.tc-cloud-browser-footer .v-btn {
+  min-height: 38px;
+  height: auto;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.tc-cloud-browser-footer .v-btn__content {
+  white-space: normal;
+  line-height: 1.35;
+}
