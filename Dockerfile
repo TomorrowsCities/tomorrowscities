@@ -17,4 +17,7 @@ WORKDIR $HOME/app
 
 RUN pip install -e .
 
-CMD ["solara", "run", "tomorrowcities.pages",  "--host", "0.0.0.0", "--port", "7860"]
+# Fail the build if the resolved runtime cannot even start Solara's CLI.
+RUN SOLARA_TELEMETRY_MIXPANEL_ENABLE=false python -m solara run --help > /dev/null
+
+CMD ["solara", "run", "tomorrowcities.pages", "--production", "--workers", "1", "--host", "0.0.0.0", "--port", "7860"]

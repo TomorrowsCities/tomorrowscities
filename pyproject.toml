@@ -8,8 +8,17 @@ license = {file = "LICENSE"}
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
 dependencies = [
-    "solara",
-    "starlette<1.0",
+    # Tested Vue 2 / Vuetify 2 stack. Newer widget majors remove APIs used by
+    # the pages and custom .vue templates (e.g. ExpansionPanelHeader).
+    "solara==1.44.1",
+    "ipyvue==1.11.2",
+    "ipyvuetify==1.11.1",
+    "reacton==1.9.1",
+    # Solara's CLI imports Uvicorn APIs removed by newer releases. Keep the
+    # server stack aligned with the working UI instead of resolving latest.
+    "uvicorn==0.34.0",
+    "starlette==0.46.0",
+    "websockets==15.0",
     "geopandas",
     "fiona",
     "ipyleaflet",

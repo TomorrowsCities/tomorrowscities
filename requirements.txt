@@ -1,5 +1,11 @@
-solara
-starlette<1.0
+# Keep the tested UI and server runtime in sync with pyproject.toml.
+solara==1.44.1
+ipyvue==1.11.2
+ipyvuetify==1.11.1
+reacton==1.9.1
+uvicorn==0.34.0
+starlette==0.46.0
+websockets==15.0
 geopandas
 fiona
 ipyleaflet
